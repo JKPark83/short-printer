@@ -1,0 +1,247 @@
+{% extends "_base.html" %}
+{% block title %}{{ t.keyword or '한국 전체' }} 주제 분석 · shorts-printer{% endblock %}
+{% block main %}
+{% set busy = t.status in ACTIVE %}
+{% set files = '/trend-files/' ~ t.id ~ '/' %}
+{% set period = trends.PERIODS.get(t.period, t.period) %}
+{% set prog = t.progress %}
+{% macro wait(step, running, pending='이 단계가 끝나면 여기에 나와요') %}
+{%- set st = t.steps[step].status -%}
+<p class="empty-stage">{% if st == 'running' %}{{ icon('loader', 14, 'spin') }} {{ running }}
+{#- 다시 시도 직후엔 단계가 아직 failed라 queued를 먼저 본다 #}
+{%- elif t.status == 'queued' %}대기열에서 차례를 기다려요. 앞 작업이 끝나면 시작해요.
+{%- elif st == 'failed' %}이 단계에서 멈췄어요. 위 오류를 보고 [다시 시도]를 눌러 주세요.
+{%- else %}{{ pending }}{% endif %}</p>
+{%- endmacro %}
+{% macro pips(n) -%}
+<span class="pips" role="img" aria-label="5점 중 {{ n }}점">{% for k in range(5) %}<span class="{{ 'on' if k < n }}"></span>{% endfor %}</span>
+{%- endmacro %}
+<main id="page" class="wrap wrap-job" data-api="/api/trends/{{ t.id }}" data-swap="head stepper banners toc c-videos c-analyses c-picks usage"
+      data-sig="{{ tsig(t) }}" data-active="{{ 1 if busy else 0 }}">
+  <a class="back" href="/trends">{{ icon('arrow-left') }}주제 찾기</a>
+
+  <header id="head" class="job-head">
+    <div class="jh-text">
+      <h1>{% if t.keyword %}“{{ t.keyword }}” 인기 쇼츠 분석{% else %}한국 인기 쇼츠 분석{% endif %}</h1>
+      <p class="meta"><code>{{ t.id }}</code> · 최근 {{ period }} · 한국 · 한국어 · {{ t.created_at|hm }}</p>
+    </div>
+    <div class="jh-actions">
+      <span class="badge b-{{ t.status }}">{{ TSTATUS[t.status] }}</span>
+      {% if t.status in ('failed', 'interrupted', 'draft') %}
+      <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
+      {% endif %}
+    </div>
+  </header>
+
+  <ol id="stepper" class="stepper stepper-3" aria-label="분석 단계" tabindex="-1">
+    {% for s in trends.STEPS %}{% set st = t.steps[s] %}
+    <li class="node n-{{ st.status }}"{% if st.status == 'running' %} aria-current="step"{% endif %}>
+      <span class="dot">{{ icon(NODE_ICON[st.status], 16, 'spin' if st.status == 'running' else '') }}</span>
+      <span class="n-label">{{ loop.index }} {{ trends.LABELS[s] }}</span>
+      <span class="n-sub">{% if st.status == 'running' and s == 'analyze' and prog %}{{ prog.done }}/{{ prog.total }}{% elif st.status == 'done' %}{{ st.sec }}s{% else %}{{ STATE[st.status] }}{% endif %}</span>
+      <span class="n-engine">{{ st.engine or '' }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p id="say" class="sr-only" role="status" aria-live="polite"></p>
+
+  <div class="job-grid">
+    <div class="stages">
+      <div id="banners" class="banners">
+      {% if t.status == 'failed' %}
+      <div class="banner banner-bad" role="alert">{{ icon('alert', 18) }}
+        <div><strong>실패: {{ trends.LABELS[t.error.step] }}</strong><p class="err">{{ t.error.message }}</p>
+          <p class="muted">[다시 시도]를 누르면 끝난 단계와 끝난 영상은 건너뛰고 이어서 해요.</p></div></div>
+      {% elif t.status == 'interrupted' %}
+      <div class="banner banner-warn">{{ icon('alert', 18) }}
+        <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+      {% endif %}
+      {% for n in t.notices %}
+      <div class="banner banner-info">{{ icon('info', 18) }}<p>{{ n }}</p></div>
+      {% endfor %}
+      </div>
+
+      <nav id="toc" class="toc" aria-label="분석 순서">
+        <a href="#c-videos"><span class="num">1</span>수집 <span class="mono">{{ videos|length }}개</span></a>
+        <a href="#c-analyses"><span class="num">2</span>분석 <span class="mono">{{ analyses|length }}/{{ videos|length }}</span></a>
+        <a href="#c-criteria"><span class="num">3</span>기준</a>
+        <a href="#c-picks"><span class="num">4</span>추천 <span class="mono">{{ picks.picks|length if picks else '-' }}</span></a>
+      </nav>
+
+      <section id="c-videos" class="card" aria-labelledby="h-videos">
+        <div class="card-head">
+          <h2 id="h-videos"><span class="num">1</span>수집된 쇼츠</h2>
+          {% if videos %}<span class="mono muted">{{ videos|length }}개 · 시간당 조회수 순</span>{% endif %}
+        </div>
+        <p class="card-lead">최근 {{ period }} 동안 올라온 한국어 쇼츠(3분 이하){% if t.keyword %} 가운데 “{{ t.keyword }}”가 들어간 것{% endif %}을 조회수 순으로 받아, 올린 뒤 <strong>시간당 조회수</strong>가 높은 순서로 {{ trends.TOP_N }}개를 남겼어요. 썸네일을 누르면 이 자리에서 재생해요.</p>
+        {% if videos %}
+        <ol class="vgrid">
+          {% for v in videos %}
+          <li id="v-{{ v.id }}" class="vcard" tabindex="-1">
+            <button class="v-play" type="button" data-embed="{{ v.id }}" aria-label="{{ v.rank }}위 {{ v.title }} 미리보기 재생">
+              <img src="{{ v.thumb }}" alt="" loading="lazy" width="180" height="320">
+              <span class="v-rank">{{ v.rank }}위</span>
+              <span class="v-dur mono">{{ v.duration|mmss }}</span>
+              <span class="v-btn">{{ icon('play', 18) }}</span>
+            </button>
+            <h3 class="v-title">{{ v.title }}</h3>
+            <p class="v-ch">{{ v.channel }}</p>
+            <dl class="v-stats">
+              <div><dt>조회수</dt><dd>{{ v.views|kn }}회</dd></div>
+              <div><dt>시간당</dt><dd>{{ v.views_per_hour|kn }}회</dd></div>
+              <div><dt>반응률</dt><dd>{{ '%.1f'|format(v.engagement * 100) }}%</dd></div>
+              <div><dt>게시</dt><dd><time datetime="{{ v.published_at }}" title="{{ v.published_at|hm }}">{{ v.age_hours|ago }}</time></dd></div>
+            </dl>
+            <a class="v-link" href="{{ v.url }}" target="_blank" rel="noopener" aria-label="{{ v.rank }}위 {{ v.title }} YouTube에서 보기 (새 창)">{{ icon('external', 14) }}YouTube에서 보기</a>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}{{ wait('collect', 'YouTube에서 인기 쇼츠를 모으는 중이에요') }}{% endif %}
+      </section>
+
+      <section id="c-analyses" class="card" aria-labelledby="h-analyses">
+        <div class="card-head">
+          <h2 id="h-analyses"><span class="num">2</span>영상 분석</h2>
+          {% if prog and t.steps.analyze.status == 'running' %}
+          <span class="mono muted">{{ prog.done }}/{{ prog.total }} 분석함</span>
+          {% elif analyses %}<span class="mono muted">{{ analyses|length }}개 · {{ t.steps.analyze.engine or '' }}</span>{% endif %}
+        </div>
+        <p class="card-lead">영상을 받아 장면이 바뀌는 곳(컷)을 찾고, 컷마다 한 장씩 뽑은 화면과 제목·설명·자막·통계를 Claude에게 보여 줬어요. 받은 영상 파일은 분석이 끝나면 지워요.</p>
+        {% if prog and t.steps.analyze.status == 'running' %}
+        <div class="bar bar-progress" role="progressbar" aria-label="영상 분석" aria-valuemin="0" aria-valuemax="{{ prog.total }}" aria-valuenow="{{ prog.done }}" aria-valuetext="{{ prog.done }} / {{ prog.total }}">
+          <span style="width: {{ (prog.done * 100 // prog.total) if prog.total else 0 }}%"></span></div>
+        {% endif %}
+        {% if videos and t.steps.analyze.status != 'pending' or analyses %}
+        <ol class="alist">
+          {% for v in videos %}{% set a = analyses.get(v.id) %}
+          <li id="a-{{ v.id }}" class="an">
+            <div class="an-head">
+              <a class="rank" href="#v-{{ v.id }}" aria-label="수집된 쇼츠 {{ v.rank }}위로 가기">{{ v.rank }}</a>
+              <h3>{{ v.title }}</h3>
+              {% if not a %}<span class="badge">{{ '분석 중·대기' if t.steps.analyze.status == 'running' else '못 봄' }}</span>
+              {% elif a.status == 'ok' %}<span class="badge b-done">영상 분석</span>
+              {% elif a.status == 'meta_only' %}<span class="badge b-queued">썸네일만</span>
+              {% else %}<span class="badge b-failed">실패</span>{% endif %}
+            </div>
+            {% if a and a.status == 'meta_only' %}
+            <p class="note note-warn">{{ icon('alert', 14) }}영상을 받지 못해(봇 확인 등) 썸네일과 제목·설명·통계만으로 봤어요. 컷과 장면은 없어요.</p>
+            {% elif a and a.status == 'failed' %}
+            <p class="note note-bad">{{ icon('x', 14) }}분석하지 못했어요: {{ a.error or '알 수 없는 오류' }}. 추천을 고를 때는 빼요.</p>
+            {% endif %}
+            {% if a and a.frames %}
+            <ol class="frames" aria-label="뽑은 장면 {{ a.frames|length }}장">
+              {% for f in a.frames %}<li><img src="{{ files }}{{ f.file }}" alt="{{ f.t|cue_ts }} 장면" loading="lazy" width="72" height="128"><span class="mono">{{ f.t|cue_ts }}</span></li>{% endfor %}
+            </ol>
+            {% endif %}
+            {% if a and a.status == 'ok' %}
+            <p class="an-stats mono muted">컷 {{ a.shot_count if a.shot_count is not none else '-' }}개 · 평균 {{ '%.1f'|format(a.avg_shot_sec) if a.avg_shot_sec is not none else '-' }}초 · {{ v.duration|mmss }} · 자막 {{ '있음' if a.has_transcript else '없음' }}</p>
+            {% endif %}
+            {% if a and a.claude %}{% set c = a.claude %}
+            <dl class="kv kv-wide">
+              <dt>주제</dt><dd>{{ c.topic }}</dd>
+              <dt>포맷</dt><dd><span class="chip">{{ c.format }}</span></dd>
+              <dt>영상 소스</dt><dd><span><span class="chip">{{ c.footage_type }}</span> {{ c.footage_desc }}</span></dd>
+              <dt>내레이션</dt><dd>{{ c.narration }}{% if c.text_overlay %} · 화면 글자: {{ c.text_overlay }}{% endif %}</dd>
+              <dt>훅</dt><dd>{{ c.hook }}</dd>
+              <dt>인기 이유</dt><dd>{{ c.why_popular }}</dd>
+              <dt>제작 적합도</dt><dd><span>{{ pips(c.replicable) }} {{ c.replicable_reason }}</span></dd>
+            </dl>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}{{ wait('analyze', '영상을 받아 보는 중이에요', '수집이 끝나면 영상마다 결과가 나와요') }}{% endif %}
+      </section>
+
+      <section id="c-criteria" class="card" aria-labelledby="h-criteria">
+        <div class="card-head"><h2 id="h-criteria"><span class="num">3</span>선정 기준</h2></div>
+        <p class="card-lead">추천마다 네 기준을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 합쳐요. 우리 파이프라인(영어 검색어로 찾는 무료 스톡 영상, 한국어 TTS, 번인 자막, 30~45초)으로 만들 수 있는지와 이미 만든 작업 주제와 겹치지 않는지를 함께 봐요.</p>
+        {% set wmax = trends.WEIGHTS.values()|max %}
+        <table class="crit">
+          <thead><tr><th scope="col">기준</th><th scope="col">보는 것</th><th scope="col">가중치</th></tr></thead>
+          <tbody>
+            {% for k, (name, desc) in trends.CRITERIA.items() %}
+            <tr>
+              <th scope="row">{{ name }}</th>
+              <td>{{ desc }}<small class="who">{{ '시간당 조회수로 계산' if k == 'trend' else 'Claude가 매김' }}</small></td>
+              <td class="w"><span class="wbar" aria-hidden="true"><span style="width: {{ trends.WEIGHTS[k] * 100 // wmax }}%"></span></span><span class="mono">{{ trends.WEIGHTS[k] }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <p class="muted small">화제성은 Claude가 아니라 코드가 매겨요. 추천이 참고한 쇼츠 가운데 시간당 조회수 백분위가 가장 높은 값 p(0~1)로 1 + round(4 × p)점이에요.</p>
+      </section>
+
+      <section id="c-picks" class="card" aria-labelledby="h-picks">
+        <div class="card-head">
+          <h2 id="h-picks"><span class="num">4</span>추천 주제</h2>
+          {% if picks %}<span class="mono muted">{{ picks.picks|length }}개 · 총점 순</span>{% endif %}
+        </div>
+        {% if picks %}
+        <p class="summary"><strong>지금 흐름</strong>{{ picks.summary }}</p>
+        <ol class="picks">
+          {% for p in picks.picks %}{% set i = loop.index0 %}
+          <li id="p-{{ i }}" class="pick" tabindex="-1">
+            <div class="pick-head">
+              <span class="rank" aria-label="{{ loop.index }}위">{{ loop.index }}</span>
+              <h3>{{ p.topic }}</h3>
+              <span class="chip">{{ p.format }}</span>
+            </div>
+            <div class="total">
+              <div class="bar bar-lg" role="img" aria-label="총점 100점 중 {{ p.total }}점"><span style="width: {{ p.total }}%"></span></div>
+              <span class="t-num">{{ p.total }}<small>/100</small></span>
+            </div>
+            <dl class="scores">
+              {% for k, (name, _desc) in trends.CRITERIA.items() %}
+              <div><dt>{{ name }}</dt><dd>{{ pips(p.scores[k]) }}<span class="mono">{{ p.scores[k] }}</span></dd></div>
+              {% endfor %}
+            </dl>
+            <dl class="kv kv-wide">
+              <dt>왜 지금</dt><dd>{{ p.why_now }}</dd>
+              <dt>전개 방향</dt><dd>{{ p.angle }}</dd>
+              <dt>검색어</dt><dd><span class="chips">{% for s in p.search_terms %}<span class="chip">{{ s }}</span>{% endfor %}</span></dd>
+              <dt>참고 쇼츠</dt>
+              <dd>{% if p.refs %}<ul class="refs">
+                {% for r in p.refs if r in vids %}{% set v = vids[r] %}
+                <li><a href="#v-{{ r }}" aria-label="참고 쇼츠 {{ v.rank }}위 {{ v.title }}로 가기"><img src="{{ v.thumb }}" alt="" loading="lazy" width="48" height="85"><span class="mono">{{ v.rank }}위</span></a></li>
+                {% endfor %}</ul>{% else %}<span class="muted">없음</span>{% endif %}</dd>
+            </dl>
+            <form class="pick-form" method="post" action="/jobs">
+              <input type="hidden" name="trend" value="{{ t.id }}"><input type="hidden" name="pick" value="{{ i }}">
+              <label for="pv-{{ i }}">목소리</label>
+              <select id="pv-{{ i }}" name="voice">{% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+              <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>이 주제로 만들기</span></button>
+            </form>
+          </li>
+          {% endfor %}
+        </ol>
+        {% if picks.excluded %}
+        <h3 class="sub">고르지 않은 영상</h3>
+        <ul class="excluded">
+          {% for x in picks.excluded %}{% set v = vids.get(x.video_id) %}
+          <li><a href="#v-{{ x.video_id }}">{{ (v.rank ~ '위 ' ~ v.title) if v else x.video_id }}</a><span class="muted">{{ x.reason }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% else %}{{ wait('pick', 'Claude가 분석 결과를 모아 주제를 고르는 중이에요', '분석이 끝나면 Claude가 지금 만들 만한 주제를 골라요') }}{% endif %}
+      </section>
+    </div>
+
+    <aside class="side">
+      <section id="usage" class="card" aria-labelledby="h-usage">
+        <div class="card-head"><h2 id="h-usage">사용량</h2></div>
+        <dl class="kv kv-wide">
+          <dt>Claude</dt>
+          <dd>{% if t.usage %}<span class="mono">{{ t.usage.model }} · in {{ t.usage.input_tokens }} · out {{ t.usage.output_tokens }}{% if t.usage.cost_usd is not none %} · ${{ '%.4f'|format(t.usage.cost_usd) }}{% endif %}</span>{% else %}<span class="muted">아직 안 불렀어요</span>{% endif %}</dd>
+          <dt>YouTube</dt>
+          <dd><span class="mono">{{ t.quota or 0 }} / {{ '{:,}'.format(QUOTA_DAY) }}유닛 (하루)</span></dd>
+        </dl>
+      </section>
+      <section class="card" aria-labelledby="h-log">
+        <div class="card-head"><h2 id="h-log">실행 로그</h2><span id="fresh" class="mono muted"></span></div>
+        <pre id="log" class="log" tabindex="0" aria-label="실행 로그">{{ log|join('\n') }}</pre>
+      </section>
+    </aside>
+  </div>
+</main>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "_base.html" %}
+{% block main %}
+<main id="page" class="wrap wrap-dash">
+  <h1 class="sr-only">대시보드</h1>
+  <div class="dash-grid">
+    <div class="col">
+      <section class="card" aria-labelledby="h-new">
+        <h2 id="h-new">새 쇼츠</h2>
+        <form id="new" class="form" method="post" action="/jobs">
+          <label for="topic">주제</label>
+          <input id="topic" name="topic" type="text" maxlength="200" required pattern=".*\S.*" title="공백만으로는 만들 수 없어요" autocomplete="off"
+                 placeholder="예: 직장인이 모르는 연말정산 꿀팁" aria-describedby="topic-count">
+          <span id="topic-count" class="counter" data-for="topic">0/200</span>
+          <label for="voice">목소리</label>
+          <select id="voice" name="voice">
+            {% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>만들기</span></button>
+          {% if not claude_ok %}<p class="hint">{{ icon('alert', 14) }}Claude 키가 없어 대본 단계에서 멈춰요</p>{% endif %}
+        </form>
+      </section>
+      <section class="card" aria-labelledby="h-env">
+        <h2 id="h-env">환경 점검</h2>
+        <ul class="checks">
+          {% for level, label, hint in checks %}
+          <li class="c-{{ level }}">{{ icon(CHECK_ICON[level]) }}<div><span>{{ label }}</span><small>{{ hint }}</small></div></li>
+          {% endfor %}
+        </ul>
+      </section>
+    </div>
+    <div class="col">
+      <section id="stats" class="tiles" aria-label="요약">
+        <div class="tile">
+          <span class="t-label">오늘 완성</span>
+          <span class="t-num">{{ stats.today }}<small> / {{ stats.goal }}</small></span>
+          <div class="bar" role="progressbar" aria-label="오늘 목표" aria-valuemin="0" aria-valuemax="{{ stats.goal }}" aria-valuenow="{{ [stats.today, stats.goal]|min }}" aria-valuetext="{{ stats.today }} / {{ stats.goal }}">
+            <span style="width: {{ [stats.today * 100 // stats.goal, 100]|min }}%"></span>
+          </div>
+        </div>
+        <div class="tile"><span class="t-label">전체</span><span class="t-num">{{ stats.total }}</span></div>
+        <div class="tile"><span class="t-label">실패</span><span class="t-num{{ ' t-bad' if stats.failed }}">{{ stats.failed }}</span></div>
+        <div class="tile"><span class="t-label">Claude 누적 비용</span><span class="t-num">${{ '%.2f'|format(stats.cost) }}</span></div>
+      </section>
+      <section class="card" aria-labelledby="h-rec">
+        <div class="card-head">
+          <h2 id="h-rec">{{ icon('sparkles', 16, 'h-icon') }}지금 만들 만한 주제</h2>
+          {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">근거 보기 · {{ rec.trend.created_at|hm }} 분석{{ icon('chevron', 14) }}</a>{% endif %}
+        </div>
+        {% if rec %}
+        <ol class="rec-list">
+          {% for i, p in rec.picks %}
+          <li class="rec">
+            <div class="rec-top">
+              <span class="rank" aria-label="{{ loop.index }}위">{{ loop.index }}</span>
+              <span class="rec-topic">{{ p.topic }}</span>
+              <span class="score" aria-label="총점 {{ p.total }}점">{{ p.total }}<small>/100</small></span>
+            </div>
+            <p class="rec-why">{{ p.why_now }}</p>
+            <form class="rec-form" method="post" action="/jobs">
+              <input type="hidden" name="trend" value="{{ rec.trend.id }}"><input type="hidden" name="pick" value="{{ i }}">
+              <label class="sr-only" for="rv-{{ i }}">목소리</label>
+              <select id="rv-{{ i }}" name="voice">{% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+              <button class="btn btn-secondary" type="submit" data-busy="만드는 중…" aria-label="{{ p.topic }} 만들기">{{ icon('loader', 16, 'spin when-busy') }}<span>만들기</span></button>
+            </form>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="empty">아직 추천이 없어요. <a href="/trends">주제 찾기</a>에서 지금 인기 있는 쇼츠를 분석하면 여기에 상위 3개가 떠요.</p>
+        {% endif %}
+      </section>
+      <section id="jobs" class="card" data-active="{{ 1 if active else 0 }}" data-list="stats jobs" aria-labelledby="h-jobs">
+        <div class="card-head">
+          <h2 id="h-jobs">작업 목록</h2>
+          {% if active %}<span class="live">갱신 중</span>{% endif %}
+        </div>
+        {% if jobs %}
+        <ul class="job-list">
+          {% for j in jobs %}
+          <li><a class="job-row" href="/jobs/{{ j.id }}">
+            <span class="jr-main">
+              <span class="jr-topic">{{ j.topic }}</span>
+              <span class="jr-meta">{{ j.created_at|hm }} · {{ VOICES.get(j.voice, j.voice) }}{% set c = job_cost(j) %}{% if c is not none %} · ${{ '%.3f'|format(c) }}{% endif %}</span>
+            </span>
+            <span class="dots" role="img" aria-label="{% for s in STEPS %}{{ LABELS[s] }} {{ STATE[j.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">
+              {%- for s in STEPS %}<span class="d d-{{ j.steps[s].status }}"></span>{% endfor -%}
+            </span>
+            <span class="badge b-{{ j.status }}">{{ STATUS[j.status] }}{% if j.status == 'done' and j.duration %} {{ j.duration|mmss }}{% endif %}</span>
+            {{ icon('chevron', 16, 'jr-go') }}
+          </a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty">아직 작업이 없어요. 새 쇼츠 칸에 주제를 넣어 보세요.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</main>
+{% endblock %}

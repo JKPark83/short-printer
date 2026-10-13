@@ -1,0 +1,79 @@
+{% extends "_base.html" %}
+{% block title %}주제 찾기 · shorts-printer{% endblock %}
+{% block main %}
+<main id="page" class="wrap wrap-dash">
+  <h1 class="sr-only">주제 찾기</h1>
+  <div class="dash-grid">
+    <div class="col">
+      <section class="card" aria-labelledby="h-new">
+        <h2 id="h-new">새 분석</h2>
+        <p class="lead">한국에서 요즘 조회수가 빨리 오르는 쇼츠 {{ trends.TOP_N }}개를 모아 Claude가 영상을 보고, 지금 만들 만한 주제를 골라 줘요.</p>
+        <form class="form" method="post" action="/trends">
+          <label for="keyword">키워드 <span class="opt">선택</span></label>
+          <input id="keyword" name="keyword" type="text" maxlength="50" autocomplete="off"
+                 placeholder="비우면 한국 전체 · 예: 자취 요리" aria-describedby="keyword-count keyword-help">
+          <span id="keyword-count" class="counter" data-for="keyword">0/50</span>
+          <small id="keyword-help" class="help">넣으면 그 낱말이 들어간 쇼츠만 찾아요.</small>
+          <label for="period">기간</label>
+          <select id="period" name="period">
+            {% for key, label in trends.PERIODS.items() %}<option value="{{ key }}"{% if key == trends.DEFAULT_PERIOD %} selected{% endif %}>최근 {{ label }}</option>{% endfor %}
+          </select>
+          <p class="cost">한 번에 YouTube 할당량 <strong>{{ QUOTA_PER_RUN }}유닛</strong>(하루 무료 {{ '{:,}'.format(QUOTA_DAY) }})
+            {%- if est is not none %} · Claude 약 <strong>${{ '%.2f'|format(est) }}</strong>{% endif %} · 몇 분 걸려요</p>
+          <button class="btn btn-primary" type="submit" data-busy="시작하는 중…"{% if not ready %} disabled{% endif %}>{{ icon('loader', 16, 'spin when-busy') }}<span>분석 시작</span></button>
+          {% if not claude_ok %}<p class="hint">{{ icon('alert', 14) }}Claude 키가 없어 분석 단계에서 멈춰요</p>{% endif %}
+        </form>
+        {% if not ready %}
+        <div class="banner banner-warn setup">{{ icon('alert', 18) }}
+          <div><strong>YouTube Data API 키가 필요해요</strong>
+            <ol class="steps-help">
+              <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud 콘솔</a>에서 프로젝트를 고르거나 만들어요</li>
+              <li>API 및 서비스 → 라이브러리에서 <strong>YouTube Data API v3</strong>를 사용 설정해요</li>
+              <li>사용자 인증 정보 → 사용자 인증 정보 만들기 → <strong>API 키</strong></li>
+              <li><code>.env</code>의 <code>YOUTUBE_API_KEY=</code> 뒤에 붙여 넣고 서버를 다시 켜요</li>
+            </ol>
+            <p class="muted">무료예요. 하루 {{ "{:,}".format(QUOTA_DAY) }}유닛이라 하루 {{ QUOTA_DAY // QUOTA_PER_RUN }}번쯤 돌릴 수 있어요.</p>
+          </div>
+        </div>
+        {% endif %}
+      </section>
+      <section class="card" aria-labelledby="h-how">
+        <h2 id="h-how">어떻게 고르나</h2>
+        <ol class="how">
+          <li><strong>수집</strong> YouTube에서 한국어 쇼츠를 조회수 순으로 모아 <em>시간당 조회수</em>가 높은 {{ trends.TOP_N }}개를 남겨요</li>
+          <li><strong>분석</strong> 영상을 받아 컷을 나누고 장면을 뽑아 Claude가 주제·포맷·영상 소스·훅을 봐요</li>
+          <li><strong>선정</strong> 화제성·제작 적합도·차별화·안전성으로 점수를 매겨 3~5개를 추천해요</li>
+        </ol>
+        <p class="muted small">마음에 드는 추천에서 [이 주제로 만들기]를 누르면 대본부터 렌더까지 바로 만들어요. 자동으로 만들지는 않아요.</p>
+      </section>
+    </div>
+    <div class="col">
+      <section id="trend-list" class="card" data-active="{{ 1 if active else 0 }}" data-list="trend-list" aria-labelledby="h-list">
+        <div class="card-head">
+          <h2 id="h-list">지난 분석</h2>
+          {% if active %}<span class="live">갱신 중</span>{% endif %}
+        </div>
+        {% if items %}
+        <ul class="job-list">
+          {% for t in items %}
+          <li><a class="job-row" href="/trends/{{ t.id }}">
+            <span class="jr-main">
+              <span class="jr-topic">{{ t.keyword or '한국 전체' }} · 최근 {{ trends.PERIODS.get(t.period, t.period) }}</span>
+              <span class="jr-meta">{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}{% if t.quota %} · {{ t.quota }}유닛{% endif %}</span>
+            </span>
+            <span class="dots" role="img" aria-label="{% for s in trends.STEPS %}{{ trends.LABELS[s] }} {{ STATE[t.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">
+              {%- for s in trends.STEPS %}<span class="d d-{{ t.steps[s].status }}"></span>{% endfor -%}
+            </span>
+            <span class="badge b-{{ t.status }}">{{ TSTATUS[t.status] }}</span>
+            {{ icon('chevron', 16, 'jr-go') }}
+          </a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty">아직 분석이 없어요. 왼쪽에서 [분석 시작]을 누르면 지금 뜨는 쇼츠를 모아 와요.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</main>
+{% endblock %}

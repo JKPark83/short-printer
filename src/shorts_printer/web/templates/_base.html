@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}shorts-printer{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/static/style.css?v={{ v }}">
+</head>
+<body>
+<a class="skip" href="#page">본문으로 건너뛰기</a>
+<header class="topbar">
+  <a class="brand" href="/">{{ icon('film', 18) }}shorts-printer</a>
+  {% set here = 'trends' if request.url.path.startswith('/trends') else 'home' %}
+  <nav class="nav" aria-label="주 메뉴">
+    <a href="/"{% if here == 'home' %} aria-current="page"{% endif %}>대시보드</a>
+    <a href="/trends"{% if here == 'trends' %} aria-current="page"{% endif %}>{{ icon('trending', 14) }}주제 찾기</a>
+  </nav>
+  <span class="stack">Claude · Pexels/Pixabay · edge-tts</span>
+</header>
+{% block main %}{% endblock %}
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/static/app.js?v={{ v }}" defer></script>
+</body>
+</html>

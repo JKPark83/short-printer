@@ -1,0 +1,29 @@
+[project]
+name = "shorts-printer"
+version = "0.1.0"
+description = "주제 하나로 세로 쇼츠를 뽑는 테스트 파이프라인(MoneyPrinter 참고, Claude API)"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic",
+    "edge-tts",
+    "fastapi",
+    "jinja2",
+    "pydantic",
+    "python-multipart>=0.0.32",
+    "uvicorn",
+    "yt-dlp>=2026.8.19",
+]
+
+[project.scripts]
+sp = "shorts_printer.cli:main"
+
+[dependency-groups]
+dev = ["httpx", "pytest"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+markers = ["live: 실제 외부 API를 부른다(키 필요)"]
+addopts = "-m 'not live'"

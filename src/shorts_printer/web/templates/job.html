@@ -1,0 +1,182 @@
+{% extends "_base.html" %}
+{% block title %}{{ job.topic }} · shorts-printer{% endblock %}
+{% block main %}
+{% set up = job.upload or {} %}
+{% set busy = job.status in ACTIVE or up.status in ACTIVE %}
+{% set files = '/files/' ~ job.id ~ '/' %}
+{% set bust = '?v=' ~ (job.finished_at or '') %}
+<main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-footage c-voice c-subs c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
+  <a class="back" href="/">{{ icon('arrow-left') }}대시보드</a>
+
+  <header id="head" class="job-head">
+    <div class="jh-text">
+      <h1>{{ job.topic }}</h1>
+      <p class="meta"><code>{{ job.id }}</code> · {{ VOICES.get(job.voice, job.voice) }} · {{ job.created_at|hm }}</p>
+      {% if job.source %}<p class="meta"><a class="src-link" href="/trends/{{ job.source.trend }}#p-{{ job.source.pick }}">{{ icon('sparkles', 14) }}추천 주제에서 만듦</a></p>{% endif %}
+      {% if job.brief %}<p class="brief"><span class="muted">참고 방향</span> {{ job.brief }}</p>{% endif %}
+    </div>
+    <div class="jh-actions">
+      <span class="badge b-{{ job.status }}">{{ STATUS[job.status] }}</span>
+      {% if job.status in ('failed', 'interrupted', 'draft') %}
+      <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
+      {% endif %}
+    </div>
+  </header>
+
+  <ol id="stepper" class="stepper" aria-label="제작 단계" tabindex="-1">
+    {% for s in STEPS %}{% set st = job.steps[s] %}
+    <li class="node n-{{ st.status }}"{% if st.status == 'running' %} aria-current="step"{% endif %}>
+      <span class="dot">{{ icon(NODE_ICON[st.status], 16, 'spin' if st.status == 'running' else '') }}</span>
+      <span class="n-label">{{ loop.index }} {{ LABELS[s] }}</span>
+      <span class="n-sub">{{ (st.sec ~ 's') if st.status == 'done' else STATE[st.status] }}</span>
+      <span class="n-engine">{{ st.engine or '' }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  <p id="say" class="sr-only" role="status" aria-live="polite"></p>
+
+  <div class="job-grid">
+    <div class="stages">
+      <div id="banners" class="banners">
+      {% if job.status == 'failed' %}
+      <div class="banner banner-bad" role="alert">{{ icon('alert', 18) }}
+        <div><strong>실패: {{ LABELS[job.error.step] }}</strong><p class="err">{{ job.error.message }}</p>
+          <p class="muted">[다시 시도]를 누르면 이 단계부터 이어서 해요.</p></div></div>
+      {% elif job.status == 'interrupted' %}
+      <div class="banner banner-warn">{{ icon('alert', 18) }}
+        <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+      {% endif %}
+      {% for n in job.notices %}
+      <div class="banner banner-info">{{ icon('info', 18) }}<p>{{ n }}</p></div>
+      {% endfor %}
+      </div>
+
+      <section id="c-script" class="card" aria-labelledby="h-script">
+        <div class="card-head">
+          <h2 id="h-script"><span class="num">1</span>대본</h2>
+          {% if job.usage %}<span class="mono muted">{{ job.usage.model }} · in {{ job.usage.input_tokens }} · out {{ job.usage.output_tokens }}{% if job.usage.cost_usd is not none %} · ${{ '%.4f'|format(job.usage.cost_usd) }}{% endif %}</span>{% endif %}
+        </div>
+        {% if script %}
+        {% set tagline %}{% for t in script.tags %}#{{ t|replace(' ', '') }}{{ ' ' if not loop.last }}{% endfor %}{% endset %}
+        <dl class="kv">
+          {% for label, value in [('제목', script.title), ('설명', script.description), ('태그', tagline)] %}
+          <dt>{{ label }}</dt>
+          <dd><span>{{ value }}</span><button class="btn-icon" type="button" data-copy="{{ value }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
+          {% endfor %}
+          <dt>문장</dt>
+          <dd><ol class="sentences">{% for s in script.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
+          <dt>검색어</dt>
+          <dd><span class="chips">{% for t in script.search_terms %}<span class="chip">{{ t }}</span>{% endfor %}</span></dd>
+        </dl>
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+
+      <section id="c-footage" class="card" aria-labelledby="h-footage">
+        <div class="card-head"><h2 id="h-footage"><span class="num">2</span>영상 소스</h2></div>
+        {% if clips %}
+        <div class="clips">
+          {% for c in clips %}
+          <figure>
+            <a href="{{ c.url }}" target="_blank" rel="noopener" aria-label="{{ c.source or 'Pexels' }}에서 {{ c.term }} 영상 보기 (새 창)">
+              <img src="{{ c.image }}" alt="{{ c.term }} 영상 장면" loading="lazy" width="120" height="213"></a>
+            <figcaption><span class="chip">{{ c.term }}</span> 촬영 <a href="{{ c.user_url }}" target="_blank" rel="noopener">{{ c.user }}</a> ({{ c.source or 'Pexels' }})</figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+        {% elif clips is not none %}
+        <div class="gradient-row"><span class="swatch" aria-hidden="true"></span><p class="muted">그라데이션 배경으로 만들어요. Pixabay나 Pexels 키를 넣으면 대본 검색어로 영상을 찾아 붙여요.</p></div>
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+
+      <section id="c-voice" class="card" aria-labelledby="h-voice">
+        <div class="card-head">
+          <h2 id="h-voice"><span class="num">3</span>음성</h2>
+          {% if job.steps.voice.status == 'done' %}<span class="mono muted">{{ job.steps.voice.engine }} · 문장 {{ script.sentences|length }}개</span>{% endif %}
+        </div>
+        {% if job.steps.voice.status == 'done' %}
+        <audio controls preload="none" src="{{ files }}voice.wav?v={{ job.steps.voice.sec }}"></audio>
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+
+      <section id="c-subs" class="card" aria-labelledby="h-subs">
+        <div class="card-head">
+          <h2 id="h-subs"><span class="num">4</span>자막</h2>
+          {% if cues %}<span class="mono muted">{{ cues|length }}줄</span>{% endif %}
+        </div>
+        {% if cues %}
+        <ol class="cues" tabindex="0" aria-label="자막 목록">
+          {% for c in cues %}<li><time>{{ c.start|cue_ts }}</time><span>{{ c.text }}</span></li>{% endfor %}
+        </ol>
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+
+      <section id="c-thumb" class="card" aria-labelledby="h-thumb">
+        <div class="card-head">
+          <h2 id="h-thumb"><span class="num">5</span>썸네일</h2>
+          {% set tu = job.thumb_usage %}
+          {% if tu %}<span class="mono muted">{{ tu.model }} · in {{ tu.input_tokens }} · out {{ tu.output_tokens }}{% if tu.cost_usd is not none %} · ${{ '%.4f'|format(tu.cost_usd) }}{% endif %}</span>{% endif %}
+        </div>
+        {% if job.steps.thumbnail.status == 'done' and has_thumb %}
+        <div class="thumb">
+          <a href="{{ files }}thumbnail.jpg?v={{ thumb.texts|length if thumb else 0 }}" target="_blank" rel="noopener" aria-label="썸네일 크게 보기 (새 창)">
+            <img src="{{ files }}thumbnail.jpg?v={{ thumb.texts|length if thumb else 0 }}" alt="썸네일: {{ thumb.lines|join(' ') if thumb else script.title }}" width="135" height="240"></a>
+          <dl class="kv">
+            {% if thumb %}
+            <dt>문구</dt><dd><span>{{ thumb.lines|join(' / ') }}{% if thumb.accent %} <span class="muted">· 강조 {{ thumb.accent }}</span>{% endif %}</span></dd>
+            <dt>사진</dt><dd><span>{% if thumb.photo %}<a href="{{ thumb.photo.url }}" target="_blank" rel="noopener">Pixabay</a> · 촬영 <a href="{{ thumb.photo.user_url }}" target="_blank" rel="noopener">{{ thumb.photo.user }}</a> · <span class="chip">{{ thumb.photo.query }}</span>{% else %}{{ thumb.background }} 배경(맞는 사진 없음){% endif %}</span></dd>
+            {% if thumb.reason %}<dt>이유</dt><dd><span>{{ thumb.reason }}</span></dd>{% endif %}
+            {% else %}
+            <dt>문구</dt><dd><span class="muted">예전 방식(제목 + 영상 장면)으로 만든 썸네일이에요</span></dd>
+            {% endif %}
+          </dl>
+        </div>
+        <p class="muted thumb-note">영상 첫 0.5초에도 들어가요. 규칙은 .claude/skills/shorts-thumbnail/SKILL.md를 따라요.</p>
+        {% if job.status == 'done' and up.status not in ACTIVE and up.status != 'done' %}
+        <button id="rethumb" class="btn btn-secondary" type="button" data-rethumb>{{ icon('rotate') }}다시 만들기</button>
+        {% endif %}
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+    </div>
+
+    <aside class="side">
+      <section id="final" class="card" aria-labelledby="h-final">
+        <div class="card-head"><h2 id="h-final"><span class="num">6</span>완성 영상</h2></div>
+        {% if job.steps.render.status == 'done' %}
+        <video class="video" controls preload="none" playsinline poster="{{ files }}poster.jpg{{ bust }}" src="{{ files }}final.mp4{{ bust }}"></video>
+        <div class="final-meta">
+          <span class="mono muted">{{ job.duration|mmss }} · 1080×1920</span>
+          <a class="btn btn-secondary" href="{{ files }}final.mp4{{ bust }}" download="{{ job.id }}.mp4">{{ icon('download') }}내려받기</a>
+          {% if has_thumb %}<a class="btn btn-secondary" href="{{ files }}thumbnail.jpg{{ bust }}" target="_blank" rel="noopener" aria-label="썸네일 보기 (새 창)">{{ icon('external') }}썸네일</a>{% endif %}
+        </div>
+        <div id="upload-box" class="upload" tabindex="-1">
+          {% if up.status in ACTIVE %}
+          <p class="muted">{{ icon('loader', 16, 'spin') }} YouTube에 올리는 중…</p>
+          {% elif up.status == 'done' %}
+          <p class="links">
+            <a href="https://studio.youtube.com/video/{{ up.video_id }}/edit" target="_blank" rel="noopener" aria-label="YouTube 스튜디오에서 열기 (새 창)">{{ icon('external') }}YouTube 스튜디오에서 열기</a>
+            <a class="mono" href="https://youtu.be/{{ up.video_id }}" target="_blank" rel="noopener" aria-label="youtu.be/{{ up.video_id }} (새 창)">{{ icon('external') }}youtu.be/{{ up.video_id }}</a>
+          </p>
+          <p class="muted">비공개로 올라갔어요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
+          {% if up.note %}<p class="err">{{ up.note }}</p>{% endif %}
+          {% else %}
+          {% if up.status == 'failed' %}<p class="err">{{ up.error }}</p>{% endif %}
+          {% if youtube.ready() %}
+          <button id="upload" class="btn btn-primary" type="button" data-upload>{{ icon('rotate' if up.status == 'failed' else 'upload') }}{{ '다시 올리기' if up.status == 'failed' else '승인하고 YouTube에 올리기' }}</button>
+          <p class="muted">비공개로 올라가요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
+          {% else %}
+          <p class="muted">YouTube에 올리려면 .env에 YOUTUBE_CLIENT_SECRET을 넣고 터미널에서 uv run sp youtube-login을 하세요.</p>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% else %}
+        <div class="video video-empty">{{ icon('play', 28) }}<p>렌더가 끝나면 여기에 나와요</p></div>
+        {% endif %}
+      </section>
+      <section class="card" aria-labelledby="h-log">
+        <div class="card-head"><h2 id="h-log">실행 로그</h2><span id="fresh" class="mono muted"></span></div>
+        <pre id="log" class="log" tabindex="0" aria-label="실행 로그">{{ log|join('\n') }}</pre>
+      </section>
+    </aside>
+  </div>
+</main>
+{% endblock %}
