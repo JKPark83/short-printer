@@ -1,7 +1,8 @@
 """4단계 자막: 문장 시각을 한 줄 덩어리로 나눠 ASS로 쓴다. 끊는 자리는 언어별 Splitter가 고른다.
 낱말 시각(words)이 있으면 덩어리 첫 글자의 시각에 넘기고, 없으면 글자 수에 비례해 나눈다.
-자막은 영상 칸(render.BOX_Y~+BOX_H, 560~1440) 아래 검은 띠 맨 위에 윗줄을 맞춘다(위 정렬 8, MarginV 1465).
-띠 아래쪽은 쇼츠·틱톡의 제목·채널 이름이 덮는다."""
+자막 윗줄 자리(위 정렬 8, MarginV)는 화면 배치(render.LAYOUTS)가 정해 넘긴다.
+band: 영상 칸(560~1440) 아래 검은 띠 맨 위(1465). full: 전체 화면 위, 아래 UI 250px과 제목·채널 이름 칸 위(1385).
+그 아래쪽은 쇼츠·틱톡의 제목·채널 이름이 덮는다."""
 from bisect import bisect_right
 from itertools import accumulate
 from pathlib import Path
@@ -10,14 +11,14 @@ from ..infra.store import atomic_write_text
 from ..ports.splitter import Splitter
 
 
-def header(font: str) -> str:
+def header(font: str, margin: int = 1465) -> str:   # 기본은 band 자리
     return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,1465,1
+Style: Cap,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,{margin},1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
@@ -73,6 +74,6 @@ def escape(text: str) -> str:
     return text.replace("\\", "\\⁠").replace("{", "｛").replace("}", "｝")
 
 
-def write_ass(path: Path, cues: list[dict], font: str) -> None:
+def write_ass(path: Path, cues: list[dict], font: str, margin: int = 1465) -> None:
     lines = [f"Dialogue: 0,{ts(c['start'])},{ts(c['end'])},Cap,,0,0,0,,{escape(c['text'])}" for c in cues]
-    atomic_write_text(path, header(font) + "\n".join(lines) + "\n")
+    atomic_write_text(path, header(font, margin) + "\n".join(lines) + "\n")

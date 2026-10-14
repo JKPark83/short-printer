@@ -13,7 +13,7 @@
 | 공급자 고르기 | 채널마다 `channel.toml`에서. `SP_VIDEO`·`SP_CHANNEL`은 없앤다 |
 | 구현 범위 | 지금 쓰는 것만 옮긴다: Claude, ElevenLabs, Flow·Flow 자동, YouTube API + 스튜디오 대체. 가짜·새 공급자는 만들지 않는다 |
 | 단계 | 6단계 고정. 구현과 스타일만 채널마다 다르다 |
-| 화면 배치 | 공통(1080×1920, 위아래 검은 띠). 글꼴·강조색·배경색만 채널 값 |
+| 화면 배치 | 1080×1920. `style.layout`으로 `band`(기본, 위아래 검은 띠 + 가운데 영상)·`full`(9:16 전체 + 텔롭, 위아래 약 250px UI를 피해 제목·자막) 중 고른다. 값은 `core/render.py` `LAYOUTS` 한곳. 글꼴·강조색·배경색은 채널 값 |
 | 언어 | ko·en·ja 정식 지원, 그 밖의 언어는 띄어쓰기 기본 규칙. ko=Kiwi, en=띄어쓰기+폭, ja=문장부호·조사 위치(새 의존성 없음). 글꼴은 언어별 기본값, 채널에서 덮어쓰기 |
 | 대본 | 공통 뼈대(코드) + 채널 `script.md`·`video_style.md`. 장면 수·문장 길이(글자/단어)·영상 스타일 머리말은 `channel.toml` |
 | 썸네일 | 채널 `thumbnail.md`(지금 `shorts-thumbnail` 스킬 본문은 첫 채널로 옮긴다). 줄 길이·강조색은 `channel.toml` |

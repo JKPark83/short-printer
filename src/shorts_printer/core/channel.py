@@ -50,6 +50,7 @@ class StyleCfg(BaseModel):
     accent: str = Field("#FFE500", pattern=HEX)
     background: tuple[str, str] = ("#0f172a", "#14532d")
     subtitle_limit: int = Field(0, ge=0)   # 0이면 언어 기본(Splitter.limit)
+    layout: Literal["band", "full"] = "band"   # band: 위아래 검은 띠 + 가운데 영상, full: 9:16 전체 + 텔롭
 
 
 class ThumbCfg(BaseModel):
@@ -61,6 +62,7 @@ class PublishCfg(BaseModel):
     provider: str = "youtube"
     category: str = "22"
     channel_id: str = ""   # UC… 스튜디오 화면으로 올릴 때 이 채널로 간다
+    footer: str = ""   # 설명 맨 끝에 붙는 문구(AI 표시 등). LLM이 빼먹지 않게 코드로 붙인다
 
 
 class TrendsCfg(BaseModel):

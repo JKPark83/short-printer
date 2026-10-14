@@ -265,6 +265,16 @@ def test_publish_uses_channel_publisher():
     assert up["status"] == "done" and "forbidden" in up["note"] and "가짜올림에서" in up["note"]
 
 
+def test_publish_appends_channel_footer_to_description():
+    job = scene_job(*STEPS)
+    s = {"title": "제목", "description": "설명\n", "tags": [], "sentences": ["x"]}
+    atomic_write_json(job.dir / "script.json", s)
+    ch = channel.load(CH)
+    sv = services(channel=ch.model_copy(update={"publish": ch.publish.model_copy(update={"footer": "※AI 이미지"})}))
+    pipeline.publish(job, sv)
+    assert sv.publisher.sent[0][1]["description"] == "설명\n\n※AI 이미지"
+
+
 def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
     from unittest.mock import MagicMock
 

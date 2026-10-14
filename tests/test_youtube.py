@@ -127,8 +127,8 @@ def test_login_checks_state_and_saves_token_privately(yt, monkeypatch):
 
 
 def sv(publisher):
-    """publish가 쓰는 Services 대신. 업로드 공급자만 있으면 된다."""
-    return SimpleNamespace(publisher=publisher)
+    """publish가 쓰는 Services 대신. 업로드 공급자와 설명 꼬리말(publish.footer)만 있으면 된다."""
+    return SimpleNamespace(publisher=publisher, channel=SimpleNamespace(publish=SimpleNamespace(footer="")))
 
 
 @pytest.fixture

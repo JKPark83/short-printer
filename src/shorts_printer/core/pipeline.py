@@ -121,7 +121,7 @@ def step_render(job: Job, sv: Services) -> str:
     t = read_json(job.dir / "thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
     title = (t["lines"], t["accent"]) if t else ([read_json(job.dir / "script.json")["title"]], "")
     if cues := read_json(job.dir / "cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
-        subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font)
+        subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub)
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], sv.channel, sv.splitter, title,
                                       [t["start"] for t in timing]))
     return "ffmpeg"
@@ -172,8 +172,11 @@ def publish(job: Job, sv: Services) -> None:
     job.update(upload=upload_state("running"))
     job.log(f"{p.label} 업로드 시작")
     s = read_json(job.dir / "script.json")
+    meta = {k: s[k] for k in ("title", "description", "tags")}
+    if foot := sv.channel.publish.footer:   # 스튜디오 대체 업로드도 같은 meta를 쓴다
+        meta["description"] = f"{meta['description'].rstrip()}\n\n{foot}"
     try:
-        video_id = p.upload(job.dir / "final.mp4", {k: s[k] for k in ("title", "description", "tags")}, job.log)
+        video_id = p.upload(job.dir / "final.mp4", meta, job.log)
     except BaseException as e:   # Ctrl+C도 실패로 남긴다
         msg = redact(str(e)) or type(e).__name__
         job.update(upload=upload_state("failed", error=msg, at=now()))
