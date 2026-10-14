@@ -5,27 +5,24 @@
   <div class="dash-grid">
     <div class="col">
       <section class="card" aria-labelledby="h-new">
-        <h2 id="h-new">새 쇼츠</h2>
+        <h2 id="h-new">새 쇼츠{% if ch %} · {{ ch.name }}{% endif %}</h2>
+        {% if ch %}
         <form id="new" class="form" method="post" action="/jobs">
+          <input type="hidden" name="channel" value="{{ ch.id }}">
           <label for="topic">주제</label>
           <input id="topic" name="topic" type="text" maxlength="200" required pattern=".*\S.*" title="공백만으로는 만들 수 없어요" autocomplete="off"
                  placeholder="예: 직장인이 모르는 연말정산 꿀팁" aria-describedby="topic-count">
           <span id="topic-count" class="counter" data-for="topic">0/200</span>
           <label for="voice">목소리</label>
           <select id="voice" name="voice">
-            {% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+            {% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == ch.tts.default }}>{{ label }}</option>{% endfor %}
           </select>
           <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>만들기</span></button>
-          {% if not claude_ok %}<p class="hint">{{ icon('alert', 14) }}Claude 키가 없어 대본 단계에서 멈춰요</p>{% endif %}
+          {% if not llm_ok %}<p class="hint">{{ icon('alert', 14) }}{{ checks[0][1] }}가 없어 대본 단계에서 멈춰요</p>{% endif %}
         </form>
-      </section>
-      <section class="card" aria-labelledby="h-env">
-        <h2 id="h-env">환경 점검</h2>
-        <ul class="checks">
-          {% for level, label, hint in checks %}
-          <li class="c-{{ level }}">{{ icon(CHECK_ICON[level]) }}<div><span>{{ label }}</span><small>{{ hint }}</small></div></li>
-          {% endfor %}
-        </ul>
+        {% else %}
+        <p class="empty">새 쇼츠는 채널을 하나 고른 뒤 만들 수 있어요. 위 채널 목록에서 골라 주세요.</p>
+        {% endif %}
       </section>
     </div>
     <div class="col">
@@ -39,11 +36,12 @@
         </div>
         <div class="tile"><span class="t-label">전체</span><span class="t-num">{{ stats.total }}</span></div>
         <div class="tile"><span class="t-label">실패</span><span class="t-num{{ ' t-bad' if stats.failed }}">{{ stats.failed }}</span></div>
-        <div class="tile"><span class="t-label">Claude 누적 비용</span><span class="t-num">${{ '%.2f'|format(stats.cost) }}</span></div>
+        <div class="tile"><span class="t-label">AI 누적 비용</span><span class="t-num">${{ '%.2f'|format(stats.cost) }}</span></div>
       </section>
       <section class="card" aria-labelledby="h-rec">
         <div class="card-head">
           <h2 id="h-rec">{{ icon('sparkles', 16, 'h-icon') }}지금 만들 만한 주제</h2>
+          {% if rec and not ch %}<span class="badge b-ch">{{ channels[rec.trend.channel].name }}</span>{% endif %}
           {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">근거 보기 · {{ rec.trend.created_at|hm }} 분석{{ icon('chevron', 14) }}</a>{% endif %}
         </div>
         {% if rec %}
@@ -56,10 +54,11 @@
               <span class="score" aria-label="총점 {{ p.total }}점">{{ p.total }}<small>/100</small></span>
             </div>
             <p class="rec-why">{{ p.why_now }}</p>
+            {% set rc = channels[rec.trend.channel] %}
             <form class="rec-form" method="post" action="/jobs">
               <input type="hidden" name="trend" value="{{ rec.trend.id }}"><input type="hidden" name="pick" value="{{ i }}">
               <label class="sr-only" for="rv-{{ i }}">목소리</label>
-              <select id="rv-{{ i }}" name="voice">{% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+              <select id="rv-{{ i }}" name="voice">{% for key, label in rc.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == rc.tts.default }}>{{ label }}</option>{% endfor %}</select>
               <button class="btn btn-secondary" type="submit" data-busy="만드는 중…" aria-label="{{ p.topic }} 만들기">{{ icon('loader', 16, 'spin when-busy') }}<span>만들기</span></button>
             </form>
           </li>
@@ -77,17 +76,27 @@
         {% if jobs %}
         <ul class="job-list">
           {% for j in jobs %}
-          <li><a class="job-row" href="/jobs/{{ j.id }}">
+          {% set ups = (j.upload or {}).status %}
+          {% set jc = channels.get(j.channel) %}
+          <li><a class="job-row{{ ' is-up' if ups == 'done' }}" href="/jobs/{{ j.id }}">
             <span class="jr-main">
               <span class="jr-topic">{{ j.topic }}</span>
-              <span class="jr-meta">{{ j.created_at|hm }} · {{ VOICES.get(j.voice, j.voice) }}{% set c = job_cost(j) %}{% if c is not none %} · ${{ '%.3f'|format(c) }}{% endif %}</span>
+              <span class="jr-meta">{% if not ch and jc %}<span class="badge b-ch">{{ jc.name }}</span> {% endif %}{{ j.created_at|hm }} · {{ jc.tts.voices.get(j.voice, j.voice) if jc else j.voice }}{% set c = job_cost(j) %}{% if c is not none %} · ${{ '%.3f'|format(c) }}{% endif %}</span>
             </span>
             <span class="dots" role="img" aria-label="{% for s in STEPS %}{{ LABELS[s] }} {{ STATE[j.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">
               {%- for s in STEPS %}<span class="d d-{{ j.steps[s].status }}"></span>{% endfor -%}
             </span>
-            <span class="badge b-{{ j.status }}">{{ STATUS[j.status] }}{% if j.status == 'done' and j.duration %} {{ j.duration|mmss }}{% endif %}</span>
+            {# 완성된 것은 YouTube에 올렸는지가 먼저 보이게 #}
+            {% if j.status == 'done' and ups == 'done' %}<span class="badge b-up">{{ icon('check', 14) }}업로드됨{% if j.duration %} {{ j.duration|mmss }}{% endif %}</span>
+            {% elif j.status == 'done' and ups in ACTIVE %}<span class="badge b-running">{{ icon('loader', 14, 'spin') }}올리는 중</span>
+            {% elif j.status == 'done' %}<span class="badge b-notup">{{ '업로드 실패' if ups == 'failed' else '고친 뒤 미업로드' if j.uploaded_before else '미업로드' }}{% if j.duration %} {{ j.duration|mmss }}{% endif %}</span>
+            {% else %}<span class="badge b-{{ j.status }}">{{ STATUS[j.status] }}</span>{% endif %}
             {{ icon('chevron', 16, 'jr-go') }}
-          </a></li>
+          </a>
+          {% if j.status not in ACTIVE and (j.upload or {}).status not in ACTIVE %}
+          <button class="btn-icon jr-del" type="button" data-delete="{{ j.id }}" data-topic="{{ j.topic }}"
+                  aria-label="{{ j.topic }} 지우기" title="지우기">{{ icon('trash') }}</button>
+          {% endif %}</li>
           {% endfor %}
         </ul>
         {% else %}

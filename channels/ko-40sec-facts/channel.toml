@@ -1,0 +1,47 @@
+# 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
+name = "40초 상식"
+description = "생활에 바로 써먹는 상식을 40초 안에 알려 드려요."
+concept = "사람들에게 실제로 도움이 되는 상식"
+language = "ko"
+daily_goal = 3
+sensitive_gate = true
+llm = "claude"
+
+[script]
+scenes = 7
+sentence = [48, 55]
+unit = "chars"
+duration = "40~50초"
+
+[tts]
+provider = "elevenlabs"
+default = "LKOcTG4J4tYTPR9DnLeM"
+sample = "안녕하세요. 오늘 알려 드릴 생활 꿀팁, 끝까지 보면 분명 도움이 될 거예요."
+
+[tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
+LKOcTG4J4tYTPR9DnLeM = "미스터킴"
+QPFsEL6IBxlT15xfiD6C = "이하나"
+iWLjl1zCuqXRkW6494ve = "지수"
+elevenlabs = "미스터최"
+
+[video]
+provider = "flow-auto"
+style = "Stylized 3D animated explainer, clean CGI visualization like an architecture documentary, smooth matte materials, soft even daylight, warm muted colors, same art style in every shot."
+
+[style]
+accent = "#FFE500"
+background = ["#0f172a", "#14532d"]
+
+[thumbnail]
+max_line = 9
+max_total = 16
+
+[publish]
+provider = "youtube"
+category = "22"
+
+[trends]
+region = "KR"
+keywords = []
+production = "Claude가 쓴 한국어 대본을 TTS가 읽고 번인 자막이 뜬다. 40~50초. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(건축·과학 해설 채널 느낌). 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다."
+weights = { trend = 35, fit = 35, fresh = 15, safe = 15 }

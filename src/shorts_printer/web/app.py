@@ -1,8 +1,10 @@
 """브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 여섯 단계 진행 보기(장면 클립 올리기) → 완성 영상."""
 import asyncio
+import logging
 import os
 import re
 import secrets
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -10,17 +12,24 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from .. import config, ffmpeg, pipeline, script, trends, video, voice, worker, youtube
-from ..jobs import LABELS, STEPS, Job, read_json, upload_state
-from ..trends import Trend
+from .. import config, registry
+from ..core import channel, pipeline, scenes, script, trends, voice
+from ..core.channel import Channel
+from ..core.pipeline import LABELS, STEPS, Job
+from ..core.trends import Trend
+from ..infra import ffmpeg
+from ..infra.store import read_json, upload_state
+
+log = logging.getLogger(__name__)
 
 HERE = Path(__file__).parent
-DAILY_GOAL = 3   # 하루 목표 편수
+ALL = "all"   # 채널 고르기의 "전체 채널"
+COOKIE = "sp_channel"   # 고른 채널을 기억한다
 ACTIVE = ("queued", "running")
 MAX_CLIP = 200 * 1024 * 1024   # 클립 한 개 상한(app.js에도 같은 값)
 MAX_NOTE = 300   # 썸네일·대본 수정 요청 글자 수 상한(job.html maxlength와 같은 값)
@@ -37,20 +46,40 @@ ICONS = {
     "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     "loader": '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
     "circle": '<circle cx="12" cy="12" r="9"/>',
-    "copy": '<rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "copy": (
+        '<rect width="14" height="14" x="8" y="8" rx="2"/>'
+        '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>'),
     "rotate": '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     "upload": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
     "download": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
     "arrow-left": '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
     "play": '<path d="M6 3 20 12 6 21Z"/>',
-    "alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+    "alert": (
+        '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/>'
+        '<path d="M12 9v4"/>'
+        '<path d="M12 17h.01"/>'),
     "info": '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
-    "external": '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+    "external": (
+        '<path d="M15 3h6v6"/>'
+        '<path d="M10 14 21 3"/>'
+        '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
     "chevron": '<path d="m9 18 6-6-6-6"/>',
-    "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
+    "sparkles": (
+        '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5'
+        'l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964'
+        'L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>'
+        '<path d="M20 3v4"/>'
+        '<path d="M22 5h-4"/>'),
     "trending": '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
-    "film": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/>',
+    "trash": (
+        '<path d="M3 6h18"/>'
+        '<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>'
+        '<path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>'),
+    "film": (
+        '<rect width="18" height="18" x="3" y="3" rx="2"/>'
+        '<path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/>'),
 }
+q = registry.queue()   # 작업 큐 하나(registry가 cache)
 NODE_ICON = {"pending": "circle", "running": "loader", "done": "check", "failed": "x"}
 CHECK_ICON = {"ok": "check", "warn": "alert", "bad": "x"}
 
@@ -139,7 +168,8 @@ def job_cost(j: dict) -> float | None:
 
 def recover() -> None:
     """앱이 켜질 때: 끊긴 작업·분석을 interrupted로, 반쯤 쓰인 *.tmp 파일을 지운다."""
-    # ponytail: 다른 터미널에서 `sp run`·`sp trends`가 돌고 있어도 중단으로 표시한다. 둘을 같이 쓰려면 상태 json에 pid를 남겨 살아 있는지 볼 것
+    # ponytail: 다른 터미널에서 `sp run`·`sp trends`가 돌고 있어도 중단으로 표시한다.
+    # 둘을 같이 쓰려면 상태 json에 pid를 남겨 살아 있는지 볼 것
     for root in (config.JOBS_DIR, config.TRENDS_DIR):
         root.mkdir(parents=True, exist_ok=True)
     for t in Trend.all():
@@ -159,7 +189,7 @@ def recover() -> None:
 @asynccontextmanager
 async def lifespan(_app):
     recover()
-    worker.start()
+    q.start()
     yield
 
 
@@ -177,16 +207,27 @@ async def same_origin_post(request: Request, call_next):
         return PlainTextResponse("다른 사이트에서 보낸 요청은 받지 않아요", status_code=403)
     return await call_next(request)
 
+
+@app.middleware("http")
+async def remember_channel(request: Request, call_next):
+    """?channel=<id|all>로 고른 채널을 쿠키에 남긴다. 모르는 채널이면 404."""
+    cid = request.query_params.get("channel")
+    if cid is not None and cid != ALL and cid not in channel.ids():
+        return PlainTextResponse("채널이 없어요", status_code=404)
+    response = await call_next(request)
+    if cid is not None:
+        response.set_cookie(COOKIE, cid, max_age=365 * 86400, samesite="lax")
+    return response
+
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/files", StaticFiles(directory=config.JOBS_DIR, check_dir=False), name="files")
 app.mount("/trend-files", StaticFiles(directory=config.TRENDS_DIR, check_dir=False), name="trend-files")
 templates = Jinja2Templates(directory=HERE / "templates")
-VOICES = voice.choices()   # 켤 때 한 번. 쓸 수 있는 공급자의 목소리만
 templates.env.globals |= {
     "v": int(datetime.now().timestamp()),   # 서버를 켠 시각으로 정적 파일 캐시를 깬다
     "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "LABELS": LABELS, "STATUS": STATUS, "STATE": STATE,
-    "ACTIVE": ACTIVE, "youtube": youtube, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS,
-    "QUOTA_PER_RUN": QUOTA_PER_RUN, "QUOTA_DAY": QUOTA_DAY, "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON, "VOICES": VOICES,
+    "ACTIVE": ACTIVE, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS, "ALL": ALL, "LANGS": channel.LANGS,
+    "QUOTA_PER_RUN": QUOTA_PER_RUN, "QUOTA_DAY": QUOTA_DAY, "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON,
 }
 templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "kn": kn, "ago": ago}
 
@@ -201,6 +242,41 @@ def _load(cls, rec_id: str):
         raise HTTPException(404, f"{cls.WHAT}이 없어요") from None
 
 
+def _sel(request: Request) -> str:
+    """고른 채널 id 또는 ALL. ?channel → 쿠키 → 첫 채널."""
+    ids = channel.ids()
+    cid = request.query_params.get("channel") or request.cookies.get(COOKIE)
+    return cid if cid == ALL or cid in ids else ids[0]
+
+
+def _channels() -> dict[str, Channel]:
+    """설정이 틀린 채널은 빼고 로그에 남긴다. 한 채널 때문에 모든 화면이 500이 되지 않게."""
+    out = {}
+    for cid in channel.ids():
+        try:
+            out[cid] = channel.load(cid)
+        except (KeyError, ValueError) as e:   # pydantic·toml 오류도 ValueError
+            log.warning("채널 %s 설정 오류: %s", cid, e)
+    return out
+
+
+def _channel(cid: str | None, code: int = 404) -> Channel:
+    """채널 하나. 없거나 ALL이면 code로 거절한다."""
+    try:
+        return channel.load(cid or "")
+    except KeyError:
+        raise HTTPException(code, "채널을 먼저 골라 주세요" if cid in (None, "", ALL) else "채널이 없어요") from None
+    except ValueError as e:   # channel.toml 값이 틀렸다(pydantic·toml)
+        raise HTTPException(code, f"채널 설정이 틀려요: {e}") from None
+
+
+def _page(request: Request, name: str, ctx: dict):
+    """상단바(채널 고르기·환경 점검)에 필요한 값을 더해 그린다."""
+    sel = _sel(request)
+    top = {"channels": _channels(), "sel": sel, "checks": _checks(sel)}
+    return templates.TemplateResponse(request, name, top | ctx)
+
+
 def _picks(trend: Trend) -> list[dict]:
     return (read_json(trend.dir / "picks.json") or {}).get("picks", [])
 
@@ -210,50 +286,53 @@ def _tail(job: Job | Trend, n: int = 200) -> list[str]:
     return p.read_text(encoding="utf-8").splitlines()[-n:] if p.exists() else []
 
 
-def _stats(jobs: list[dict]) -> dict:
+def _stats(jobs: list[dict], goal: int) -> dict:
     today = datetime.now().astimezone().date().isoformat()
     return {
         "today": sum(j["status"] == "done" and (j["finished_at"] or "")[:10] == today for j in jobs),
-        "goal": DAILY_GOAL,
+        "goal": goal,
         "total": len(jobs),
         "failed": sum(j["status"] == "failed" for j in jobs),
         "cost": sum(job_cost(j) or 0 for j in jobs),
     }
 
 
-def _checks() -> list[tuple[str, str, str]]:
-    """(ok|warn|bad, 이름, 한 줄 설명). 값은 보여 주지 않고 있는지만 본다."""
-    claude = config.secret("ANTHROPIC_API_KEY") or config.secret("ANTHROPIC_AUTH_TOKEN")
+def _checks(cid: str) -> list[tuple[str, str, str]]:
+    """고른 채널(전체면 첫 채널)의 (ok|warn|bad, 이름, 한 줄 설명). 값은 보여 주지 않고 있는지만 본다."""
+    try:
+        sv = registry.services(channel.ids()[0] if cid == ALL else cid)
+    except (KeyError, ValueError, RuntimeError) as e:
+        return [("bad", "채널 설정", str(e))]
     ff = Path(config.FFMPEG).exists()
     checks = [
-        ("ok" if claude else "bad", "Claude API 키",
-         config.CLAUDE_MODEL if claude else ".env에 ANTHROPIC_API_KEY를 넣어 주세요"),
+        ("ok" if sv.llm.ready() else "bad", f"{sv.llm.label} API 키", sv.llm.hint),
         ("ok" if ff else "bad", "ffmpeg-full",
          config.FFMPEG if ff else "brew install ffmpeg-full 또는 .env에 SP_FFMPEG"),
     ]
-    v = video.default()
-    checks += [("ok" if p.ready() else "warn", f"영상 · {p.label}" + (" (기본)" if k == v else ""), p.hint)
-               for k, p in video.VIDEO.items()]
-    checks += [("ok" if p.ready() else "warn", f"음성 · {p.label}", p.hint) for p in voice.TTS.values()]
+    mine = sv.channel.video.provider
+    checks += [("ok" if p.ready() else "warn", f"영상 · {p.label}" + (" (이 채널)" if k == mine else ""), p.hint)
+               for k, p in registry.VIDEOS.items()]
+    pub = sv.publisher
     return checks + [
-        ("ok", "YouTube 업로드", "비공개로 올려요") if youtube.ready()
-        else ("warn", "YouTube 업로드", "선택 · .env에 YOUTUBE_CLIENT_SECRET, 터미널에서 uv run sp youtube-login"),
+        ("ok" if sv.tts.ready() else "bad", f"음성 · {sv.tts.label}", sv.tts.hint),
+        ("ok" if pub.ready() else "warn", f"{pub.label} 업로드", pub.hint),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
         else ("warn", "YouTube Data API 키", "선택 · 주제 찾기용 · .env에 YOUTUBE_API_KEY"),
     ]
 
 
-def _latest_picks() -> dict | None:
-    """대시보드에 띄울 최신 완료 분석의 추천 상위 3개."""
+def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
+    """대시보드에 띄울, 고른 채널의 최신 완료 분석 추천 상위 3개. 지웠거나 설정이 틀린 채널 것은 뺀다."""
     for t in reversed(Trend.all()):
-        if t.data["status"] == "done" and (picks := _picks(t)):
+        tc = t.data.get("channel")
+        if cid in (ALL, tc) and tc in chs and t.data["status"] == "done" and (picks := _picks(t)):
             return {"trend": t.data, "picks": list(enumerate(picks))[:3]}
     return None
 
 
 def _can_upload(data: dict) -> bool:
-    """클립을 올리거나 바꿀 수 있나: 돌고 있지 않고, 아직 유튜브에 올리지 않았을 때."""
-    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ("queued", "running", "done")
+    """클립을 올리거나 바꿀 수 있나: 만들거나 YouTube에 올리는 중이 아닐 때(올린 뒤에 바꾸면 새로 올린다)."""
+    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ACTIVE
 
 
 def _scenes(job: Job) -> list[dict]:
@@ -264,7 +343,7 @@ def _scenes(job: Job) -> list[dict]:
     clips = {c["file"]: c for c in read_json(job.dir / "clips.json", [])}
     if job.data["steps"]["footage"]["status"] == "done" and len(clips) != len(s["sentences"]):
         return []
-    out = video.scenes(s, read_json(job.dir / "timing.json"))
+    out = scenes.scenes(s, read_json(job.dir / "timing.json"))
     for x in out:
         p = job.dir / "clips" / x["file"]
         x["v"] = p.stat().st_mtime_ns if p.exists() else None   # 미리보기 캐시 깨기(같은 초에 바꿔도)
@@ -274,40 +353,49 @@ def _scenes(job: Job) -> list[dict]:
 
 @app.get("/")
 def index(request: Request):
-    jobs = [j.data for j in reversed(Job.all())]
-    checks = _checks()
-    return templates.TemplateResponse(request, "index.html", {
-        "jobs": jobs, "stats": _stats(jobs), "checks": checks, "claude_ok": checks[0][0] == "ok",
-        "active": any(j["status"] in ACTIVE for j in jobs), "rec": _latest_picks()})
+    sel, chs = _sel(request), _channels()
+    jobs = [j.data for j in reversed(Job.all()) if sel in (ALL, j.data.get("channel"))]
+    ch = chs.get(sel)
+    goal = ch.daily_goal if ch else sum(c.daily_goal for c in chs.values())
+    return _page(request, "index.html", {
+        "jobs": jobs, "stats": _stats(jobs, goal), "ch": ch, "llm_ok": _checks(sel)[0][0] == "ok",
+        "active": any(j["status"] in ACTIVE for j in jobs), "rec": _latest_picks(sel, chs)})
 
 
 @app.post("/jobs")
-def create_job(topic: str = Form(""), voice: str = Form(...), trend: str | None = Form(None), pick: int | None = Form(None)):
-    if voice not in VOICES:
-        raise HTTPException(400, "모르는 목소리예요")
+def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form("", alias="channel"),
+               trend: str | None = Form(None), pick: int | None = Form(None)):
     if trend is not None:
-        # 추천에서 만들 때는 주제·방향을 서버가 picks.json에서 꺼낸다(클라이언트가 보낸 값은 믿지 않는다)
+        # 추천에서 만들 때는 채널·주제·방향을 서버가 분석 기록에서 꺼낸다(클라이언트가 보낸 값은 믿지 않는다)
         t = _load(Trend, trend)
+        ch = _channel(t.data.get("channel"), 400)
+        if voice not in ch.tts.voices:
+            raise HTTPException(400, "모르는 목소리예요")
         picks = _picks(t)
         if pick is None or not 0 <= pick < len(picks):
             raise HTTPException(400, "그 추천을 찾지 못했어요")
         p = picks[pick]
-        job = Job.create(p["topic"], voice, brief=trends.brief(t.dir, p), source={"trend": trend, "pick": pick})
-        worker.enqueue(job.id)
+        job = Job.create(ch.id, p["topic"], voice, brief=trends.brief(t.dir, p), source={"trend": trend, "pick": pick})
+        q.enqueue(job.id)
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+    ch = _channel(cid, 400)
+    if voice not in ch.tts.voices:
+        raise HTTPException(400, "모르는 목소리예요")
     topic = topic.strip()
     if not 1 <= len(topic) <= 200:
         raise HTTPException(400, "주제는 1~200자로 넣어 주세요")
-    job = Job.create(topic, voice)
-    worker.enqueue(job.id)
+    job = Job.create(ch.id, topic, voice)
+    q.enqueue(job.id)
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 
 @app.get("/jobs/{job_id}")
 def job_page(request: Request, job_id: str):
     job = _load(Job, job_id)
-    return templates.TemplateResponse(request, "job.html", {
-        "job": job.data, "script": read_json(job.dir / "script.json"), "clips": read_json(job.dir / "clips.json"),
+    ch = _channel(job.data.get("channel"))
+    return _page(request, "job.html", {
+        "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
+        "script": read_json(job.dir / "script.json"), "clips": read_json(job.dir / "clips.json"),
         "cues": read_json(job.dir / "cues.json"), "has_thumb": (job.dir / "thumbnail.jpg").exists(),
         "thumb": read_json(job.dir / "thumb.json"), "log": _tail(job),
         "scenes": _scenes(job), "can_upload": _can_upload(job.data)})
@@ -323,8 +411,20 @@ def job_api(job_id: str):
 @app.post("/api/jobs/{job_id}/retry")
 def retry(job_id: str):
     job = _load(Job, job_id)
-    if not worker.enqueue(job_id):
+    if not q.enqueue(job_id):
         raise HTTPException(409, "이미 완성된 작업이에요" if job.data["status"] == "done" else "이미 제작 중이에요")
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/delete")
+def delete_job(job_id: str):
+    """작업 폴더를 통째로 지운다. 이미 올린 YouTube 영상은 그대로 둔다."""
+    job = _load(Job, job_id)
+    with q.lock:   # 검사와 지우기 사이에 작업이 시작되지 않게
+        data = job.data
+        if data["status"] in ACTIVE or (data.get("upload") or {}).get("status") in ACTIVE:
+            raise HTTPException(409, "제작·업로드 중인 작업은 지울 수 없어요")
+        shutil.rmtree(job.dir)
     return {"ok": True}
 
 
@@ -341,50 +441,100 @@ def _note(note: str) -> str:
     return note.strip()
 
 
-def _redo(job_id: str, steps: tuple, uploaded: str, **kw) -> None:
-    """완성 뒤 고치기. 안 되면 409(uploaded: 이미 올렸을 때 안내)."""
+def _redo(job_id: str, steps: tuple, **kw) -> None:
+    """완성 뒤 고치기. 만들거나 올리는 중이면 409."""
     job = _load(Job, job_id)
-    if not worker.redo(job_id, steps, **kw):
-        raise HTTPException(409, "완성된 작업만 고칠 수 있어요" if job.data["status"] != "done" else uploaded)
+    if not q.redo(job_id, steps, **kw):
+        done = job.data["status"] in ("done", "failed", "interrupted")
+        raise HTTPException(409, "올리는 중에는 고칠 수 없어요" if done else "완성된 작업만 고칠 수 있어요")
 
 
 @app.post("/api/jobs/{job_id}/thumbnail")
 def rethumb(job_id: str, note: str = Form("")):
-    _redo(job_id, ("thumbnail", "render"), "이미 올린 영상은 스튜디오에서 썸네일을 바꾸세요", thumb_note=_note(note))
+    _redo(job_id, ("thumbnail", "render"), thumb_note=_note(note), thumb_hand=None)
     return {"ok": True, "msg": "썸네일을 다시 만들고 영상도 다시 렌더해요"}
 
 
-@app.post("/api/jobs/{job_id}/script")
-def save_script(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
-                sentences: list[str] = Form([])):
-    """손으로 고친 대본. 문장이 바뀌면 음성부터 다시(장면 클립·썸네일은 그대로), 아니면 저장만."""
-    old = read_json(_load(Job, job_id).dir / "script.json")
-    lines, title = [s.strip() for s in sentences], title.strip()
-    if not old or len(lines) != len(old["sentences"]) or not all(lines) or any(len(s) > 100 for s in lines):
-        raise HTTPException(400, "문장은 장면 수만큼, 비우지 않고 100자 안으로 적어 주세요")
+@app.get("/api/channels/{cid}/voices/{key}/sample")
+def voice_sample(cid: str, key: str):
+    ch = _channel(cid)
+    if key not in ch.tts.voices:
+        raise HTTPException(404, "모르는 목소리예요")
+    try:
+        return FileResponse(voice.sample(registry.services(ch.id).tts, ch, key), media_type="audio/mpeg")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from None
+
+
+def _clean(s: str) -> str:
+    return " ".join(s.split())   # 칸 안의 줄바꿈은 띄어쓰기로
+
+
+@app.post("/api/jobs/{job_id}/edit")
+def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
+              sentences: list[str] = Form([]), voice: str = Form(""), cues: list[str] = Form([]),  # noqa: B008
+              thumb: list[str] = Form([]), accent: str = Form("")):  # noqa: B008
+    """상세 화면에서 손으로 고친 값. 바뀐 칸을 보고 다시 할 단계만 고른다.
+    문장·목소리 → 음성부터(자막은 새로 나뉘어 고친 자막 줄은 버린다), 자막 줄 → 렌더, 썸네일 문구 → 썸네일·렌더.
+    제목·설명·태그만이면 저장만. 장면 클립은 그대로."""
+    job = _load(Job, job_id)
+    old, was = read_json(job.dir / "script.json"), job.data["voice"]
+    lines, title, voice = [_clean(s) for s in sentences], title.strip(), voice or was
+    ch = _channel(job.data.get("channel"))
+    if voice != was and voice not in ch.tts.voices:
+        raise HTTPException(400, "모르는 목소리예요")
+    # 채널 문장 길이의 두 배까지. 바꾼 문장만 본다(예전 대본이 한도를 넘어도 저장은 되게)
+    cap, unit = ch.script.sentence[1] * 2, ch.script.unit
+    size = (lambda s: len(s.split())) if unit == "words" else len
+    if (not old or len(lines) != len(old["sentences"]) or not all(lines)
+            or any(size(s) > cap for s, o in zip(lines, old["sentences"], strict=True) if s != o)):
+        raise HTTPException(400, f"문장은 장면 수만큼, 비우지 않고 {cap}{script.UNITS[unit]} 안으로 적어 주세요")
     if not title or len(title) > 100 or len(description) > 5000:
         raise HTTPException(400, "제목은 1~100자, 설명은 5000자까지 적을 수 있어요")
     tags = [t for t in (x.strip().lstrip("#").strip() for x in tags.split(",")) if t]
-    rerun = lines != old["sentences"]
-    _redo(job_id, ("voice", "subtitles", "render") if rerun else (), "이미 올린 영상은 대본을 고칠 수 없어요",
-          script=old | {"title": title, "description": description.strip(), "tags": tags, "sentences": lines})
-    return {"ok": True, "msg": "저장했어요. 음성·자막·렌더를 다시 해요" if rerun else "저장했어요"}
+    files = {"script.json": old | {"title": title, "description": description.strip(), "tags": tags,
+                                   "sentences": lines}}
+    fields, steps = {"voice": voice}, set()
+    if lines != old["sentences"] or voice != was:
+        steps |= {"voice", "subtitles", "render"}
+    elif cues and (before := read_json(job.dir / "cues.json")):
+        texts = [_clean(c) for c in cues]
+        if len(texts) != len(before) or not all(texts) or any(len(t) > 40 for t in texts):
+            raise HTTPException(400, "자막은 줄 수 그대로, 비우지 않고 40자 안으로 적어 주세요")
+        if texts != [c["text"] for c in before]:
+            files["cues.json"] = [c | {"text": t} for c, t in zip(before, texts, strict=True)]
+            steps.add("render")
+    if thumb and (t := read_json(job.dir / "thumb.json")):
+        hand = [_clean(x) for x in thumb if x.strip()]
+        # 문구에 없는 강조는 뺀다
+        accent = accent.strip() if accent.strip() and accent.strip() in " ".join(hand) else ""
+        if (hand, accent) != (t["lines"], t.get("accent", "")):
+            cap = ch.thumbnail.max_line + 3   # 손으로 고칠 땐 채널 한도보다 조금 넉넉히
+            if not 1 <= len(hand) <= 2 or any(len(x) > cap for x in hand):
+                raise HTTPException(400, f"썸네일 문구는 1~2줄, 줄마다 {cap}자 안으로 적어 주세요")
+            fields["thumb_hand"] = {"lines": hand, "accent": accent}
+            steps |= {"thumbnail", "render"}
+    steps = tuple(s for s in STEPS if s in steps)
+    _redo(job_id, steps, files=files, **fields)
+    redo = "·".join(LABELS[s] for s in steps)
+    return {"ok": True, "msg": f"저장했어요. {redo}를 다시 해요" if steps else "저장했어요"}
 
 
 @app.post("/api/jobs/{job_id}/script/revise")
 def revise_script(job_id: str, note: str = Form("")):
     if not (note := _note(note)):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
-    _redo(job_id, ("script", "voice", "subtitles", "render"), "이미 올린 영상은 대본을 고칠 수 없어요", script_note=note)
+    _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
     return {"ok": True, "msg": "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
 
 
 @app.post("/api/jobs/{job_id}/upload")
 def upload(job_id: str):
     job = _load(Job, job_id)
-    if not youtube.ready():
-        raise HTTPException(400, "YouTube 연결이 안 돼 있어요. .env에 YOUTUBE_CLIENT_SECRET을 넣고 uv run sp youtube-login을 하세요.")
-    if not worker.enqueue_upload(job_id):
+    pub = registry.publisher(_channel(job.data.get("channel")))
+    if not pub.ready():
+        raise HTTPException(400, f"{pub.label} 연결이 안 돼 있어요. {pub.hint}")
+    if not q.enqueue_upload(job_id):
         data = job.data
         raise HTTPException(409, "완성된 영상만 올릴 수 있어요" if data["status"] != "done"
                             else "이미 올렸어요" if data["upload"]["status"] == "done" else "이미 올리는 중이에요")
@@ -423,17 +573,17 @@ async def put_clip(request: Request, job_id: str, i: int):
         except RuntimeError:
             raise HTTPException(400, "영상 파일이 아니에요") from None
         dst = d / f"clip{i}.mp4"
-        with worker._lock:   # 확인·교체·다시 넣기를 한 번에(RLock이라 안에서 enqueue 가능)
+        with q.lock:   # 확인·교체·다시 넣기를 한 번에(RLock이라 안에서 enqueue 가능)
             job = Job.load(job_id)
             if not _can_upload(job.data):   # 받는 사이 다시 시도·업로드가 시작됐다
                 raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
             os.replace(tmp, dst)
-            video.set_clip(job.dir, {"file": dst.name, "source": "직접 올림"})
+            scenes.set_clip(job.dir, {"file": dst.name, "source": "직접 올림"})
             job.log(f"장면 {i + 1} 클립 올림 ({size // 1024}KB)")
             if job.data["steps"]["footage"]["status"] == "done":   # 완성(또는 뒤 단계 실패) 뒤 교체: 다음 단계만
-                worker.redo(job_id, ("thumbnail", "render") if i == 0 else ("render",))
+                q.redo(job_id, ("thumbnail", "render") if i == 0 else ("render",))
             elif not pipeline.missing_clips(job.dir):
-                worker.enqueue(job_id)
+                q.enqueue(job_id)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -442,15 +592,21 @@ async def put_clip(request: Request, job_id: str, i: int):
 
 @app.get("/trends")
 def trends_page(request: Request):
-    items = [t.data for t in reversed(Trend.all())]
-    return templates.TemplateResponse(request, "trends.html", {
-        "items": items, "ready": trends.ready(), "claude_ok": _checks()[0][0] == "ok",
-        "est": script.cost(config.CLAUDE_MODEL, *EST_TOKENS),
-        "active": any(t["status"] in ACTIVE for t in items)})
+    sel = _sel(request)
+    items = [t.data for t in reversed(Trend.all()) if sel in (ALL, t.data.get("channel"))]
+    try:
+        sv = None if sel == ALL else registry.services(sel)
+    except (KeyError, ValueError, RuntimeError):   # 상단바 환경 점검에 이유가 뜬다
+        sv = None
+    return _page(request, "trends.html", {
+        "items": items, "ready": trends.ready(), "ch": sv and sv.channel, "llm_ok": _checks(sel)[0][0] == "ok",
+        "est": sv and sv.llm.cost(*EST_TOKENS), "active": any(t["status"] in ACTIVE for t in items)})
 
 
 @app.post("/trends")
-def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERIOD)):
+def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERIOD),
+                 cid: str = Form("", alias="channel")):
+    ch = _channel(cid, 400)
     keyword = keyword.strip()
     if len(keyword) > 50:
         raise HTTPException(400, "키워드는 50자 이내로 넣어 주세요")
@@ -458,8 +614,8 @@ def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERI
         raise HTTPException(400, "모르는 기간이에요")
     if not trends.ready():
         raise HTTPException(400, "YouTube Data API 키가 없어요. .env에 YOUTUBE_API_KEY를 넣고 서버를 다시 켜세요.")
-    trend = Trend.create(keyword, period)
-    worker.enqueue_trend(trend.id)
+    trend = Trend.create(ch.id, keyword, period)
+    q.enqueue_trend(trend.id)
     return RedirectResponse(f"/trends/{trend.id}", status_code=303)
 
 
@@ -467,8 +623,9 @@ def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERI
 def trend_page(request: Request, trend_id: str):
     trend = _load(Trend, trend_id)
     videos = read_json(trend.dir / "videos.json", [])
-    return templates.TemplateResponse(request, "trend.html", {
-        "t": trend.data, "videos": videos, "vids": {v["id"]: v for v in videos},
+    return _page(request, "trend.html", {
+        "t": trend.data, "ch": _channel(trend.data.get("channel")),
+        "videos": videos, "vids": {v["id"]: v for v in videos},
         "analyses": read_json(trend.dir / "analyses.json", {}), "picks": read_json(trend.dir / "picks.json"),
         "log": _tail(trend)})
 
@@ -483,6 +640,6 @@ def trend_api(trend_id: str):
 @app.post("/api/trends/{trend_id}/retry")
 def trend_retry(trend_id: str):
     trend = _load(Trend, trend_id)
-    if not worker.enqueue_trend(trend_id):
+    if not q.enqueue_trend(trend_id):
         raise HTTPException(409, "이미 끝난 분석이에요" if trend.data["status"] == "done" else "이미 분석 중이에요")
     return {"ok": True}

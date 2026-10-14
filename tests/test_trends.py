@@ -2,16 +2,39 @@ import io
 import json
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from urllib.error import HTTPError
 
 import pytest
 
-from shorts_printer import trends, worker
-from shorts_printer.jobs import read_json
-from shorts_printer.web import app as web
+from shorts_printer.core import channel, pipeline, trends
+from shorts_printer.infra.store import read_json
+from shorts_printer.ports.llm import add_usage
 
-NOW = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
+CH = "ko-40sec-facts"
+USAGE = {"model": "m", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.01}
+
+
+class FakeLLM:
+    """ask 호출(system·text·images)을 남기고 answer(system, text, images)가 돌려준 값을 답한다."""
+    label = "가짜"
+
+    def __init__(self, answer=None):
+        self.calls, self.answer = [], answer
+
+    def ask(self, system, text, schema, *, refusal, what, images=()):
+        self.calls.append({"system": system, "text": text, "images": list(images)})
+        return self.answer(system, text, list(images))
+
+
+def sv(llm=None, ch=None):
+    return SimpleNamespace(channel=ch or channel.load(CH), llm=llm or FakeLLM())
+
+
+def new(keyword="", period=trends.DEFAULT_PERIOD):
+    return trends.Trend.create(CH, keyword, period)
 
 
 def item(vid, title="한국 영상", dur="PT30S", views=1000, hours_ago=10, likes=10, comments=0):
@@ -45,12 +68,18 @@ def test_rank_filters_long_and_non_korean_then_sorts_by_views_per_hour():
         item("eng", title="english only"),
         item("zero", dur="P0D"),                           # 라이브 등 길이 0
         item("fresh", views=300, hours_ago=0),             # 1시간 미만은 1시간으로
-    ], NOW)
+    ], NOW, "ko")
     assert [v["id"] for v in out] == ["fast", "fresh", "slow"]
     fast = out[0]
     assert fast["views_per_hour"] == 500 and fast["engagement"] == 0.05 and fast["age_hours"] == 2
     assert fast["url"] == "https://www.youtube.com/shorts/fast" and fast["thumb"].endswith("fast.jpg")
     assert out[1]["age_hours"] == 1 and out[1]["views_per_hour"] == 300
+
+
+def test_rank_script_filter_by_language():
+    items = [item("ko", title="한국 영상"), item("ja", title="日本の動画"), item("kana", title="すごい"), item("en", title="english")]
+    assert {v["id"] for v in trends.rank(items, NOW, "ja")} == {"ja", "kana"}
+    assert {v["id"] for v in trends.rank(items, NOW, "en")} == {"ko", "ja", "kana", "en"}   # SCRIPTS에 없으면 거르지 않는다
 
 
 def test_is_short_by_redirect(monkeypatch):
@@ -103,7 +132,7 @@ def test_collect_without_key(monkeypatch):
     monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
     monkeypatch.setattr(trends.config, "secret", lambda k: "")
     with pytest.raises(RuntimeError, match="YOUTUBE_API_KEY"):
-        trends.step_collect(trends.Trend.create())
+        trends.step_collect(new(), sv())
 
 
 def test_collect_counts_quota_skips_normal_videos_and_ranks(monkeypatch):
@@ -117,10 +146,12 @@ def test_collect_counts_quota_skips_normal_videos_and_ranks(monkeypatch):
         return {"items": [item("a", views=100), item("b", views=900), item("c", views=500), item("d", views=300)]}
     monkeypatch.setattr(trends, "_api", api)
     monkeypatch.setattr(trends, "is_short", lambda vid: vid != "c")
-    t = trends.Trend.create("  커피  ", "1d")
-    assert t.data["keyword"] == "커피"
-    assert trends.step_collect(t) == "YouTube 3개"
-    assert calls[0][1]["q"] == "커피" and calls[0][1]["videoDuration"] == "short" and calls[1][1]["id"] == "a,b,c,d"
+    t = new("  커피  ", "1d")
+    assert t.data["keyword"] == "커피" and t.data["channel"] == CH
+    assert trends.step_collect(t, sv()) == "YouTube 3개"
+    q = calls[0][1]
+    assert q["q"] == "커피" and q["videoDuration"] == "short" and calls[1][1]["id"] == "a,b,c,d"
+    assert q["regionCode"] == "KR" and q["relevanceLanguage"] == "ko"
     vids = read_json(t.dir / "videos.json")
     assert [(v["id"], v["rank"]) for v in vids] == [("b", 1), ("d", 2), ("a", 3)]
     assert t.data["quota"] == 101
@@ -136,25 +167,45 @@ def test_collect_fails_under_three_and_counts_only_used_quota(monkeypatch):
             return {"items": [{"id": {"videoId": v}} for v in hits["ids"]]}
         return {"items": [item(v) for v in hits["ids"]]}
     monkeypatch.setattr(trends, "_api", api)
-    t = trends.Trend.create()
-    with pytest.raises(RuntimeError, match="2개뿐"):   # 2개로 넘기면 분석이 매번 실패하고 빠져나올 수 없다
-        trends.step_collect(t)
+    t = new()
+    with pytest.raises(RuntimeError, match="한국어 쇼츠가 2개뿐"):   # 2개로 넘기면 분석이 매번 실패하고 빠져나올 수 없다
+        trends.step_collect(t, sv())
     assert t.data["quota"] == 101
     hits["ids"] = []
-    t = trends.Trend.create()
+    t = new()
     with pytest.raises(RuntimeError, match="0개뿐"):
-        trends.step_collect(t)
+        trends.step_collect(t, sv())
     assert t.data["quota"] == 100   # 결과가 없으면 videos.list를 부르지 않는다
+
+
+def test_collect_keywords_or_query_and_channel_region(monkeypatch):
+    monkeypatch.setattr(trends, "ready", lambda: True)
+    calls = []
+
+    def api(path, **q):
+        calls.append(q)
+        return {"items": []}
+    monkeypatch.setattr(trends, "_api", api)
+    ch = channel.load(CH)
+    ch = ch.model_copy(update={"language": "ja", "trends": ch.trends.model_copy(
+        update={"region": "JP", "keywords": ["雑学", "豆知識"]})})
+    with pytest.raises(RuntimeError, match="일본어 쇼츠가 0개뿐"):
+        trends.step_collect(new(), sv(ch=ch))
+    assert calls[0]["q"] == "雑学 | 豆知識" and calls[0]["regionCode"] == "JP" and calls[0]["relevanceLanguage"] == "ja"
+    calls.clear()
+    with pytest.raises(RuntimeError):
+        trends.step_collect(new("커피"), sv(ch=ch))
+    assert calls[0]["q"] == "커피"   # 키워드가 있으면 채널 keywords는 쓰지 않는다
 
 
 def test_create_rejects_unknown_period():
     with pytest.raises(ValueError):
-        trends.Trend.create("", "30d")
+        new("", "30d")
 
 
 def test_finish_picks_scores_total_and_sort():
     videos = [{"id": i, "views_per_hour": vph} for i, vph in (("v1", 100), ("v2", 50), ("v3", 10))]
-    S = trends.ClaudeScores
+    S = trends.Scores
     out = trends.PicksOut(summary="흐름", excluded=[trends.Excluded(video_id="v3", reason="r"), trends.Excluded(video_id="zz", reason="r")],
                           picks=[
         trends.PickOut(topic="낮음", angle="a", format="기타", why_now="w", scores=S(fit=1, fresh=1, safe=1), refs=["v3"], search_terms=["x"]),
@@ -162,32 +213,46 @@ def test_finish_picks_scores_total_and_sort():
                        refs=["v2", "v1", "v1", "nope"], search_terms=["x"]),
         trends.PickOut(topic="근거없음", angle="c", format="기타", why_now="w", scores=S(fit=3, fresh=3, safe=3), refs=["nope"], search_terms=["x"]),
     ])
-    r = trends.finish_picks(out, videos)
+    r = trends.finish_picks(out, videos, channel.load(CH).trends.weights)
     top, mid, low = r["picks"]
     assert top["scores"] == {"trend": 5, "fit": 5, "fresh": 5, "safe": 5} and top["total"] == 100   # 9는 5로
     assert top["refs"] == ["v2", "v1"] and len(top["topic"]) == 80 and len(top["angle"]) == 200
     assert mid["topic"] == "근거없음" and mid["scores"]["trend"] == 1 and mid["total"] == 32   # 35*0 + (35+15+15)*0.5 = 32.5
     assert low["scores"] == {"trend": 1, "fit": 1, "fresh": 1, "safe": 1} and low["total"] == 0
     assert r["excluded"] == [{"video_id": "v3", "reason": "r"}]
+    r = trends.finish_picks(out, videos, {"trend": 100, "fit": 0, "fresh": 0, "safe": 0})
+    assert [p["total"] for p in r["picks"]] == [100, 0, 0]   # 가중치는 채널 값을 쓴다
 
 
-def test_pick_prompt_has_channel_and_today(monkeypatch):
-    t = trends.Trend.create()
+def test_system_pick_has_channel_concept_rules_and_production():
+    ch = channel.load(CH)
+    s = trends.system_pick(ch)
+    assert f"채널 분야: {ch.concept}" in s and ch.trends.production in s and "한국어" in s
+    assert "난방비 절약 꿀팁" in s and "장마철 빨래" in s   # trends.md 채널 규칙
+    assert "인기 이유(포맷·훅·소재)" in s and "search_terms만 영어" in s   # 공통 규칙
+    assert s.index("난방비") < s.index("공통 규칙")
+
+
+def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
+    pipeline.Job.create(CH, "우리 채널 주제", "v")
+    pipeline.Job.create("en-space-facts", "다른 채널 주제", "v")
+    t = new()
     trends.atomic_write_json(t.dir / "videos.json", [])
     trends.atomic_write_json(t.dir / "analyses.json", {})
-    monkeypatch.setattr(trends.config, "CHANNEL", "생활 상식")
-    seen = {}
 
-    def fake_ask(system, text, *a):
-        seen.update(system=system, text=text)
+    def stop(*a):
         raise StopIteration
-
-    monkeypatch.setattr(trends, "ask", fake_ask)
+    llm = FakeLLM(stop)
+    ch = channel.load(CH)
+    weights = {"trend": 10, "fit": 60, "fresh": 15, "safe": 15}
+    ch = ch.model_copy(update={"trends": ch.trends.model_copy(update={"weights": weights})})
     with pytest.raises(StopIteration):
-        trends.step_pick(t)
-    assert "채널 분야: 생활 상식" in seen["text"]
-    assert f"오늘: {datetime.now():%Y-%m-%d}" in seen["text"]
-    assert "난방비 절약 꿀팁" in seen["system"]
+        trends.step_pick(t, sv(llm, ch))
+    text = llm.calls[0]["text"]
+    assert f"오늘: {datetime.now():%Y-%m-%d}" in text and "(없음, KR 전체)" in text
+    assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
+    assert "(가중치 60)" in text and "(가중치 10)" in text
+    assert llm.calls[0]["system"] == trends.system_pick(ch)
 
 
 def test_percentile_single_video():
@@ -195,11 +260,12 @@ def test_percentile_single_video():
 
 
 def test_run_retry_skips_done_steps(monkeypatch):
-    t = trends.Trend.create()
-    ran = []
+    t = new()
+    ran, services = [], sv()
 
     def make(name, fail=False):
-        def step(_t):
+        def step(_t, s):
+            assert s is services
             ran.append(name)
             if fail:
                 raise RuntimeError("일부러")
@@ -207,11 +273,11 @@ def test_run_retry_skips_done_steps(monkeypatch):
         return step
     monkeypatch.setattr(trends, "RUN", {"collect": make("collect"), "analyze": make("analyze", True), "pick": make("pick")})
     with pytest.raises(RuntimeError):
-        trends.run(t)
+        trends.run(t, services)
     assert t.data["status"] == "failed" and t.data["error"]["step"] == "analyze"
     ran.clear()
     monkeypatch.setattr(trends, "RUN", {s: make(s) for s in trends.STEPS})
-    trends.run(t)
+    trends.run(t, services)
     assert ran == ["analyze", "pick"] and t.data["status"] == "done"
 
 
@@ -221,52 +287,69 @@ def video(vid, rank):
 
 
 def test_analyze_meta_only_when_download_blocked_and_skips_done(monkeypatch):
-    t = trends.Trend.create()
+    t = new()
     trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcd", 1)])
     trends.atomic_write_json(t.dir / "analyses.json", {"a": {"status": "ok", "claude": {}}})
-    asked = []
 
-    def blocked(_dir, v):
+    def blocked(_dir, v, lang):
+        assert lang == "ko"
         if v["id"] == "a":
             raise AssertionError("끝난 영상을 다시 받으면 안 된다")
         raise RuntimeError("ERROR: Sign in to confirm you're not a bot")
 
-    def ask(system, content, fmt, refusal, what):
-        asked.append(content)
-        return analysis(replicable=0), {"model": "m", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.01}
+    llm = FakeLLM(lambda *a: (analysis(replicable=0), USAGE))
     monkeypatch.setattr(trends, "media", blocked)
-    monkeypatch.setattr(trends, "ask", ask)
-    assert trends.step_analyze(t) == "영상 1개 · 썸네일만 3개"
+    assert trends.step_analyze(t, sv(llm)) == "영상 1개 · 썸네일만 3개"
     found = read_json(t.dir / "analyses.json")
     b = found["b"]
     assert b["status"] == "meta_only" and "bot" in b["error"] and b["claude"]["replicable"] == 1
-    assert len(asked) == 3 and all(c[0]["source"]["type"] == "url" for c in asked)
+    assert len(llm.calls) == 3 and all(len(c["images"]) == 1 and c["images"][0].startswith("https://")
+                                       for c in llm.calls)
+    assert all("제목: 제목" in c["text"] and "우리 제작 방식: " + channel.load(CH).trends.production in c["system"]
+               for c in llm.calls)
     d = t.data
     assert d["progress"] == {"done": 4, "total": 4} and d["usage"]["input_tokens"] == 30 and d["usage"]["cost_usd"] == 0.03
     assert len(d["notices"]) == 1 and "썸네일" in d["notices"][0]
 
 
-def test_analyze_fails_under_three(monkeypatch):
-    t = trends.Trend.create()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
-    monkeypatch.setattr(trends, "media", lambda d, v: (_ for _ in ()).throw(RuntimeError("x")))
+def test_analyze_sends_frames_as_jpeg_bytes(monkeypatch):
+    t = new()
+    (t.dir / "frames").mkdir()
+    (t.dir / "frames/a_0.jpg").write_bytes(b"\xff\xd8jpeg")
+    monkeypatch.setattr(trends, "media", lambda d, v, lang: {"shots": [], "shot_count": 1, "avg_shot_sec": 20.0,
+                                                             "frames": [{"file": "frames/a_0.jpg", "t": 1.0}],
+                                                             "has_transcript": False, "transcript": ""})
+    llm = FakeLLM(lambda *a: (analysis(), USAGE))
+    a, usage = trends.analyze_video(t.dir, video("a", 1), sv(llm))
+    assert a["status"] == "ok" and usage == USAGE and llm.calls[0]["images"] == [b"\xff\xd8jpeg"]
 
-    def ask(system, content, fmt, refusal, what):
-        if "a.jpg" not in content[0]["source"]["url"]:
-            raise RuntimeError("Claude API 요청 한도에 걸렸어요.")
+
+def test_analyze_fails_under_three(monkeypatch):
+    t = new()
+    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
+    monkeypatch.setattr(trends, "media", lambda d, v, lang: (_ for _ in ()).throw(RuntimeError("x")))
+
+    def answer(system, text, images):
+        if "a.jpg" not in images[0]:
+            raise RuntimeError("LLM 요청 한도에 걸렸어요.")
         return analysis(), None
-    monkeypatch.setattr(trends, "ask", ask)
     with pytest.raises(RuntimeError, match="1개뿐"):
-        trends.step_analyze(t)
+        trends.step_analyze(t, sv(FakeLLM(answer)))
     assert read_json(t.dir / "analyses.json")["b"]["status"] == "failed"
 
 
+def test_add_usage():
+    a = {"model": "m", "input_tokens": 1, "output_tokens": 2, "cost_usd": 0.1}
+    assert add_usage(None, a) == a
+    assert add_usage(a, a | {"cost_usd": None})["cost_usd"] is None
+
+
 def test_analyze_interrupt_cancels_waiting_videos(monkeypatch):
-    t = trends.Trend.create()
+    t = new()
     trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcdefgh", 1)])
     started, go = [], threading.Event()
 
-    def fake(_dir, v):
+    def fake(_dir, v, _sv):
         started.append(v["id"])
         if v["id"] == "a":
             raise KeyboardInterrupt
@@ -275,31 +358,9 @@ def test_analyze_interrupt_cancels_waiting_videos(monkeypatch):
     monkeypatch.setattr(trends, "analyze_video", fake)
     t0 = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
-        trends.step_analyze(t)
+        trends.step_analyze(t, sv())
     assert time.monotonic() - t0 < 2 and len(started) <= 4   # 이미 돌던 것(최대 3개)만 남고 나머지는 취소
     go.set()
-
-
-def test_add_usage():
-    a = {"model": "m", "input_tokens": 1, "output_tokens": 2, "cost_usd": 0.1}
-    assert trends.add_usage(None, a) == a
-    assert trends.add_usage(a, a | {"cost_usd": None})["cost_usd"] is None
-
-
-def test_enqueue_trend_and_recover():
-    t = trends.Trend.create()
-    assert worker.enqueue_trend(t.id) is True
-    assert worker._q.get_nowait() == ("trend", t.id)
-    assert worker.enqueue_trend(t.id) is False   # 이미 queued
-    t.update(status="running")
-    t.step("analyze", status="running")
-    (t.dir / "x.json.tmp").write_text("")
-    web.recover()
-    d = t.data
-    assert d["status"] == "interrupted" and d["steps"]["analyze"]["status"] == "pending"
-    assert not (t.dir / "x.json.tmp").exists()
-    assert worker.enqueue_trend(t.id) is True
-    worker._q.get_nowait()
 
 
 @pytest.mark.live
@@ -307,7 +368,7 @@ def test_live_collect():
     """YouTube 키로 실제 수집만(무료 할당량 101유닛). Claude는 부르지 않는다."""
     if not trends.ready():
         pytest.skip("YOUTUBE_API_KEY 없음")
-    t = trends.Trend.create()
-    trends.step_collect(t)
+    t = new()
+    trends.step_collect(t, sv())
     vids = read_json(t.dir / "videos.json")
     assert vids and all(v["duration"] <= trends.MAX_SEC for v in vids)

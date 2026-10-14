@@ -25,6 +25,7 @@ async function swap(url, ids) {
     const cur = document.getElementById(id), fresh = doc.getElementById(id);
     if (cur?.querySelector('iframe')) continue;   // 재생 중인 미리보기는 끊지 않는다(수집이 끝난 뒤라 내용도 그대로다)
     if (!cur || !fresh) continue;
+    if (cur.querySelector('.changed')) continue;   // 저장하지 않은 고친 칸이 있으면 지우지 않는다
     // 펼쳐 둔 프롬프트는 새 조각에도 펼친 채로 둔다(이것만 다르면 바꾸지 않는다)
     for (const d of cur.querySelectorAll('.scene[id] details[open]')) fresh.querySelector(`#${CSS.escape(d.closest('.scene').id)} details`)?.setAttribute('open', '');
     for (const d of cur.querySelectorAll('details[id][open]')) fresh.querySelector('#' + CSS.escape(d.id))?.setAttribute('open', '');
@@ -36,6 +37,8 @@ async function swap(url, ids) {
       if (n && (c.getAttribute('aria-busy') === 'true' || c.isEqualNode(n))) n.replaceWith(c);
     }
     cur.replaceWith(next);
+    const ol = $('.job-list', cur), nl = $('.job-list', next);
+    if (ol && nl) nl.scrollTop = ol.scrollTop;   // 목록 칸 안 스크롤 위치를 지킨다
   }
   // tabindex=-1 칸(진행 단계 등)은 한 번 옮긴 포커스라 다시 주지 않는다(바뀔 때마다 화면 읽기가 되풀이된다)
   // 옮겨 둔 카드 안이면 같은 요소, 아니면 새 조각에서 찾는다
@@ -127,6 +130,11 @@ if (api) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(true); });
 }
 
+// 상단바 채널 고르기: 고르면 바로 그 채널 화면으로(JS가 없으면 [보기] 버튼)
+document.addEventListener('change', e => {
+  if (e.target.matches('select[data-autosubmit]')) e.target.form.requestSubmit();
+});
+
 // ── 장면 클립 올리기(Flow에서 받은 파일). 파일 그대로 보내고, 남은 업로드가 없을 때 화면을 다시 받는다
 const MAX_CLIP = 200 * 1024 * 1024;   // app.py MAX_CLIP과 같게
 let uploading = 0;
@@ -159,7 +167,51 @@ document.addEventListener('change', async e => {
   if (document.activeElement === document.body) $(`input[data-clip="${inp.dataset.clip}"]`)?.focus();
 });
 
+// ── 바로 고치기(대본·목소리·자막·썸네일): 처음 값(defaultValue)과 다른 칸이 있으면 저장 막대를 띄운다. 되돌리기는 form.reset
+const STAGES = ['음성', '자막', '썸네일', '렌더'];
+function dirty() {
+  const f = document.getElementById('edit');
+  if (!f) return;
+  const changed = [...f.elements].filter(el => el.type === 'select-one' ? !el.selectedOptions[0]?.defaultSelected
+    : 'defaultValue' in el && el.value !== el.defaultValue);
+  for (const el of f.elements) el.classList.toggle('changed', changed.includes(el));
+  const redo = new Set(changed.flatMap(el => el.dataset.regen?.split('·') ?? []));
+  const stages = STAGES.filter(s => redo.has(s));
+  // 문장·목소리가 바뀌면 자막을 새로 나누므로 손으로 고친 자막 줄은 남지 않는다
+  const lost = redo.has('음성') && changed.some(el => el.name === 'cues');
+  $('#savebar').hidden = !changed.length;
+  $('#sb-count').textContent = `${changed.length}곳 바뀜`;
+  $('#sb-hint').textContent = (stages.length ? `${stages.join('·')}를 다시 만들어요` : '') + (lost ? ' (고친 자막 줄은 새 자막으로 바뀌어요)' : '');
+  $('#script-save span').textContent = stages.length ? '저장하고 다시 만들기' : '저장';
+}
+document.addEventListener('input', e => { if (e.target.form?.id === 'edit') dirty(); });
+document.addEventListener('reset', e => { if (e.target.id === 'edit') setTimeout(dirty); });   // reset은 값을 돌리기 전에 온다
+addEventListener('beforeunload', e => { if (document.querySelector('.changed')) e.preventDefault(); });
+
+// ── 음성·완성 영상을 틀면 지금 읽는 자막 줄을 밝히고 목록 가운데로 굴린다(시각은 voice.wav 기준, 영상도 같다)
+const smooth = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+function follow(m) {
+  const lis = [...document.querySelectorAll('.cues li')];
+  const li = lis.findLast(l => +l.dataset.start <= m.currentTime);   // 문장 사이 쉼에도 앞 줄을 둔다
+  const was = $('.cues li[aria-current]');
+  if (li === was && !m.ended) return;
+  was?.removeAttribute('aria-current');
+  if (m.ended || !li) return;
+  li.setAttribute('aria-current', 'true');
+  const ol = li.parentElement;
+  ol.scrollTo({ top: li.offsetTop - (ol.clientHeight - li.offsetHeight) / 2, behavior: smooth });
+}
+const media = e => e.target.matches?.('#c-voice audio, #final video') && e.target;
+document.addEventListener('play', e => {
+  const m = media(e);
+  if (!m) return;
+  const loop = () => { follow(m); if (!m.paused) requestAnimationFrame(loop); };
+  requestAnimationFrame(loop);
+}, true);   // 미디어 이벤트는 버블링하지 않는다
+for (const t of ['seeked', 'ended']) document.addEventListener(t, e => { const m = media(e); if (m) follow(m); }, true);
+
 // ── 복사·미리보기·다시 시도·업로드 (조각이 바뀌어도 동작하게 위임)
+let sample;   // 미리 듣기 중인 견본(새로 누르면 앞의 것을 멈춘다)
 document.addEventListener('click', async e => {
   const emb = e.target.closest('[data-embed]');
   if (emb) {   // 누를 때만 YouTube를 불러온다(쿠키 없는 주소)
@@ -170,6 +222,41 @@ document.addEventListener('click', async e => {
     f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
     emb.replaceWith(f);
     f.focus();
+    return;
+  }
+  const del = e.target.closest('[data-delete]');
+  if (del) {
+    if (!confirm(`'${del.dataset.topic}' 작업을 지울까요?\n영상·대본 파일이 모두 사라지고 되돌릴 수 없어요. YouTube에 올린 영상은 그대로 남아요.`)) return;
+    const li = del.closest('li'), near = (li.nextElementSibling ?? li.previousElementSibling)?.querySelector('a');
+    del.disabled = true;
+    try {
+      const r = await fetch(`/api/jobs/${encodeURIComponent(del.dataset.delete)}/delete`, { method: 'POST' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '지우지 못했어요');
+      await swap(location.pathname, $('[data-list]').dataset.list.split(' '));
+      toast('지웠어요');
+      if (near) document.querySelector(`a[href="${near.getAttribute('href')}"]`)?.focus();
+    } catch (err) {
+      del.disabled = false;
+      toast(err instanceof TypeError ? '서버에 닿지 않아요' : err.message, true);
+    }
+    return;
+  }
+  // 목소리 미리 듣기: 고른 목소리의 짧은 견본(서버가 목소리마다 한 번 만들어 둔다)
+  const smp = e.target.closest('[data-sample]');
+  if (smp) {
+    const v = document.getElementById(smp.dataset.sample).value;
+    if (!v) return;
+    smp.disabled = true;
+    try {
+      const r = await fetch(`/api/channels/${encodeURIComponent(smp.dataset.channel)}/voices/${encodeURIComponent(v)}/sample`);
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '미리 듣기를 못 했어요');
+      sample?.pause();
+      sample = new Audio(URL.createObjectURL(await r.blob()));
+      await sample.play();
+    } catch (err) {
+      toast(err instanceof TypeError ? '서버에 닿지 않아요' : err.message, true);
+    }
+    smp.disabled = false;
     return;
   }
   const copy = e.target.closest('[data-copy]');
@@ -205,6 +292,7 @@ document.addEventListener('click', async e => {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : '고치지 못했어요');
       toast(j.msg);
+      for (const el of document.querySelectorAll('.changed')) el.classList.remove('changed');   // 저장했으니 새 조각으로 바꿔도 된다
       await tick(true);
       if (!re.isConnected) $('#stepper').focus();
     } catch (err) {
