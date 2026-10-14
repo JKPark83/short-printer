@@ -7,7 +7,7 @@ from . import config
 
 class Scene(BaseModel):
     sentence: str = Field(description="내레이션 한 문장, 45자 이내")
-    prompt: str = Field(description="이 문장 동안 보일 한 장면의 영어 영상 생성 프롬프트, 60~90단어")
+    prompt: str = Field(description="이 문장 동안 보일 한 장면의 영어 영상 생성 프롬프트, 60~90단어, 스타일 머리말 없이")
     term: str = Field(description="같은 장면을 스톡 영상에서 찾을 구체적인 영어 명사구 2~4단어")
 
 
@@ -25,6 +25,10 @@ class Script(BaseModel):
             "search_terms": [s.term for s in self.scenes]}
 
 
+# 모든 장면 프롬프트 앞에 붙는 화풍. 장면마다 Claude가 화풍을 달리 쓰면 영상이 들쭉날쭉해서 코드로 고정한다
+STYLE = ("Stylized 3D animated explainer, clean CGI visualization like an architecture documentary, "
+         "smooth matte materials, soft even daylight, warm muted colors, same art style in every shot.")
+
 SYSTEM = """너는 유튜브 쇼츠·릴스·틱톡용 한국어 내레이션 대본을 쓴다. 대본은 TTS가 그대로 읽고, 자막으로 화면에 뜬다. 장면 하나가 문장 하나이고, 장면 영상은 prompt로 AI 영상 생성 서비스가 만들거나 term으로 스톡 영상에서 찾는다.
 
 - 읽었을 때 30~40초 길이. 장면 6~7개, 문장마다 45자 이내. 장면마다 생성 비용이 들어 장면 수를 늘리지 않는다.
@@ -34,7 +38,8 @@ SYSTEM = """너는 유튜브 쇼츠·릴스·틱톡용 한국어 내레이션 �
 - 마지막 문장은 구독·댓글 요청이 아니라 정보의 마무리나 반전이다. 영상이 반복 재생될 때 첫 문장으로 자연스럽게 이어지게 쓴다.
 - 제목은 질문형, 숫자형, 반전형, 비교형, 경고형 가운데 하나로 쓴다. 최근 제목이 주어지면 그 끝맺음과 틀(예: "~진짜 이유")을 피한다.
 - prompt는 그 문장을 읽는 약 5초 동안 보일 한 장면을 영어 한 단락(60~90단어)으로 쓴다.
-- 모든 prompt를 같은 스타일 머리말로 시작한다(예: "Photoreal documentary, cinematic, golden hour."). 생성 서비스는 앞 프롬프트를 기억하지 않으므로 주인공·장소·시대·옷차림을 매번 다시 적어 장면이 이어지게 한다.
+- 화풍은 실사가 아니라 건축·과학 해설 채널 같은 깔끔한 3D 애니메이션이다. 앱이 모든 prompt 앞에 같은 스타일 머리말을 붙이므로 prompt에 화풍·조명·카메라 품질 문구(photoreal, cinematic 등)를 쓰지 않는다. 사람은 얼굴을 단순화한 3D 캐릭터로 쓴다.
+- 생성 서비스는 앞 프롬프트를 기억하지 않으므로 주인공·장소·시대·옷차림을 매번 다시 적어 장면이 이어지게 한다.
 - 핵심 피사체와 동작은 화면 가운데, 앞 5초 안에 둔다. 영상의 양옆과 뒷부분은 잘릴 수 있다. 카메라 움직임은 하나만 쓴다(예: slow push-in, sideways truck).
 - 눈에 안 보이는 원리나 수치는 숫자 대신 단면도(cutaway)와 빨간 선·화살표로 보여 준다.
 - prompt는 항상 "No on-screen text, no numbers, no logos."로 끝낸다. 실존 인물의 얼굴, 브랜드, 화면비 문구는 넣지 않는다.
@@ -132,4 +137,5 @@ def write(topic: str, brief: str | None = None, recent: list[str] = ()) -> tuple
     script, usage = ask(SYSTEM, text, Script, "Claude가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요.", "대본")
     if not script.scenes:
         raise RuntimeError("대본을 받지 못했어요(문장이 비었어요).")
-    return script, usage
+    scenes = [s.model_copy(update={"prompt": f"{STYLE} {s.prompt}"}) for s in script.scenes]
+    return script.model_copy(update={"scenes": scenes}), usage

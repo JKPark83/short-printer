@@ -31,7 +31,7 @@ def resp(**kw):
 def test_write_returns_script_and_cost(monkeypatch):
     calls = fake_client(monkeypatch, resp())
     s, usage = script.write("커피")
-    assert s == OK
+    assert s.title == "t" and [x.prompt for x in s.scenes] == [f"{script.STYLE} p1", f"{script.STYLE} p2"]
     assert usage == {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 2000, "cost_usd": 0.044}
     assert calls[0]["output_format"] is script.Script and calls[0]["fallbacks"] == "default"
 
@@ -73,6 +73,7 @@ def test_live_claude_writes_korean_script():
 
 def test_brief_is_appended(monkeypatch):
     calls = fake_client(monkeypatch, resp())
+    monkeypatch.setattr(script.config, "CHANNEL", None)
     script.write("커피", "첫 문장은 질문으로")
     assert calls[0]["messages"][0]["content"] == "주제: 커피\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n첫 문장은 질문으로"
     script.write("커피")
@@ -81,10 +82,10 @@ def test_brief_is_appended(monkeypatch):
 
 def test_channel_and_recent_titles_are_appended(monkeypatch):
     calls = fake_client(monkeypatch, resp())
-    monkeypatch.setattr(script.config, "CHANNEL", "생활 속 과학")
+    monkeypatch.setattr(script.config, "CHANNEL", "상식")
     script.write("커피", recent=["라면이 꼬불꼬불한 진짜 이유"])
     text = calls[0]["messages"][0]["content"]
-    assert "채널 분야: 생활 속 과학" in text and "최근 제목(이 틀을 피한다):\n- 라면이 꼬불꼬불한 진짜 이유" in text
+    assert "채널 분야: 상식" in text and "최근 제목(이 틀을 피한다):\n- 라면이 꼬불꼬불한 진짜 이유" in text
 
 
 def test_revise_keeps_scene_count_and_prompts(monkeypatch):
