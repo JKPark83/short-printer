@@ -117,6 +117,9 @@ def test_default_video_falls_back_to_flow(monkeypatch):
     assert video.default() == "flow"
     monkeypatch.setattr(config, "VIDEO", "nope")
     assert video.default() == "flow"
+    monkeypatch.setattr(config, "VIDEO", "flow-auto")   # Chrome이 없는 기계면 Flow(직접 올림)
+    monkeypatch.setattr(video.flow_auto, "CHROME", "/nope")
+    assert video.default() == "flow"
 
 
 def test_redact_hides_any_api_key_by_suffix(monkeypatch):

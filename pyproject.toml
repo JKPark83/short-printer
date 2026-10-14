@@ -8,6 +8,7 @@ dependencies = [
     "edge-tts",
     "fastapi",
     "jinja2",
+    "playwright>=1.64.0",
     "pydantic",
     "python-multipart>=0.0.32",
     "uvicorn",

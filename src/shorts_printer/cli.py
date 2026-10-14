@@ -1,8 +1,8 @@
-"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends [키워드]: 주제 찾기 / sp youtube-login: 업로드 권한 받기."""
+"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends [키워드]: 주제 찾기 / sp youtube-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기."""
 import argparse
 import sys
 
-from . import pipeline, trends, voice, youtube
+from . import flow_auto, pipeline, trends, voice, youtube
 from .jobs import Job, read_json
 
 
@@ -18,6 +18,7 @@ def main() -> None:
     tr.add_argument("keyword", nargs="?", default="")
     tr.add_argument("--period", default=trends.DEFAULT_PERIOD, choices=trends.PERIODS)
     sub.add_parser("youtube-login", help="YouTube 업로드 권한을 받는다")
+    sub.add_parser("chrome", help="Flow 자동(SP_VIDEO=flow-auto)용 Chrome을 띄운다. 처음 한 번 여기서 Google 로그인")
     a = p.parse_args()
 
     if a.cmd == "trends":
@@ -38,6 +39,11 @@ def main() -> None:
         except RuntimeError as e:
             sys.exit(str(e))
         print("YouTube 연결 완료. 작업 화면에서 [승인하고 YouTube에 올리기]를 누르면 비공개로 올라가요.")
+        return
+
+    if a.cmd == "chrome":
+        flow_auto.open_chrome()
+        print(f"Flow용 Chrome을 띄웠어요(프로필 {flow_auto.PROFILE}). 처음이면 그 창에서 Google 로그인 후 Flow가 열리는지 확인하세요. 창은 켜 둬도 되고 닫아도 작업 때 다시 뜹니다.")
         return
 
     if a.cmd == "web":
