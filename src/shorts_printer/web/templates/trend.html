@@ -1,9 +1,10 @@
 {% extends "_base.html" %}
-{% block title %}{{ t.keyword or '한국 전체' }} 주제 분석 · shorts-printer{% endblock %}
+{% block title %}{{ t.keyword or (ch.trends.region ~ ' 전체') }} 주제 분석 · shorts-printer{% endblock %}
 {% block main %}
 {% set busy = t.status in ACTIVE %}
 {% set files = '/trend-files/' ~ t.id ~ '/' %}
 {% set period = trends.PERIODS.get(t.period, t.period) %}
+{% set lang = LANGS.get(ch.trend_language, ch.trend_language) %}
 {% set prog = t.progress %}
 {% macro wait(step, running, pending='이 단계가 끝나면 여기에 나와요') %}
 {%- set st = t.steps[step].status -%}
@@ -22,8 +23,8 @@
 
   <header id="head" class="job-head">
     <div class="jh-text">
-      <h1>{% if t.keyword %}“{{ t.keyword }}” 인기 쇼츠 분석{% else %}한국 인기 쇼츠 분석{% endif %}</h1>
-      <p class="meta"><code>{{ t.id }}</code> · 최근 {{ period }} · 한국 · 한국어 · {{ t.created_at|hm }}</p>
+      <h1>{% if t.keyword %}“{{ t.keyword }}” 인기 쇼츠 분석{% else %}{{ ch.trends.region }} 인기 쇼츠 분석{% endif %}</h1>
+      <p class="meta"><code>{{ t.id }}</code> · {{ ch.name }} · 최근 {{ period }} · {{ ch.trends.region }} · {{ lang }} · {{ t.created_at|hm }}</p>
     </div>
     <div class="jh-actions">
       <span class="badge b-{{ t.status }}">{{ TSTATUS[t.status] }}</span>
@@ -50,7 +51,7 @@
       <div id="banners" class="banners">
       {% if t.status == 'failed' %}
       <div class="banner banner-bad" role="alert">{{ icon('alert', 18) }}
-        <div><strong>실패: {{ trends.LABELS[t.error.step] }}</strong><p class="err">{{ t.error.message }}</p>
+        <div><strong>실패: {{ trends.LABELS[t.error.step] or '채널 설정' }}</strong><p class="err">{{ t.error.message }}</p>
           <p class="muted">[다시 시도]를 누르면 끝난 단계와 끝난 영상은 건너뛰고 이어서 해요.</p></div></div>
       {% elif t.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
@@ -73,7 +74,7 @@
           <h2 id="h-videos"><span class="num">1</span>수집된 쇼츠</h2>
           {% if videos %}<span class="mono muted">{{ videos|length }}개 · 시간당 조회수 순</span>{% endif %}
         </div>
-        <p class="card-lead">최근 {{ period }} 동안 올라온 한국어 쇼츠(3분 이하){% if t.keyword %} 가운데 “{{ t.keyword }}”가 들어간 것{% endif %}을 조회수 순으로 받아, 올린 뒤 <strong>시간당 조회수</strong>가 높은 순서로 {{ trends.TOP_N }}개를 남겼어요. 썸네일을 누르면 이 자리에서 재생해요.</p>
+        <p class="card-lead">최근 {{ period }} 동안 올라온 {{ lang }} 쇼츠(3분 이하){% if t.keyword %} 가운데 “{{ t.keyword }}”가 들어간 것{% endif %}을 조회수 순으로 받아, 올린 뒤 <strong>시간당 조회수</strong>가 높은 순서로 {{ trends.TOP_N }}개를 남겼어요. 썸네일을 누르면 이 자리에서 재생해요.</p>
         {% if videos %}
         <ol class="vgrid">
           {% for v in videos %}
@@ -155,8 +156,8 @@
 
       <section id="c-criteria" class="card" aria-labelledby="h-criteria">
         <div class="card-head"><h2 id="h-criteria"><span class="num">3</span>선정 기준</h2></div>
-        <p class="card-lead">추천마다 네 기준을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 합쳐요. 우리 파이프라인(AI로 만든 3D 해설 클립, 한국어 TTS, 번인 자막, 40~50초)으로 만들 수 있는지와 이미 만든 작업 주제와 겹치지 않는지를 함께 봐요.</p>
-        {% set wmax = trends.WEIGHTS.values()|max %}
+        <p class="card-lead">추천마다 네 기준을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 합쳐요. 우리 제작 방식으로 만들 수 있는지와 이 채널에서 이미 만든 작업 주제와 겹치지 않는지를 함께 봐요.</p>
+        {% set weights = ch.trends.weights %}{% set wmax = weights.values()|max %}
         <table class="crit">
           <thead><tr><th scope="col">기준</th><th scope="col">보는 것</th><th scope="col">가중치</th></tr></thead>
           <tbody>
@@ -164,7 +165,7 @@
             <tr>
               <th scope="row">{{ name }}</th>
               <td>{{ desc }}<small class="who">{{ '시간당 조회수로 계산' if k == 'trend' else 'Claude가 매김' }}</small></td>
-              <td class="w"><span class="wbar" aria-hidden="true"><span style="width: {{ trends.WEIGHTS[k] * 100 // wmax }}%"></span></span><span class="mono">{{ trends.WEIGHTS[k] }}</span></td>
+              <td class="w"><span class="wbar" aria-hidden="true"><span style="width: {{ weights[k] * 100 // wmax }}%"></span></span><span class="mono">{{ weights[k] }}</span></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -209,7 +210,7 @@
             <form class="pick-form" method="post" action="/jobs">
               <input type="hidden" name="trend" value="{{ t.id }}"><input type="hidden" name="pick" value="{{ i }}">
               <label for="pv-{{ i }}">목소리</label>
-              <select id="pv-{{ i }}" name="voice">{% for key, label in VOICES.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+              <select id="pv-{{ i }}" name="voice">{% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == ch.tts.default }}>{{ label }}</option>{% endfor %}</select>
               <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>이 주제로 만들기</span></button>
             </form>
           </li>

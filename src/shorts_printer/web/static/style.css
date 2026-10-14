@@ -26,6 +26,8 @@ code, .mono { font-family: var(--mono); font-size: 12px; }
 
 /* 상단바 */
 .topbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); padding: var(--s4) var(--s5); border-bottom: 1px solid var(--border); }
+.ch-pick { display: flex; align-items: center; gap: var(--s2); }
+.ch-pick select { width: auto; max-width: 14rem; }
 .brand { display: inline-flex; align-items: center; gap: var(--s3); font: 600 15px var(--mono); text-decoration: none; color: var(--ok); padding: 12px 0; margin: -12px 0; }
 .nav { display: flex; gap: var(--s2); }
 .nav a { display: inline-flex; align-items: center; gap: var(--s2); min-height: 44px; padding: 0 var(--s3); border-radius: 6px; color: var(--muted-fg); font-size: 14px; text-decoration: none; transition: color .15s, background-color .15s; }
@@ -148,6 +150,7 @@ select { cursor: pointer; }
 .b-failed { color: var(--bad); border-color: rgba(248, 113, 113, .45); background: var(--bad-bg); }
 /* 목록: YouTube에 올린 것(빨강 채움·왼쪽 띠)과 아직 안 올린 것(노랑 테두리)을 한눈에 */
 .b-up { color: #fff; border-color: #E5302A; background: #E5302A; font-weight: 600; }
+.b-ch { color: var(--muted-fg); background: var(--secondary); }
 .b-notup { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); font-weight: 600; }
 .job-row.is-up { box-shadow: inset 3px 0 0 #E5302A; }
 

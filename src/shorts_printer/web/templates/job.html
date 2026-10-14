@@ -12,7 +12,7 @@
   <header id="head" class="job-head">
     <div class="jh-text">
       <h1>{{ job.topic }}</h1>
-      <p class="meta"><code>{{ job.id }}</code> · {{ VOICES.get(job.voice, job.voice) }} · {{ job.created_at|hm }}</p>
+      <p class="meta"><code>{{ job.id }}</code> · {{ ch.name }} · {{ ch.tts.voices.get(job.voice, job.voice) }} · {{ job.created_at|hm }}</p>
       {% if job.source %}<p class="meta"><a class="src-link" href="/trends/{{ job.source.trend }}#p-{{ job.source.pick }}">{{ icon('sparkles', 14) }}추천 주제에서 만듦</a></p>{% endif %}
       {% if job.brief %}<details id="brief" class="brief"><summary>참고 방향</summary><p>{{ job.brief }}</p></details>{% endif %}
     </div>
@@ -41,7 +41,7 @@
       <div id="banners" class="banners">
       {% if job.status == 'failed' %}
       <div class="banner banner-bad" role="alert">{{ icon('alert', 18) }}
-        <div><strong>실패: {{ LABELS[job.error.step] }}</strong><p class="err">{{ job.error.message }}</p>
+        <div><strong>실패: {{ LABELS[job.error.step] or '채널 설정' }}</strong><p class="err">{{ job.error.message }}</p>
           <p class="muted">[다시 시도]를 누르면 이 단계부터 이어서 해요.</p></div></div>
       {% elif job.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
@@ -79,7 +79,7 @@
             {% endfor %}
             <dt>문장</dt>
             <dd><ol class="sentences">{% for s in script.sentences %}
-              <li><textarea class="ie" name="sentences" rows="2" maxlength="100" required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea></li>{% endfor %}
+              <li><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea></li>{% endfor %}
             </ol></dd>
           </dl>
           <p class="muted ie-tip">대본·목소리·자막·썸네일 문구를 눌러 바로 고치고, 아래 막대에서 한 번에 저장해요. 바뀐 것에 필요한 단계만 다시 만들어요(장면 클립은 그대로).{% if up.status == 'done' %} 이미 올린 영상은 YouTube에 그대로 두고, 다시 만든 영상을 새로 올릴 수 있어요.{% endif %}</p>
@@ -123,10 +123,10 @@
         <div class="voice-pick">
           <label for="se-voice">목소리</label>
           <select id="se-voice" class="ie" name="voice" form="edit" data-regen="음성·자막·렌더">
-            {% if job.voice not in VOICES %}<option value="" selected disabled>{{ job.voice }} (지금은 쓸 수 없어요)</option>{% endif %}
-            {% for key, label in VOICES.items() %}<option value="{{ key }}"{% if key == job.voice %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% if job.voice not in ch.tts.voices %}<option value="" selected disabled>{{ job.voice }} (지금은 쓸 수 없어요)</option>{% endif %}
+            {% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{% if key == job.voice %} selected{% endif %}>{{ label }}</option>{% endfor %}
           </select>
-          <button class="btn btn-secondary" type="button" data-sample="se-voice">{{ icon('play', 16) }}미리 듣기</button>
+          <button class="btn btn-secondary" type="button" data-sample="se-voice" data-channel="{{ ch.id }}">{{ icon('play', 16) }}미리 듣기</button>
         </div>
         {% endif %}
       </section>
@@ -195,8 +195,8 @@
             {% if thumb and editable %}
             <dt><label for="th-1">문구</label></dt>
             <dd class="thumb-lines">
-              <input id="th-1" class="ie" name="thumb" form="edit" value="{{ thumb.lines[0] }}" maxlength="12" required data-regen="썸네일·렌더" aria-label="썸네일 첫 줄">
-              <input class="ie" name="thumb" form="edit" value="{{ thumb.lines[1] if thumb.lines|length > 1 else '' }}" maxlength="12" placeholder="둘째 줄(없어도 돼요)" data-regen="썸네일·렌더" aria-label="썸네일 둘째 줄"></dd>
+              <input id="th-1" class="ie" name="thumb" form="edit" value="{{ thumb.lines[0] }}" maxlength="{{ ch.thumbnail.max_line + 3 }}" required data-regen="썸네일·렌더" aria-label="썸네일 첫 줄">
+              <input class="ie" name="thumb" form="edit" value="{{ thumb.lines[1] if thumb.lines|length > 1 else '' }}" maxlength="{{ ch.thumbnail.max_line + 3 }}" placeholder="둘째 줄(없어도 돼요)" data-regen="썸네일·렌더" aria-label="썸네일 둘째 줄"></dd>
             <dt><label for="th-accent">강조</label></dt>
             <dd><input id="th-accent" class="ie" name="accent" form="edit" value="{{ thumb.accent }}" maxlength="12" placeholder="문구 안의 낱말 하나" data-regen="썸네일·렌더"></dd>
             {% elif thumb %}
@@ -209,7 +209,7 @@
             {% endif %}
           </dl>
         </div>
-        <p class="muted thumb-note">영상 첫 0.5초에도 들어가요. 규칙은 .claude/skills/shorts-thumbnail/SKILL.md를 따라요.</p>
+        <p class="muted thumb-note">영상 첫 0.5초에도 들어가요. 규칙은 channels/{{ ch.id }}/thumbnail.md를 따라요.</p>
         {% if editable %}
         <details id="thumb-edit" class="script-edit">
           <summary>Claude에게 새 문구 요청</summary>
@@ -247,11 +247,11 @@
           {% else %}
           {% if job.uploaded_before %}<p class="muted">예전에 올린 영상 <a class="mono" href="https://youtu.be/{{ job.uploaded_before.video_id }}" target="_blank" rel="noopener">youtu.be/{{ job.uploaded_before.video_id }}</a>은 YouTube에 그대로 있어요. 고친 영상을 올린 뒤 필요 없으면 스튜디오에서 지우세요.</p>{% endif %}
           {% if up.status == 'failed' %}<p class="err">{{ up.error }}</p>{% endif %}
-          {% if youtube.ready() %}
-          <button id="upload" class="btn btn-primary" type="button" data-upload>{{ icon('rotate' if up.status == 'failed' else 'upload') }}{{ '다시 올리기' if up.status == 'failed' else '승인하고 YouTube에 올리기' }}</button>
+          {% if publisher.ready() %}
+          <button id="upload" class="btn btn-primary" type="button" data-upload>{{ icon('rotate' if up.status == 'failed' else 'upload') }}{{ '다시 올리기' if up.status == 'failed' else '승인하고 ' ~ publisher.label ~ '에 올리기' }}</button>
           <p class="muted">비공개로 올라가요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
           {% else %}
-          <p class="muted">YouTube에 올리려면 .env에 YOUTUBE_CLIENT_SECRET을 넣고 터미널에서 uv run sp youtube-login을 하세요.</p>
+          <p class="muted">{{ publisher.label }}에 올리려면: {{ publisher.hint }}</p>
           {% endif %}
           {% endif %}
         </div>

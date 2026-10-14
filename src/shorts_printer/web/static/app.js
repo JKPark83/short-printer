@@ -130,6 +130,11 @@ if (api) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(true); });
 }
 
+// 상단바 채널 고르기: 고르면 바로 그 채널 화면으로(JS가 없으면 [보기] 버튼)
+document.addEventListener('change', e => {
+  if (e.target.matches('select[data-autosubmit]')) e.target.form.requestSubmit();
+});
+
 // ── 장면 클립 올리기(Flow에서 받은 파일). 파일 그대로 보내고, 남은 업로드가 없을 때 화면을 다시 받는다
 const MAX_CLIP = 200 * 1024 * 1024;   // app.py MAX_CLIP과 같게
 let uploading = 0;
@@ -243,7 +248,7 @@ document.addEventListener('click', async e => {
     if (!v) return;
     smp.disabled = true;
     try {
-      const r = await fetch(`/api/voices/${encodeURIComponent(v)}/sample`);
+      const r = await fetch(`/api/channels/${encodeURIComponent(smp.dataset.channel)}/voices/${encodeURIComponent(v)}/sample`);
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '미리 듣기를 못 했어요');
       sample?.pause();
       sample = new Audio(URL.createObjectURL(await r.blob()));

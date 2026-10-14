@@ -1,0 +1,80 @@
+"""LLM 구현: Claude API. 대본·썸네일·주제 찾기가 같이 쓴다."""
+import base64
+from collections.abc import Sequence
+
+import anthropic
+
+from .. import config
+
+# 백만 토큰당 달러(입력, 출력). 모르는 모델이면 비용을 비워 둔다.
+PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-4-5": (1, 5)}
+NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜세요."
+
+
+def cost(model: str, inp: int, out: int) -> float | None:
+    price = next((p for k, p in PRICES.items() if model.startswith(k)), None)
+    return round((inp * price[0] + out * price[1]) / 1e6, 4) if price else None
+
+
+def _image(img: bytes | str) -> dict:
+    """JPEG 바이트는 base64로, 문자열은 URL로."""
+    if isinstance(img, str):
+        return {"type": "image", "source": {"type": "url", "url": img}}
+    data = base64.standard_b64encode(img).decode()
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
+
+
+class Claude:
+    label = "Claude"
+
+    @property
+    def model(self) -> str:
+        return config.CLAUDE_MODEL   # 테스트가 바꾸므로 부를 때마다 읽는다
+
+    @property
+    def hint(self) -> str:
+        return self.model if self.ready() else ".env에 ANTHROPIC_API_KEY를 넣어 주세요"
+
+    def ready(self) -> bool:
+        return bool(config.secret("ANTHROPIC_API_KEY") or config.secret("ANTHROPIC_AUTH_TOKEN"))
+
+    def cost(self, input_tokens: int, output_tokens: int) -> float | None:
+        return cost(self.model, input_tokens, output_tokens)
+
+    def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = ()):
+        """Claude 한 번 부르고 (구조화 결과, 사용량)을 돌려준다. 오류는 한국어 RuntimeError로."""
+        model = self.model
+        content = [*map(_image, images), {"type": "text", "text": text}] if images else text
+        # 안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다. haiku는 대상이 아니라 뺀다.
+        extra = {} if "haiku" in model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        try:
+            resp = anthropic.Anthropic().beta.messages.parse(
+                model=model,
+                max_tokens=16000,
+                system=system,
+                messages=[{"role": "user", "content": content}],
+                output_format=schema,
+                **extra,
+            )
+        except TypeError as e:   # 키가 아예 없으면 SDK가 요청 직전에 TypeError를 낸다
+            if "authentication" not in str(e):
+                raise
+            raise RuntimeError(NO_KEY) from None
+        except anthropic.AuthenticationError:
+            raise RuntimeError("Claude API 키가 맞지 않아요. .env의 ANTHROPIC_API_KEY를 확인하세요.") from None
+        except anthropic.RateLimitError:
+            raise RuntimeError("Claude API 요청 한도에 걸렸어요. 잠시 뒤 다시 시도하세요.") from None
+        except anthropic.APIStatusError as e:
+            raise RuntimeError(f"Claude API 오류({e.status_code}): {e.message}") from None
+        except anthropic.APIConnectionError:
+            raise RuntimeError("Claude API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
+        if resp.stop_reason == "refusal":
+            raise RuntimeError(refusal)
+        if resp.parsed_output is None:
+            raise RuntimeError(f"{what}을 받지 못했어요(stop_reason={resp.stop_reason}).")
+        u = resp.usage
+        # ponytail: 대체 모델이 돌았으면 응답 모델 값으로 한 번에 계산한다.
+        # 정확한 단계별 비용은 usage.iterations를 보면 된다.
+        return resp.parsed_output, {"model": resp.model, "input_tokens": u.input_tokens,
+                                    "output_tokens": u.output_tokens,
+                                    "cost_usd": cost(resp.model, u.input_tokens, u.output_tokens)}

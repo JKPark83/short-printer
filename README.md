@@ -18,31 +18,31 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 | 서비스 | 필요 여부 | 비용 | 없으면 |
 |---|---|---|---|
 | Claude API (`ANTHROPIC_API_KEY`) | 필수 | 유료, 한 편에 몇 센트 | 대본 단계에서 멈춥니다 |
-| Google Flow (`SP_VIDEO=flow`, 기본) | 기본 영상 공급자 | Google AI 구독 크레딧(장면마다 생성) | 키는 없습니다. 사람이 Flow에서 만들어 작업 화면에 올립니다 |
-| Google Flow 자동 (`SP_VIDEO=flow-auto`) | 클립을 사람 대신 만들 때 | 위와 같음(장면마다 6크레딧) | 키는 없습니다. `uv run sp chrome`으로 띄운 창에서 처음 한 번 Google 로그인 |
+| Google Flow (`[video] provider = "flow"`, 기본) | 기본 영상 공급자 | Google AI 구독 크레딧(장면마다 생성) | 키는 없습니다. 사람이 Flow에서 만들어 작업 화면에 올립니다 |
+| Google Flow 자동 (`[video] provider = "flow-auto"`) | 클립을 사람 대신 만들 때 | 위와 같음(장면마다 6크레딧) | 키는 없습니다. `uv run sp chrome`으로 띄운 창에서 처음 한 번 Google 로그인 |
 | ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 필수 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 음성 단계에서 멈춥니다. `ELEVENLABS_VOICE_ID`는 목소리 '미스터최'에만 씁니다 |
 | YouTube Data API (`YOUTUBE_CLIENT_SECRET`) | 선택 | 무료, 하루 업로드 100편 | 업로드 버튼이 안 나옵니다. 직접 올립니다 |
 | YouTube Data API 키 (`YOUTUBE_API_KEY`) | 선택 | 무료, 하루 10,000유닛(주제 찾기 한 번 약 101유닛) | 주제 찾기를 못 씁니다. 주제는 직접 넣습니다 |
 
-이 채널은 상식 채널입니다. 대본과 추천 주제는 "사람들에게 실제로 도움이 되는 상식" 안에서 돌고, 바꾸려면 `.env`의 `SP_CHANNEL`에 적습니다. 쇼츠·틱톡은 채널에 반응해 온 시청자에게 새 영상을 먼저 보여 주므로 분야가 좁을수록 유리합니다.
+채널은 `channels/<id>/` 폴더 하나입니다(첫 채널 `ko-40sec-facts`). 대본과 추천 주제는 `channel.toml`의 `concept`("사람들에게 실제로 도움이 되는 상식") 안에서 돕니다. 새 채널은 Claude Code의 `channel-create` 스킬로 만들고, 키 설명은 `.claude/rules/channels.md`에 있습니다. 쇼츠·틱톡은 채널에 반응해 온 시청자에게 새 영상을 먼저 보여 주므로 분야가 좁을수록 유리합니다.
 
 대본 모델은 기본이 `claude-opus-5-5`입니다. 비용을 줄이려면 `.env`의 `CLAUDE_MODEL`을 `claude-sonnet-5-5`나 `claude-haiku-4-5`로 바꿉니다.
 
 ## 영상과 음성 공급자
 
-- **영상**은 `.env`의 `SP_VIDEO` 하나로 고릅니다. `flow`(기본)는 사람이 장면 클립을 올리고, `flow-auto`는 전용 Chrome이 Flow를 대신 눌러 만듭니다. 고른 공급자를 쓸 수 없으면(Chrome 없음) Flow로 돌아갑니다.
-  - 작업에 고정하지 않고 영상 소스 단계가 돌 때마다 읽습니다. `.env`만 바꾸고 서버를 다시 켜면 클립을 기다리던 작업도 [다시 시도]로 새 공급자로 이어 갑니다.
+- **영상**은 채널 `channel.toml`의 `[video] provider` 하나로 고릅니다. `flow`(기본)는 사람이 장면 클립을 올리고, `flow-auto`는 전용 Chrome이 Flow를 대신 눌러 만듭니다. 고른 공급자를 쓸 수 없으면(Chrome 없음) Flow로 돌아갑니다.
+  - 작업에 고정하지 않고 영상 소스 단계가 돌 때마다 읽습니다. 이 값을 바꾸고 서버를 다시 켜면 클립을 기다리던 작업도 [다시 시도]로 새 공급자로 이어 갑니다.
   - 스톡도 못 찾은 장면은 그라데이션으로 넘어가지 않고 "클립 대기"로 멈춥니다. 그 장면만 직접 올리면 됩니다.
-- **음성(TTS)**은 ElevenLabs 목소리 넷(미스터킴·이하나·지수·미스터최, voice.py `VOICES`) 가운데 고릅니다. 기본은 미스터킴입니다. 대체 공급자는 없어서 실패하면 음성 단계에서 멈춥니다.
+- **음성(TTS)**은 채널 `channel.toml`의 `[tts.voices]`(ko-40sec-facts는 미스터킴·이하나·지수·미스터최) 가운데 고릅니다. 기본은 `[tts] default`입니다. 대체 공급자는 없어서 실패하면 음성 단계에서 멈춥니다.
 - 대시보드 환경 점검에 공급자마다 한 줄씩 나옵니다. 지금 쓰는 영상 공급자에는 "(기본)"이 붙습니다.
 
 **공급자를 더하는 법** (예: Seedance, Veo. 지금은 구현하지 않았습니다)
 
-1. `src/shorts_printer/seedance.py`에 `label`, `hint`, `ready()`, `make(scenes, out, log)`를 가진 클래스 하나를 둡니다. `make`가 지킬 규칙은 `video.py`의 `VideoProvider` docstring과 HANDOFF에 있습니다.
-2. `video.py`의 `VIDEO`에 `"seedance": seedance.Seedance()` 한 줄과 import 한 줄을 더합니다.
-3. `.env.example`에 `SEEDANCE_API_KEY=` 한 줄을 더합니다. 이름이 `_API_KEY`(또는 `_AUTH_TOKEN`)로 끝나면 로그에서 저절로 가려집니다. 쓸 때는 `.env`에 `SP_VIDEO=seedance`를 넣습니다.
+1. `src/shorts_printer/adapters/seedance.py`에 `label`, `hint`, `ready()`, `make(scenes, out, log)`를 가진 클래스 하나를 둡니다. `make`가 지킬 규칙은 `ports/video.py`의 `VideoProvider` docstring과 HANDOFF에 있습니다.
+2. `registry.py`의 `VIDEOS`에 `"seedance": Seedance()` 한 줄과 import 한 줄을 더합니다.
+3. `.env.example`에 `SEEDANCE_API_KEY=` 한 줄을 더합니다. 이름이 `_API_KEY`(또는 `_AUTH_TOKEN`)로 끝나면 로그에서 저절로 가려집니다. 쓸 때는 채널 `channel.toml`에 `[video] provider = "seedance"`를 넣습니다.
 
-음성 공급자는 `voice.py`에 `label`, `hint`, `voices`, `ready()`, `speak()`를 가진 클래스를 더하고 `TTS`에 한 줄을 등록합니다. 대체 순서는 `FALLBACK`만 고치면 됩니다.
+음성·LLM·업로드 공급자도 같습니다. `ports/`의 인터페이스대로 `adapters/`에 클래스를 두고 `registry.py`에 한 줄을 등록합니다(`.claude/rules/providers.md`).
 
 ## 실행
 
@@ -76,7 +76,7 @@ Flow에는 API가 없어서 사람이 장면을 만들어 올립니다. 휴대�
 
 **장면 만들기**
 
-1. 휴대폰에서 대시보드를 열고 "클립 대기" 작업으로 들어갑니다. 영상 소스 카드에 장면마다 문장, 그 장면이 화면에 보일 초, 영어 프롬프트가 있습니다. 프롬프트는 모두 같은 3D 해설 화풍 머리말(`script.STYLE`)로 시작해 장면끼리 화풍이 맞습니다. 화풍을 바꾸려면 그 한 줄만 고칩니다.
+1. 휴대폰에서 대시보드를 열고 "클립 대기" 작업으로 들어갑니다. 영상 소스 카드에 장면마다 문장, 그 장면이 화면에 보일 초, 영어 프롬프트가 있습니다. 프롬프트는 모두 같은 화풍 머리말(채널 `channel.toml`의 `[video] style`)로 시작해 장면끼리 화풍이 맞습니다. 화풍을 바꾸려면 그 한 줄만 고칩니다.
 2. [프롬프트 복사] → Flow에 붙여 넣고 **동영상 · 소재 · 9:16 · 360p · 8초 · x1 · Omni 1.1 Flash**(장면마다 6크레딧)로 만듭니다 → 클립을 내려받습니다.
 3. 작업 화면으로 돌아와 그 장면의 [클립 올리기]로 고릅니다. "클립 n/N"이 늘어납니다. 올리기가 끝날 때까지 이 화면에 머물러 주세요.
 4. 장면마다 2~3을 되풀이합니다. 마지막 클립이 올라가면 썸네일 → 렌더가 자동으로 이어집니다.
@@ -85,12 +85,12 @@ Flow에는 API가 없어서 사람이 장면을 만들어 올립니다. 휴대�
 - 완성된 뒤에도 장면 클립을 바꿀 수 있습니다. 그러면 렌더만 다시 돕니다(첫 장면이면 썸네일도). YouTube에 올린 작업은 바꿀 수 없습니다.
 - 한국 계정의 Flow 결과물에는 워터마크가 붙습니다. YouTube에 올릴 때 AI 생성 콘텐츠 라벨을 켜 주세요(아래 "YouTube 업로드").
 
-**자동으로 만들기** (`SP_VIDEO=flow-auto`)
+**자동으로 만들기** (`[video] provider = "flow-auto"`)
 
 복사·생성·내려받기·올리기를 맥의 Chrome이 대신합니다. [만들기]만 누르면 클립까지 채워지고 렌더로 이어집니다.
 
 1. `uv run sp chrome`으로 전용 Chrome(프로필 `.secrets/flow-chrome`)을 띄우고, 그 창에서 Google에 로그인해 Flow가 열리는지 봅니다. 처음 한 번만 하면 됩니다.
-2. `.env`에 `SP_VIDEO=flow-auto`를 넣고 `sp web`을 다시 켭니다.
+2. 채널 `channel.toml`에 `[video] provider = "flow-auto"`를 넣고 `sp web`을 다시 켭니다.
 
 - 작업마다 Flow에 새 프로젝트를 하나 만들고 위 설정(장면마다 6크레딧)으로 장면을 하나씩 만듭니다. 장면 하나에 2분 안팎이라 7장면이면 15분쯤 걸립니다.
 - 그동안 전용 Chrome 창은 건드리지 마세요. 내 Chrome과는 따로 돌아서 평소 브라우저는 그대로 써도 됩니다.
@@ -99,7 +99,8 @@ Flow에는 API가 없어서 사람이 장면을 만들어 올립니다. 휴대�
 
 ## 썸네일과 화면 구성
 
-- 썸네일 규칙은 `.claude/skills/shorts-thumbnail/SKILL.md`에 있습니다. 썸네일 단계가 이 파일 본문을 그대로 Claude 지시문으로 읽으므로, 규칙을 바꾸려면 이 파일만 고치면 됩니다.
+- 썸네일 규칙은 채널 폴더의 `thumbnail.md`(예: `channels/ko-40sec-facts/thumbnail.md`)에 있습니다. 썸네일 단계가 이 파일 본문을 공통 지시문 `prompts/thumbnail.md`에 끼워 Claude에 보내므로, 채널 규칙은 채널 파일만, 모든 채널 규칙은 `prompts/thumbnail.md`만 고치면 됩니다.
+- Claude에 보내는 지시문은 전부 md 파일입니다. 공통은 `prompts/`(대본·대본 고치기·썸네일·쇼츠 분석·주제 고르기), 채널마다 다른 건 `channels/<id>/`. 고치면 서버를 다시 켜지 않아도 다음 작업부터 반영됩니다.
 - Claude가 문구(1~2줄, 강조 낱말 하나는 노랑)를 정합니다. 배경은 첫 장면 클립의 0.5초 화면이고, 클립이 없으면 단색입니다.
 - 영상은 위아래가 검은 띠이고 가운데(560~1440px, 1080×880 칸)에 영상이 들어갑니다. 16:9 같은 가로 클립은 칸을 채우도록 키운 뒤 가운데를 잘라 양옆이 잘립니다. 위 띠에는 썸네일 문구가 영상 내내 뜨고, 자막은 영상 칸 바로 아래(아래 띠 맨 위, 1465px부터 한 줄)에 들어갑니다. 아래 띠의 아래쪽은 쇼츠·틱톡의 채널명·제목에 가리므로 비워 둡니다.
 - 장면은 문장 시각을 따릅니다. 장면 i는 문장 i가 시작할 때 시작하고, 클립이 장면보다 짧으면 마지막 화면에서 멈춥니다. 예전 스톡 작업처럼 클립 수가 문장 수와 다르면 같은 길이로 나누고 클립을 반복합니다.
@@ -112,7 +113,7 @@ Flow에는 API가 없어서 사람이 장면을 만들어 올립니다. 휴대�
 
 1. **수집**: YouTube Data API로 기간 안의 한국어 쇼츠(3분 이하)를 모아 시간당 조회수 순으로 8개를 고릅니다.
 2. **분석**: 영상마다 yt-dlp로 받아 컷(장면 전환)을 세고 컷마다 프레임을 뽑아 Claude에게 보여 줍니다. 주제·포맷·훅·영상 종류·내레이션·인기 이유·따라 만들기 쉬운 정도를 받습니다. 받은 영상은 바로 지우고 프레임(jpg)만 남깁니다. 다운로드가 막히면 썸네일과 정보로만 봅니다.
-3. **선정**: Claude가 채널 분야(SP_CHANNEL) 안에서 우리 제작 방식(3D 해설 클립·TTS·자막)으로 만들 수 있는 주제 3~5개를 고르고(돈·시간을 아끼는 생활 꿀팁과 오늘 날짜의 계절 주제를 먼저 봅니다), 화제성·제작 적합도·차별화·안전성 점수(가중치 35·35·15·15)로 순위를 매깁니다. 화제성은 참고 쇼츠의 시간당 조회수로 코드가 계산합니다.
+3. **선정**: Claude가 채널 분야(`channel.toml`의 `concept`) 안에서 우리 제작 방식(3D 해설 클립·TTS·자막)으로 만들 수 있는 주제 3~5개를 고르고(돈·시간을 아끼는 생활 꿀팁과 오늘 날짜의 계절 주제를 먼저 봅니다), 화제성·제작 적합도·차별화·안전성 점수(가중치 35·35·15·15)로 순위를 매깁니다. 화제성은 참고 쇼츠의 시간당 조회수로 코드가 계산합니다.
 
 추천 주제로 작업을 만들면 그 각도가 대본 참고로 넘어갑니다. 결과는 `trends/<id>/`에 쌓입니다. Claude 비용은 기본 모델(opus)로 한 번에 대략 $0.3~0.8입니다(영상 8개 분석 + 선정 1번).
 
@@ -131,7 +132,7 @@ Flow 등 AI로 만든 장면을 쓴 영상은 공개하기 전에 스튜디오�
 3. 게시 상태를 **프로덕션(In production)**으로 바꿉니다. 테스트 상태로 두면 로그인이 7일마다 풀립니다. 혼자 쓰면 앱 인증은 필요 없고, 로그인할 때 "확인되지 않은 앱" 경고에서 [고급] → [이동]을 누르면 됩니다.
 4. 사용자 인증 정보에서 OAuth 클라이언트 ID를 **데스크톱 앱**으로 만들고 JSON을 내려받습니다.
 5. `.env`의 `YOUTUBE_CLIENT_SECRET`에 그 JSON 경로를 넣습니다.
-6. `uv run sp youtube-login`을 실행하고 브라우저에서 허용합니다. 토큰은 `.secrets/youtube_token.json`에 저장됩니다.
+6. `uv run sp youtube-login --channel <id>`를 실행하고 브라우저 동의 화면에서 그 채널(브랜드 채널)을 골라 허용합니다. 토큰은 채널마다 `.secrets/channels/<id>/youtube_token.json`에 저장됩니다.
 
 ## 테스트
 

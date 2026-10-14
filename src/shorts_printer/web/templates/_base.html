@@ -18,14 +18,23 @@
     <a href="/"{% if here == 'home' %} aria-current="page"{% endif %}>대시보드</a>
     <a href="/trends"{% if here == 'trends' %} aria-current="page"{% endif %}>{{ icon('trending', 14) }}주제 찾기</a>
   </nav>
-  {% set levels = env_checks()|map(attribute=0)|list %}
+  <form class="ch-pick" method="get" action="{{ '/trends' if here == 'trends' else '/' }}">
+    <label class="sr-only" for="ch-sel">채널</label>
+    <select id="ch-sel" name="channel" data-autosubmit>
+      {% for c in channels.values() %}<option value="{{ c.id }}"{{ ' selected' if c.id == sel }}>{{ c.name }}</option>{% endfor %}
+      <option value="{{ ALL }}"{{ ' selected' if sel == ALL }}>전체 채널</option>
+    </select>
+    <noscript><button class="btn btn-secondary" type="submit">보기</button></noscript>
+  </form>
+  {% set levels = checks|map(attribute=0)|list %}
   {% set lv = 'bad' if 'bad' in levels else 'warn' if 'warn' in levels else 'ok' %}
   <button class="env-btn env-{{ lv }}" type="button" popovertarget="env-pop" title="환경 점검"
           aria-label="환경 점검: {{ {'ok': '모두 정상', 'warn': '확인할 항목 있음', 'bad': '문제 있음'}[lv] }}, 자세히 보기"><span class="dot" aria-hidden="true"></span>환경</button>
   <div id="env-pop" class="env-pop" popover>
-    <h2>환경 점검</h2>
+    {% set cc = channels.get(sel) or (channels.values()|first) %}
+    <h2>환경 점검 · {{ cc.name }}</h2>
     <ul class="checks">
-      {% for level, label, hint in env_checks() %}
+      {% for level, label, hint in checks %}
       <li class="c-{{ level }}">{{ icon(CHECK_ICON[level]) }}<div><span>{{ label }}</span><small>{{ hint }}</small></div></li>
       {% endfor %}
     </ul>
