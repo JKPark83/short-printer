@@ -5,7 +5,7 @@ import pytest
 
 from shorts_printer import script
 
-OK = script.Script(title="t", description="d", tags=["a"], scenes=[script.Scene(sentence="하나", prompt="p1", term="coffee"),
+OK = script.Script(title="t", description="d", tags=["a"], sensitive="", scenes=[script.Scene(sentence="하나", prompt="p1", term="coffee"),
                                                                  script.Scene(sentence="둘", prompt="p2", term="cup")])
 
 
@@ -77,6 +77,14 @@ def test_brief_is_appended(monkeypatch):
     assert calls[0]["messages"][0]["content"] == "주제: 커피\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n첫 문장은 질문으로"
     script.write("커피")
     assert calls[1]["messages"][0]["content"] == "주제: 커피"
+
+
+def test_channel_and_recent_titles_are_appended(monkeypatch):
+    calls = fake_client(monkeypatch, resp())
+    monkeypatch.setattr(script.config, "CHANNEL", "생활 속 과학")
+    script.write("커피", recent=["라면이 꼬불꼬불한 진짜 이유"])
+    text = calls[0]["messages"][0]["content"]
+    assert "채널 분야: 생활 속 과학" in text and "최근 제목(이 틀을 피한다):\n- 라면이 꼬불꼬불한 진짜 이유" in text
 
 
 def test_revise_keeps_scene_count_and_prompts(monkeypatch):

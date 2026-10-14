@@ -161,6 +161,17 @@ def test_clip_upload_waits_then_enqueues(monkeypatch):
     assert client.post(f"{url}/0", content=MP4).status_code == 409
 
 
+def test_sensitive_banner_and_confirm(monkeypatch):
+    job = scene_job()
+    atomic_write_json(job.dir / "script.json", read_json(job.dir / "script.json") | {"sensitive": "금융·투자"})
+    assert "민감 분야(금융·투자)" in client.get(f"/jobs/{job.id}").text
+    enqueued = []
+    monkeypatch.setattr(worker, "enqueue", lambda i: enqueued.append(i) or True)
+    assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True}
+    assert enqueued == [job.id] and job.data["confirmed"] is True
+    assert "민감 분야" not in client.get(f"/jobs/{job.id}").text
+
+
 def test_clip_replace_after_done_rerenders_only(monkeypatch):
     job = scene_job("done", STEPS)
     (job.dir / "clips").mkdir()

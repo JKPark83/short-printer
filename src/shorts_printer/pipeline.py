@@ -24,15 +24,21 @@ def step_script(job: Job) -> str:
         job.update(usage=script.add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
         return usage["model"]
-    s, usage = script.write(job.data["topic"], job.data.get("brief"))   # 예전 job.json엔 brief가 없다
+    recent = [t for j in Job.all() if j.id != job.id and (t := (read_json(j.dir / "script.json") or {}).get("title"))][-15:]
+    s, usage = script.write(job.data["topic"], job.data.get("brief"), recent)   # 예전 job.json엔 brief가 없다
     atomic_write_json(job.dir / "script.json", s.flat())
     job.update(usage=usage)
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
+    if s.sensitive:
+        job.log(f"민감 분야({s.sensitive}): 대본을 확인한 뒤 [확인하고 계속]을 눌러야 장면을 만들어요")
     return usage["model"]
 
 
 def step_footage(job: Job) -> str:
-    """장면마다 클립 하나. 공급자가 만들 수 있는 건 만들고, 빠진 장면은 사람이 올릴 때까지 waiting."""
+    """장면마다 클립 하나. 공급자가 만들 수 있는 건 만들고, 빠진 장면은 사람이 올릴 때까지 waiting.
+    민감 분야 대본은 사람이 확인(confirmed)하기 전엔 크레딧을 쓰지 않고 멈춘다."""
+    if (area := read_json(job.dir / "script.json").get("sensitive")) and not job.data.get("confirmed"):
+        raise Wait(f"민감 분야({area}) 대본 확인")
     p = video.VIDEO[video.default()]
     d = job.dir / "clips"
     d.mkdir(exist_ok=True)
@@ -65,7 +71,7 @@ def step_subtitles(job: Job) -> str:
 
 
 def step_thumbnail(job: Job) -> str:
-    """썸네일 스킬대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립. 렌더가 이걸 영상 첫 0.5초에 넣는다."""
+    """썸네일 스킬대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립. 문구는 렌더가 위 띠 제목으로도 쓴다."""
     clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
     t = thumbnail.make(job.dir, read_json(job.dir / "script.json"), job.data["topic"], job.log,
                        job.data.get("thumb_note") or "")

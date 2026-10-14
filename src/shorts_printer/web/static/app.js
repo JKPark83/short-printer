@@ -218,7 +218,7 @@ document.addEventListener('click', async e => {
   if (!retry) return;
   retry.disabled = true;
   try {
-    const r = await fetch(`${api}/retry`, { method: 'POST' });
+    const r = await fetch(`${api}/${retry.dataset.retry || 'retry'}`, { method: 'POST' });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '다시 시도하지 못했어요');
     toast('이어서 다시 시작했어요');
     await tick(true);

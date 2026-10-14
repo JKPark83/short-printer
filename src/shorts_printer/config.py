@@ -27,6 +27,8 @@ YOUTUBE_TOKEN = ROOT / ".secrets" / "youtube_token.json"
 # 웹 화면이 받는 호스트 이름. tailscale serve로 열 때는 .env의 SP_HOSTS에 machine.tailnet.ts.net을 쉼표로 더한다
 HOSTS = ["127.0.0.1", "localhost", *filter(None, map(str.strip, os.environ.get("SP_HOSTS", "").split(",")))]
 
+# 채널 분야(예: 생활 속 과학). 있으면 대본과 추천 주제가 이 분야 안에서 돈다
+CHANNEL = os.environ.get("SP_CHANNEL") or None
 VIDEO = os.environ.get("SP_VIDEO") or "flow"   # 영상 공급자(video.VIDEO 키). flow | stock
 
 

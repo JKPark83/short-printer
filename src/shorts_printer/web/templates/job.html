@@ -46,6 +46,10 @@
       {% elif job.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
         <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+      {% elif job.status == 'waiting' and script and script.sensitive and not job.confirmed %}
+      <div class="banner banner-warn" role="alert">{{ icon('alert', 18) }}
+        <div><strong>민감 분야({{ script.sensitive }}) 대본이에요</strong><p class="muted">YouTube는 건강·법률·금융·정치를 AI가 전문가처럼 설명하는 영상을 수익화하지 않고, 틀린 정보는 신고·삭제될 수 있어요. 대본의 사실관계를 확인한 뒤에만 계속하세요.</p>
+          <button class="btn btn-secondary" type="button" data-retry="confirm">확인하고 계속</button></div></div>
       {% elif job.status == 'waiting' %}
       <div class="banner banner-warn">{{ icon('upload', 18) }}
         <div><strong>장면 클립을 기다려요</strong><p class="muted">빠진 장면 클립을 올려 주세요. Flow 설정: 16:9 · 8초 · 결과 1개 · <a href="#c-footage">장면 목록</a> · 올리기가 끝날 때까지 이 화면에 머물러 주세요</p></div></div>

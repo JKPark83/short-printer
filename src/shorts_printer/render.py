@@ -7,11 +7,10 @@ from . import ffmpeg, subtitles
 from .jobs import atomic_write_text
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
-THUMB_SEC = 0.5   # 썸네일을 영상 첫 화면(겸 훅)으로 보여 주는 길이
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 노랑. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,Apple SD Gothic Neo,{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
 YELLOW = "&H0000E5FF&"
-# 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 영상 아래쪽 안에(subtitles MarginV 520)
+# 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 아래 띠 맨 위에(subtitles MarginV)
 BOX_Y, BOX_H = 560, 880
 # 어떤 클립이든(16:9 Flow, 9:16 스톡) 가운데를 잘라 영상칸 1080x880/30fps로
 CLIP_VF = f"scale=1080:{BOX_H}:force_original_aspect_ratio=increase,crop=1080:{BOX_H},setsar=1,fps=30,format=yuv420p"
@@ -46,16 +45,11 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, title: tuple[list[
         args += ["-f", "lavfi", "-i", GRADIENT.format(dur=dur)]
         chains.append(f"[0:v]crop=1080:{BOX_H},format=yuv420p[bg]")
     n = len(clips) or 1
-    thumb = (job_dir / "thumbnail.jpg").exists()
     if title:
         caption_ass(job_dir / "title.ass", *title, 140, *TITLE_POS)
-    chains += [f"[bg]{FRAME_VF}," + ("ass=title.ass," if title else "") + "ass=subs.ass" + ("[s]" if thumb else "[v]"),
-               f"[{n}:a]apad[a]"]
-    extra = []
-    if thumb:   # 쇼츠 피드는 맞춤 썸네일 대신 영상 장면을 쓸 때가 많아 첫 화면에도 넣는다. 음성은 그대로 0초부터
-        extra = ["-i", "thumbnail.jpg"]
-        chains.append(f"[s][{n + 1}:v]overlay=enable='lt(t,{THUMB_SEC})',format=yuv420p[v]")
-    ffmpeg.run([*args, "-i", "voice.wav", *extra, "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
+    # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
+    chains += [f"[bg]{FRAME_VF}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", f"[{n}:a]apad[a]"]
+    ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
     os.replace(job_dir / "final.tmp.mp4", job_dir / "final.mp4")

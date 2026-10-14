@@ -1,10 +1,12 @@
 """4단계 자막: 문장 시각을 16자 이하 덩어리로 나눠 ASS로 쓴다.
-낱말 시각(words)이 있으면 그 시각에 덩어리를 넘기고, 없으면 글자 수에 비례해 나눈다."""
+낱말 시각(words)이 있으면 그 시각에 덩어리를 넘기고, 없으면 글자 수에 비례해 나눈다.
+자막은 영상 칸(render.BOX_Y~+BOX_H, 560~1440) 아래 검은 띠 맨 위에 윗줄을 맞춘다(위 정렬 8, MarginV 1465).
+띠 아래쪽은 쇼츠·틱톡의 제목·채널 이름이 덮는다."""
 from pathlib import Path
 
 from .jobs import atomic_write_text
 
-LIMIT = 16
+LIMIT = 16   # 84px에서 16자가 한 줄(약 780px)
 
 HEADER = """[Script Info]
 ScriptType: v4.00+
@@ -12,7 +14,7 @@ PlayResX: 1080
 PlayResY: 1920
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,Apple SD Gothic Neo,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,90,90,520,1
+Style: Cap,Apple SD Gothic Neo,84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,1465,1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """

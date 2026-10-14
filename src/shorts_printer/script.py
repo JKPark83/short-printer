@@ -16,6 +16,7 @@ class Script(BaseModel):
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
     scenes: list[Scene] = Field(description="장면 6~7개. 장면 하나 = 문장 하나, 읽는 순서")
+    sensitive: str = Field(description="건강·의료, 법률, 금융·투자, 정치 주제면 그 분야 이름. 아니면 빈 문자열")
 
     def flat(self) -> dict:
         """script.json 형식: 장면을 같은 개수의 배열 셋으로 푼다(다른 단계는 sentences를 읽는다)."""
@@ -30,7 +31,8 @@ SYSTEM = """너는 유튜브 쇼츠·릴스·틱톡용 한국어 내레이션 �
 - 첫 문장은 3초 안에 계속 보게 만드는 훅이다. 질문이나 의외의 사실로 시작한다.
 - 말하듯 자연스러운 존댓말로 쓴다. TTS가 기호까지 읽으므로 문장에 이모지·해시태그·괄호·특수기호를 넣지 않는다.
 - 숫자와 사실은 널리 확인된 것만 쓴다. 확실하지 않으면 일반론으로 말한다.
-- 마지막 문장은 구독이나 댓글을 자연스럽게 부르는 한마디다.
+- 마지막 문장은 구독·댓글 요청이 아니라 정보의 마무리나 반전이다. 영상이 반복 재생될 때 첫 문장으로 자연스럽게 이어지게 쓴다.
+- 제목은 질문형, 숫자형, 반전형, 비교형, 경고형 가운데 하나로 쓴다. 최근 제목이 주어지면 그 끝맺음과 틀(예: "~진짜 이유")을 피한다.
 - prompt는 그 문장을 읽는 약 5초 동안 보일 한 장면을 영어 한 단락(60~90단어)으로 쓴다.
 - 모든 prompt를 같은 스타일 머리말로 시작한다(예: "Photoreal documentary, cinematic, golden hour."). 생성 서비스는 앞 프롬프트를 기억하지 않으므로 주인공·장소·시대·옷차림을 매번 다시 적어 장면이 이어지게 한다.
 - 핵심 피사체와 동작은 화면 가운데, 앞 5초 안에 둔다. 영상의 양옆과 뒷부분은 잘릴 수 있다. 카메라 움직임은 하나만 쓴다(예: slow push-in, sideways truck).
@@ -120,9 +122,13 @@ def revise(s: dict, note: str) -> tuple[dict, dict]:
     return s | out.model_dump() | {"sentences": sentences}, usage
 
 
-def write(topic: str, brief: str | None = None) -> tuple[Script, dict]:
-    """brief: 추천 주제에서 왔으면 훅·전개 방향 참고."""
+def write(topic: str, brief: str | None = None, recent: list[str] = ()) -> tuple[Script, dict]:
+    """brief: 추천 주제에서 왔으면 훅·전개 방향 참고. recent: 최근 작업 제목(같은 틀을 피한다)."""
     text = f"주제: {topic}" + (f"\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n{brief}" if brief else "")
+    if config.CHANNEL:
+        text += f"\n\n채널 분야: {config.CHANNEL}. 이 분야를 즐겨 보는 시청자에게 맞는 각도로 쓴다."
+    if recent:
+        text += "\n\n최근 제목(이 틀을 피한다):\n" + "\n".join(f"- {t}" for t in recent)
     script, usage = ask(SYSTEM, text, Script, "Claude가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요.", "대본")
     if not script.scenes:
         raise RuntimeError("대본을 받지 못했어요(문장이 비었어요).")

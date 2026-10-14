@@ -369,7 +369,7 @@ SYSTEM_PICK = """너는 한국어 유튜브 쇼츠 채널의 기획자다. 지�
 규칙:
 - 주제를 베끼지 말고, 인기 이유(포맷·훅·소재)를 우리 방식에 맞게 옮긴다.
 - 이미 만든 작업 주제와 겹치지 않게 한다.
-- 사실 확인이 어렵거나, 저작권·초상권·정치·혐오·의료 위험이 있는 주제는 피하고 excluded에 이유를 남긴다.
+- 사실 확인이 어렵거나, 저작권·초상권·정치·혐오 위험이 있거나 건강·법률·금융처럼 AI 해설로 수익화가 막히는 주제는 피하고 excluded에 이유를 남긴다.
 - 점수(fit, fresh, safe)는 아래 기준으로 1~5. 화제성은 코드가 조회수로 따로 계산하니 매기지 않는다.
 - 모든 글은 짧은 한국어. search_terms만 영어."""
 
@@ -404,6 +404,8 @@ def step_pick(t: Trend) -> str:
     made = [j.data["topic"] for j in Job.all()][-30:]
     criteria = "\n".join(f"- {k} {name} (가중치 {WEIGHTS[k]}): {desc}" for k, (name, desc) in CRITERIA.items())
     text = (f"키워드: {t.data['keyword'] or '(없음, 한국 전체)'} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
+            + (f"채널 분야: {config.CHANNEL}. 추천 주제는 이 분야 안에서만 고르고, 인기 쇼츠는 포맷·훅만 참고한다.\n\n"
+               if config.CHANNEL else "") +
             f"선정 기준:\n{criteria}\n\n이미 만든 작업 주제:\n" + ("\n".join(f"- {m}" for m in made) or "(없음)") +
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
     out, usage = ask(SYSTEM_PICK, text, PicksOut, "Claude가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. 키워드를 바꿔 보세요.", "추천 주제")
