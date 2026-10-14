@@ -54,18 +54,24 @@ class TtsProvider(Protocol):
 
 class ElevenLabs:
     label = "ElevenLabs"
-    hint = "유료 · 자막이 낱말 시각에 맞아요 · .env에 ELEVENLABS_API_KEY와 ELEVENLABS_VOICE_ID"
-    voices = {"elevenlabs": "ElevenLabs (유료)"}   # 실제 목소리는 .env ELEVENLABS_VOICE_ID 하나
+    hint = "유료 · 자막이 낱말 시각에 맞아요 · .env에 ELEVENLABS_API_KEY"
+    # 키는 ElevenLabs 목소리 ID. "elevenlabs"는 .env ELEVENLABS_VOICE_ID(예전 작업도 이 키)
+    voices = {"elevenlabs": "ElevenLabs 기본 (.env)",
+              "LKOcTG4J4tYTPR9DnLeM": "미스터킴 (ElevenLabs)",
+              "QPFsEL6IBxlT15xfiD6C": "이하나 (ElevenLabs)",
+              "iWLjl1zCuqXRkW6494ve": "지수 (ElevenLabs)"}
 
     def ready(self) -> bool:
-        return bool(config.secret("ELEVENLABS_API_KEY") and config.ELEVENLABS_VOICE_ID)
+        return bool(config.secret("ELEVENLABS_API_KEY"))
 
     def speak(self, voice, text, out):
+        if voice == "elevenlabs":
+            voice = config.ELEVENLABS_VOICE_ID
         # 숫자·단위 읽기(1173년→천백칠십삼 년, 45cm→사십오 센티미터). 기본값 auto는 한국어를 안 바꾼다.
         # alignment는 원문 글자 기준이라 자막은 그대로 맞는다.
         body = json.dumps({"text": text, "model_id": config.ELEVENLABS_MODEL,
                            "apply_text_normalization": "on"}).encode()
-        req = Request(ELEVENLABS.format(config.ELEVENLABS_VOICE_ID), data=body, headers={
+        req = Request(ELEVENLABS.format(voice), data=body, headers={
             "xi-api-key": config.secret("ELEVENLABS_API_KEY"), "Content-Type": "application/json"})
         try:
             with urlopen(req, timeout=60) as r:

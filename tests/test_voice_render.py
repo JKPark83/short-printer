@@ -87,7 +87,7 @@ def test_elevenlabs_word_times_shift_by_sentence_start_and_fall_back(tmp_path, m
 
 
 def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_path, monkeypatch):
-    sent = []
+    sent, urls = [], []
 
     class Resp(io.BytesIO):
         def __enter__(self): return self
@@ -95,12 +95,18 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
 
     def urlopen(req, timeout):
         sent.append(json.loads(req.data))
+        urls.append(req.full_url)
         return Resp(json.dumps({"audio_base64": base64.b64encode(b"mp3").decode(), "alignment": {
             "characters": list("45cm 탑"), "character_start_times_seconds": [0, .1, .2, .3, .4, .5, .6]}}).encode())
     monkeypatch.setattr(voice, "urlopen", urlopen)
     path, ws = voice.ElevenLabs().speak("elevenlabs", "45cm 탑", tmp_path / "s00")
     assert sent[0]["apply_text_normalization"] == "on" and sent[0]["text"] == "45cm 탑"
     assert path.read_bytes() == b"mp3" and ws == [{"text": "45cm", "start": 0}, {"text": "탑", "start": .5}]
+    monkeypatch.setattr(config, "ELEVENLABS_VOICE_ID", "envID")
+    voice.ElevenLabs().speak("elevenlabs", "탑", tmp_path / "s01")
+    voice.ElevenLabs().speak("iWLjl1zCuqXRkW6494ve", "탑", tmp_path / "s02")
+    assert [r.split("/")[-2] for r in urls[1:]] == ["envID", "iWLjl1zCuqXRkW6494ve"]
+    assert voice.owner("iWLjl1zCuqXRkW6494ve").label == "ElevenLabs"
 
 
 def test_voice_owner_and_choices(monkeypatch):
