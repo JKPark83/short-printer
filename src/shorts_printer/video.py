@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
-from . import config, footage, render
+from . import config, flow_auto, footage, render
 from .jobs import atomic_write_json, read_json
 
 
@@ -32,7 +32,7 @@ class Flow:
         return ()
 
 
-VIDEO: dict[str, VideoProvider] = {"flow": Flow(), "stock": footage.Stock()}
+VIDEO: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": flow_auto.FlowAuto(), "stock": footage.Stock()}
 
 
 def default() -> str:
