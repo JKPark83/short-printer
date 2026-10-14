@@ -3,7 +3,7 @@
 import time
 from pathlib import Path
 
-from . import render, script, subtitles, thumbnail, video, voice, youtube
+from . import render, script, studio, subtitles, thumbnail, video, voice, youtube
 from .jobs import LABELS, STEPS, Job, atomic_write_json, now, read_json, redact, upload_state
 
 
@@ -131,8 +131,16 @@ def publish(job: Job) -> None:
     """완성 영상을 YouTube에 비공개로 올린다. 실패하면 failed로 남겨 다시 올릴 수 있게 한다."""
     job.update(upload=upload_state("running"))
     job.log("YouTube 업로드 시작")
+    path, script_ = job.dir / "final.mp4", read_json(job.dir / "script.json")
     try:
-        video_id = youtube.upload(job.dir / "final.mp4", read_json(job.dir / "script.json"))
+        try:
+            video_id = youtube.upload(path, script_)
+        except RuntimeError as e:
+            # API 업로드 한도는 채널 하루 몫이라 기다려도 안 풀린다. 스튜디오 화면 업로드는 따로 센다
+            if "uploadLimitExceeded" not in str(e):
+                raise
+            job.log("API 업로드 한도가 차서 YouTube 스튜디오 화면(전용 Chrome)으로 올려요")
+            video_id = studio.upload(path, youtube.metadata(script_))
     except BaseException as e:   # Ctrl+C도 실패로 남긴다
         msg = redact(str(e)) or type(e).__name__
         job.update(upload=upload_state("failed", error=msg, at=now()))

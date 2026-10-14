@@ -157,3 +157,21 @@ def test_thumbnail_is_set_after_upload_and_failure_keeps_upload_done(yt, monkeyp
     pipeline.publish(job)
     up = job.data["upload"]
     assert up["status"] == "done" and up["video_id"] == "VID" and "forbidden" in up["note"]
+
+
+def test_upload_limit_falls_back_to_studio(monkeypatch):
+    from shorts_printer import studio
+
+    job = Job.create("커피", "ko-KR-SunHiNeural")
+    atomic_write_json(job.dir / "script.json", SCRIPT)
+
+    def limit(*_):
+        raise RuntimeError("YouTube 요청 실패(400: uploadLimitExceeded · too many)")
+
+    monkeypatch.setattr(youtube, "upload", limit)
+    got = []
+    monkeypatch.setattr(studio, "upload", lambda path, meta: got.append(meta) or "SVID")
+    pipeline.publish(job)
+    up = job.data["upload"]
+    assert up["status"] == "done" and up["video_id"] == "SVID"
+    assert got[0]["snippet"]["title"] == "커피 상식" and got[0]["status"]["privacyStatus"] == "private"
