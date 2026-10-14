@@ -328,6 +328,13 @@ def retry(job_id: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{job_id}/confirm")
+def confirm(job_id: str):
+    """민감 분야 대본을 사람이 확인했다. 장면 만들기부터 이어서."""
+    _load(Job, job_id).update(confirmed=True)
+    return retry(job_id)
+
+
 def _note(note: str) -> str:
     if len(note) > MAX_NOTE:
         raise HTTPException(400, f"수정 요청은 {MAX_NOTE}자까지 적을 수 있어요")

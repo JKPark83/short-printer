@@ -32,7 +32,7 @@ MAX_FRAMES = 8
 SCENE = 0.15
 CRITERIA = {
     "trend": ("화제성", "지금 조회수가 빨리 오르는 흐름인가(참고 쇼츠의 시간당 조회수 순위로 계산)"),
-    "fit": ("제작 적합도", "스톡 영상·TTS·자막만으로 만들 수 있나"),
+    "fit": ("제작 적합도", "3D 해설 클립·TTS·자막만으로 만들 수 있나"),
     "fresh": ("차별화", "이미 만든 주제·흔한 영상과 겹치지 않고 새 각도가 있나"),
     "safe": ("안전성", "저작권·민감 주제 위험이 낮나"),
 }
@@ -178,14 +178,14 @@ class VideoAnalysis(BaseModel):
     narration: Narration
     text_overlay: str = Field(description="화면 자막·텍스트를 쓰는 방식. 없으면 '없음'")
     why_popular: str = Field(description="지금 조회수가 잘 나오는 이유 추정 한두 문장")
-    replicable: int = Field(description="무료 스톡 영상+한국어 TTS+번인 자막만으로 비슷하게 만들 수 있는 정도. 1(불가)~5(쉬움)")
+    replicable: int = Field(description="AI 3D 해설 클립+한국어 TTS+번인 자막만으로 비슷하게 만들 수 있는 정도. 1(불가)~5(쉬움)")
     replicable_reason: str = Field(description="replicable 점수 이유 한 문장")
 
 
 SYSTEM_VIDEO = """너는 유튜브 쇼츠 기획자다. 지금 한국에서 조회수가 빠르게 오르는 쇼츠 하나를 받아, 따라 만들 수 있을지 판단하려고 뜯어본다.
 받는 것: 컷마다 뽑은 프레임(또는 썸네일 한 장), 제목·설명, 자막 일부, 조회 통계, 컷 정보.
 - 보이는 것과 자막에 근거해서 쓴다. 근거가 없으면 짐작이라고 밝힌다.
-- 우리 제작 방식은 영어 검색어로 찾은 무료 스톡 영상(Pexels·Pixabay) + 한국어 TTS + 번인 자막, 30~45초다. replicable은 이 방식 기준이다.
+- 우리 제작 방식은 장면마다 AI로 만든 3D 해설 애니메이션 클립 + 한국어 TTS + 번인 자막, 40~50초다. replicable은 이 방식 기준이다.
 - 모든 답은 짧은 한국어로."""
 
 
@@ -363,13 +363,15 @@ class PicksOut(BaseModel):
 SYSTEM_PICK = """너는 한국어 유튜브 쇼츠 채널의 기획자다. 지금 조회수가 빨리 오르는 쇼츠 분석 결과를 보고, 우리가 바로 만들 주제 3~5개를 고른다.
 
 우리 제작 방식(이것만 된다):
-- Claude가 쓴 한국어 대본을 TTS가 읽고, 번인 자막이 뜬다. 30~45초.
-- 배경은 영어 검색어로 찾은 무료 스톡 영상(Pexels·Pixabay). 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다.
+- Claude가 쓴 한국어 대본을 TTS가 읽고, 번인 자막이 뜬다. 40~50초.
+- 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(건축·과학 해설 채널 느낌). 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다.
 
 규칙:
+- 시청자가 보고 바로 써먹어 돈·시간을 아끼는 생활 꿀팁을 먼저 고른다. "난방비 절약 꿀팁" 같은 주제가 조회수가 잘 나온다.
+- 오늘 날짜의 계절·시기에 맞는 주제를 우선한다(예: 겨울 난방비·결로, 여름 전기요금·제습, 장마철 빨래, 명절, 이사철).
 - 주제를 베끼지 말고, 인기 이유(포맷·훅·소재)를 우리 방식에 맞게 옮긴다.
 - 이미 만든 작업 주제와 겹치지 않게 한다.
-- 사실 확인이 어렵거나, 저작권·초상권·정치·혐오·의료 위험이 있는 주제는 피하고 excluded에 이유를 남긴다.
+- 사실 확인이 어렵거나, 저작권·초상권·정치·혐오 위험이 있거나 건강·법률·금융처럼 AI 해설로 수익화가 막히는 주제는 피하고 excluded에 이유를 남긴다.
 - 점수(fit, fresh, safe)는 아래 기준으로 1~5. 화제성은 코드가 조회수로 따로 계산하니 매기지 않는다.
 - 모든 글은 짧은 한국어. search_terms만 영어."""
 
@@ -403,7 +405,9 @@ def step_pick(t: Trend) -> str:
             for v in videos if found.get(v["id"], {}).get("status") in OK]
     made = [j.data["topic"] for j in Job.all()][-30:]
     criteria = "\n".join(f"- {k} {name} (가중치 {WEIGHTS[k]}): {desc}" for k, (name, desc) in CRITERIA.items())
-    text = (f"키워드: {t.data['keyword'] or '(없음, 한국 전체)'} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
+    text = (f"오늘: {datetime.now():%Y-%m-%d}\n키워드: {t.data['keyword'] or '(없음, 한국 전체)'} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
+            + (f"채널 분야: {config.CHANNEL}. 추천 주제는 이 분야 안에서만 고르고, 인기 쇼츠는 포맷·훅만 참고한다.\n\n"
+               if config.CHANNEL else "") +
             f"선정 기준:\n{criteria}\n\n이미 만든 작업 주제:\n" + ("\n".join(f"- {m}" for m in made) or "(없음)") +
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
     out, usage = ask(SYSTEM_PICK, text, PicksOut, "Claude가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. 키워드를 바꿔 보세요.", "추천 주제")

@@ -62,8 +62,6 @@ def test_render_gradient_with_subtitles(tmp_path, monkeypatch):
     assert ",2,80,80,560," in ass   # 아래쪽, 쇼츠 제목칸 위
     render.render(tmp_path, [], timing[-1]["end"], (["커피 상식"], "상식"))
     assert "{\\c" in (tmp_path / "title.ass").read_text() and ",2,80,80,1390," in (tmp_path / "title.ass").read_text()
-    render.render(tmp_path, [], timing[-1]["end"])   # 썸네일이 있으면 첫 0.5초에 얹는다
-    assert (tmp_path / "final.mp4").stat().st_size > 1000
 
 
 def test_elevenlabs_word_times_shift_by_sentence_start_and_fall_back(tmp_path, monkeypatch):

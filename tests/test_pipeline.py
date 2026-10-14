@@ -60,6 +60,22 @@ def test_footage_waits_for_clips_then_resumes(monkeypatch):
         (job.dir / "clips" / f"clip{i}.mp4").write_bytes(b"x")
     pipeline.run(job)
     assert ran == ["thumbnail", "render"] and job.data["status"] == "done"
+
+
+def test_sensitive_script_waits_for_confirm_before_footage(monkeypatch):
+    monkeypatch.setattr(config, "VIDEO", "flow")
+    job = scene_job("script", "voice", "subtitles")
+    atomic_write_json(job.dir / "script.json", read_json(job.dir / "script.json") | {"sensitive": "건강·의료"})
+    for i in (0, 1):
+        (job.dir / "clips").mkdir(exist_ok=True)
+        (job.dir / "clips" / f"clip{i}.mp4").write_bytes(b"x")
+    ran = stub_steps(monkeypatch)
+    monkeypatch.setitem(pipeline.RUN, "footage", pipeline.step_footage)
+    pipeline.run(job)
+    assert job.data["status"] == "waiting" and ran == [] and "민감 분야(건강·의료)" in (job.dir / "log.txt").read_text()
+    job.update(confirmed=True)
+    pipeline.run(job)
+    assert ran == ["thumbnail", "render"] and job.data["status"] == "done"
     assert read_json(job.dir / "clips.json") == [{"file": "clip0.mp4", "source": "직접 올림"},
                                                  {"file": "clip1.mp4", "source": "직접 올림"}]
 
@@ -124,13 +140,17 @@ def test_script_step_passes_brief_from_trend_pick(monkeypatch):
     assert job.data["brief"] == "질문으로 시작" and job.data["source"] == {"trend": "t1", "pick": 0}
     seen = []
 
-    def write(topic, brief=None):
-        seen.append((topic, brief))
+    def write(topic, brief=None, recent=()):
+        seen.append((topic, brief, recent))
         raise RuntimeError("여기까지만")
     monkeypatch.setattr(pipeline.script, "write", write)
     with pytest.raises(RuntimeError):
         pipeline.step_script(job)
-    assert seen == [("주제", "질문으로 시작")]
+    other = Job.create("예전", "ko-KR-SunHiNeural")
+    atomic_write_json(other.dir / "script.json", {"title": "라면의 진짜 이유", "sentences": ["x"]})
+    with pytest.raises(RuntimeError):
+        pipeline.step_script(job)
+    assert seen == [("주제", "질문으로 시작", []), ("주제", "질문으로 시작", ["라면의 진짜 이유"])]
 
 
 def test_script_step_revises_when_note(monkeypatch):

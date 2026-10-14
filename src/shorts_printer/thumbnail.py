@@ -1,5 +1,5 @@
 """썸네일 단계: 썸네일 스킬(.claude/skills/shorts-thumbnail/SKILL.md) 본문을 Claude 지시문으로 써서
-문구를 정한다. 배경은 첫 장면 클립(render.thumbnail), 영상 첫 화면 삽입은 render.render."""
+문구를 정한다. 배경은 첫 장면 클립(render.thumbnail). 문구는 영상 위 띠 제목으로도 쓴다(render.render)."""
 from pathlib import Path
 
 from pydantic import BaseModel, Field
