@@ -164,3 +164,30 @@ def test_script_step_revises_when_note(monkeypatch):
         s | {"sentences": ["짧게", "둘"]}, {"model": "m", "input_tokens": 2, "output_tokens": 2, "cost_usd": 0.02}))
     assert pipeline.step_script(job) == "m"
     assert read_json(job.dir / "script.json")["prompts"] == ["p1", "p2"] and job.data["usage"]["cost_usd"] == 0.03
+
+
+def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
+    from unittest.mock import MagicMock
+
+    import playwright.sync_api
+
+    fa = video.flow_auto
+    monkeypatch.setattr(fa, "open_chrome", lambda: None)
+    monkeypatch.setattr(fa, "_settings", lambda page: None)
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
+    slept = []
+    monkeypatch.setattr(fa.time, "sleep", slept.append)
+    tries = []
+
+    def gen(page, prompt, path):   # 장면 a는 계속, b는 처음 한 번만 실패
+        tries.append(prompt)
+        if prompt == "a" or (prompt == "b" and tries.count("b") == 1):
+            raise RuntimeError("화면이 바뀜")
+
+    monkeypatch.setattr(fa, "_generate", gen)
+    scenes = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abc")]
+    logs = []
+    got = [c["file"] for c in fa.FlowAuto().make(scenes, tmp_path, logs.append)]
+    assert tries == ["a", "b", "c", "a", "b"]   # 실패한 장면만 딱 한 번 더
+    assert got == ["c.mp4", "b.mp4"] and len(slept) == 2 and 0 < slept[0] <= fa.RETRY_AFTER
+    assert "직접 올려 주세요" in logs[-2] and "다시 시도해 완료" in logs[-1]

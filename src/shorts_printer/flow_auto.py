@@ -1,10 +1,11 @@
 """Google Flow 자동 공급자: 전용 Chrome(sp chrome으로 한 번 로그인)에 CDP로 붙어 사람이 하던 클릭을 대신한다.
 Flow는 API가 없어 화면을 누른다. 화면이 바뀌면 장면을 건너뛰어 "클립 대기"로 남고, 직접 올리면 된다."""
+import json
 import os
 import subprocess
 import time
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from . import config
 
@@ -16,6 +17,7 @@ FLOW = "https://flow.google.com/"
 SETTINGS = ("동영상", "소재", "9:16", "360p", "8초", "x1")
 MODEL = "Omni 1.1 Flash"
 GEN_TIMEOUT = 360   # 초. 보통 2분 안팎
+RETRY_AFTER = 300   # 초. 실패한 장면은 이만큼 뒤 한 번만 다시
 TILE = '.container:has(button[aria-label="프롬프트 재사용"])'
 
 
@@ -30,6 +32,10 @@ def _up() -> bool:
 def open_chrome() -> None:
     """전용 Chrome을 디버그 포트로 띄운다. 이미 떠 있으면 그대로 둔다. 서버와 따로 산다."""
     if _up():
+        # 맥은 창을 다 닫아도 프로세스가 남는데, 창이 없으면 CDP로 붙지 못한다
+        with urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=2) as r:
+            if not any(t["type"] == "page" for t in json.load(r)):
+                urlopen(Request(f"http://127.0.0.1:{PORT}/json/new?{FLOW}", method="PUT"), timeout=5).close()
         return
     PROFILE.mkdir(parents=True, exist_ok=True)
     subprocess.Popen([CHROME, f"--remote-debugging-port={PORT}", f"--user-data-dir={PROFILE}", "--lang=ko",
@@ -43,6 +49,11 @@ def open_chrome() -> None:
 
 
 def _settings(page) -> None:
+    # 에이전트 모드(새 로그인 첫 기본값)면 설정 버튼이 숨는다. 끄면 Flow가 기억한다
+    chip = page.locator("button.agent-mode-chip").first
+    chip.wait_for(timeout=30_000)
+    if chip.get_attribute("aria-pressed") == "true":
+        chip.click()
     page.locator('button[aria-label="설정 트리거"]').click()
     for name in SETTINGS:
         r = page.locator('button[role="radio"]', has_text=name).first
@@ -110,14 +121,26 @@ class FlowAuto:
                 _settings(page)
                 log(f"Flow 프로젝트: {page.url}")
                 # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
+                failed = []
                 for s in scenes:
                     t0 = time.monotonic()
                     try:
                         _generate(page, s["prompt"], out / s["file"])
-                    except Exception as e:  # noqa: BLE001 — 그 장면만 직접 올리게 남긴다
-                        log(f"Flow: 장면 {s['i'] + 1} 못 만듦({type(e).__name__}: {str(e)[:120]}) → 직접 올려 주세요")
+                    except Exception as e:  # noqa: BLE001 — 나머지 장면을 먼저 만들고 나중에 한 번 더
+                        log(f"Flow: 장면 {s['i'] + 1} 못 만듦({type(e).__name__}: {str(e)[:120]}) → {RETRY_AFTER // 60}분 뒤 한 번 더")
+                        failed.append((s, time.monotonic()))
                         continue
                     log(f"Flow: 장면 {s['i'] + 1} 완료 ({time.monotonic() - t0:.0f}s)")
+                    yield {"file": s["file"], "source": self.label, "url": page.url}
+                for s, at in failed:   # 실패한 때부터 5분 뒤 딱 한 번(크레딧이 또 든다)
+                    time.sleep(max(0, at + RETRY_AFTER - time.monotonic()))
+                    t0 = time.monotonic()
+                    try:
+                        _generate(page, s["prompt"], out / s["file"])
+                    except Exception as e:  # noqa: BLE001 — 그 장면만 직접 올리게 남긴다
+                        log(f"Flow: 장면 {s['i'] + 1} 다시 해도 못 만듦({type(e).__name__}: {str(e)[:120]}) → 직접 올려 주세요")
+                        continue
+                    log(f"Flow: 장면 {s['i'] + 1} 다시 시도해 완료 ({time.monotonic() - t0:.0f}s)")
                     yield {"file": s["file"], "source": self.label, "url": page.url}
             finally:
                 page.close()
