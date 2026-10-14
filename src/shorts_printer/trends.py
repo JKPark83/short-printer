@@ -417,6 +417,22 @@ def step_pick(t: Trend) -> str:
     return usage["model"]
 
 
+def brief(trend_dir: Path, p: dict) -> str:
+    """추천 주제 하나 → 대본 작가에게 넘길 참고. 방향에 근거 쇼츠의 분석(훅·화면·자막·인기 이유·컷 속도)을 붙인다."""
+    videos = {v["id"]: v for v in read_json(trend_dir / "videos.json", [])}
+    found = read_json(trend_dir / "analyses.json", {})
+    lines = [f"방향: {p['angle']}", f"포맷: {p['format']}", f"지금 만들 이유: {p['why_now']}",
+             f"화면 검색어 후보: {', '.join(p['search_terms'])}"]
+    for r in p["refs"]:
+        c = found.get(r, {}).get("claude")
+        if r not in videos or not c:
+            continue
+        pace = f", 컷 평균 {found[r]['avg_shot_sec']}초" if found[r].get("avg_shot_sec") else ""
+        lines.append(f"- 참고 쇼츠 「{videos[r]['title']}」({videos[r]['duration']:.0f}초{pace}): 훅 {c['hook']} / "
+                     f"화면 {c['footage_desc']} / 자막 {c['text_overlay']} / 인기 이유 {c['why_popular']}")
+    return "\n".join(lines)
+
+
 RUN = {"collect": step_collect, "analyze": step_analyze, "pick": step_pick}
 
 

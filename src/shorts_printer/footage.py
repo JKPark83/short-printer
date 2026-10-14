@@ -1,7 +1,8 @@
-"""2단계 영상 소스: 무료 스톡 영상을 검색어마다 하나씩 받는다(MoneyPrinter의 search.py 역할).
+"""스톡 영상 공급자(Pexels·Pixabay): 장면마다 검색어로 하나씩. download()는 다른 공급자도 쓴다.
 Pexels는 2026-10부터 새 키 발급을 멈춰서 Pixabay도 쓴다. 키가 둘 다 있으면 세로 필터가 있는 Pexels가 먼저다."""
 import hashlib
 import json
+import os
 import shutil
 import time
 from pathlib import Path
@@ -48,22 +49,18 @@ def _pexels(term: str) -> list[dict]:
             for v in videos if (f := pick_file(v))]
 
 
-def pixabay_hits(api: str, term: str, **params) -> list[dict]:
-    """Pixabay 검색. 약관대로 같은 검색 결과는 24시간 캐시한다. 영상과 썸네일 사진이 같이 쓴다."""
-    params = {"q": term, "safesearch": "true", "per_page": 20} | params
-    tag = hashlib.sha1(f"{api}?{urlencode(sorted(params.items()))}".encode()).hexdigest()[:16]
+def _pixabay(term: str) -> list[dict]:
+    """약관대로 같은 검색 결과는 24시간 캐시한다."""
+    params = {"q": term, "safesearch": "true", "per_page": 20}
+    tag = hashlib.sha1(f"{PIXABAY}?{urlencode(sorted(params.items()))}".encode()).hexdigest()[:16]
     cache = config.JOBS_DIR / ".cache" / f"pixabay-{tag}.json"
     if cache.exists() and time.time() - cache.stat().st_mtime < 86400:
-        return read_json(cache)
-    with _open(f"{api}?{urlencode({'key': config.secret('PIXABAY_API_KEY')} | params)}") as r:
-        hits = json.load(r)["hits"]
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(cache, hits)
-    return hits
-
-
-def _pixabay(term: str) -> list[dict]:
-    hits = pixabay_hits(PIXABAY, term)
+        hits = read_json(cache)
+    else:
+        with _open(f"{PIXABAY}?{urlencode({'key': config.secret('PIXABAY_API_KEY')} | params)}") as r:
+            hits = json.load(r)["hits"]
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write_json(cache, hits)
     found = [{"id": h["id"], "link": f["url"], "width": f["width"], "height": f["height"], "url": h["pageURL"],
               "image": f.get("thumbnail", ""), "user": h["user"],
               "user_url": f"https://pixabay.com/users/{h['user']}-{h['user_id']}/", "duration": h["duration"]}
@@ -75,21 +72,33 @@ def _pixabay(term: str) -> list[dict]:
 SEARCH = {"Pexels": _pexels, "Pixabay": _pixabay}
 
 
-def fetch(src: str, terms: list[str], out: Path, log) -> list[dict]:
-    out.mkdir(exist_ok=True)
-    clips, seen = [], set()
-    for term in terms:
-        c = next((c for c in SEARCH[src](term) if c["id"] not in seen), None)
-        if not c:
-            log(f"{src}: '{term}' 결과 없음")
-            continue
-        seen.add(c["id"])
-        path = out / f"clip{len(clips)}.mp4"
-        with _open(c["link"]) as r, open(path, "wb") as fh:
-            shutil.copyfileobj(r, fh)
-            if r.length:   # urllib은 중간에 끊겨도 오류 없이 끝난다. 남은 바이트가 있으면 덜 받은 것
-                raise RuntimeError(f"{src} 영상을 끝까지 받지 못했어요: {term}")
-        clips.append({"file": path.name, "term": term, "source": src,
-                      **{k: c[k] for k in ("url", "image", "user", "user_url", "duration")}})
-        log(f"{src}: '{term}' → {c['url']} ({c['width']}x{c['height']}, {c['duration']}s)")
-    return clips
+def download(url: str, path: Path) -> None:
+    """끝까지 받은 것만 path에 둔다(파일이 있으면 끝난 장면으로 본다). 남은 임시 파일은 recover()가 지운다."""
+    tmp = path.with_suffix(".tmp.mp4")
+    with _open(url) as r, open(tmp, "wb") as fh:
+        shutil.copyfileobj(r, fh)
+        if r.length:   # urllib은 중간에 끊겨도 오류 없이 끝난다. 남은 바이트가 있으면 덜 받은 것
+            raise RuntimeError(f"영상을 끝까지 받지 못했어요: {url}")
+    os.replace(tmp, path)
+
+
+class Stock:
+    label = "스톡(Pexels·Pixabay)"
+    hint = "무료 · 장면마다 검색어로 찾아요 · .env에 PIXABAY_API_KEY 또는 PEXELS_API_KEY"
+
+    def ready(self) -> bool:
+        return source() is not None
+
+    def make(self, scenes, out, log):
+        # ponytail: seen은 이번 호출 안에서만 중복을 막는다. 다시 시도하면 이미 있는 장면과 같은 클립이 나올 수 있다
+        src, seen = source(), set()
+        for s in scenes:
+            c = next((c for c in SEARCH[src](s["term"]) if c["id"] not in seen), None) if s["term"] else None
+            if not c:
+                log(f"{src}: 장면 {s['i'] + 1} '{s['term']}' 결과 없음 → 직접 올려 주세요")
+                continue
+            seen.add(c["id"])
+            download(c["link"], out / s["file"])
+            log(f"{src}: 장면 {s['i'] + 1} '{s['term']}' → {c['url']} ({c['width']}x{c['height']}, {c['duration']}s)")
+            yield {"file": s["file"], "term": s["term"], "source": src,
+                   **{k: c[k] for k in ("url", "image", "user", "user_url", "duration")}}

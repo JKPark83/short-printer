@@ -1,26 +1,42 @@
-"""1단계 대본: Claude API로 주제 하나에서 제목·설명·태그·문장·영어 검색어를 한 번에 받는다(MoneyPrinter의 gpt.py 역할)."""
+"""1단계 대본: Claude API로 주제 하나에서 제목·설명·태그와 장면(문장·영상 프롬프트·스톡 검색어)을 한 번에 받는다(MoneyPrinter의 gpt.py 역할)."""
 import anthropic
 from pydantic import BaseModel, Field
 
 from . import config
 
 
+class Scene(BaseModel):
+    sentence: str = Field(description="내레이션 한 문장, 45자 이내")
+    prompt: str = Field(description="이 문장 동안 보일 한 장면의 영어 영상 생성 프롬프트, 60~90단어")
+    term: str = Field(description="같은 장면을 스톡 영상에서 찾을 구체적인 영어 명사구 2~4단어")
+
+
 class Script(BaseModel):
     title: str = Field(description="쇼츠 제목. 40자 이내, 해시태그 없이")
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
-    sentences: list[str] = Field(description="내레이션 문장 6~10개, 문장마다 45자 이내")
-    search_terms: list[str] = Field(description="Pexels 세로 영상 검색용 영어 키워드 3~5개, 문장 흐름 순서")
+    scenes: list[Scene] = Field(description="장면 6~7개. 장면 하나 = 문장 하나, 읽는 순서")
+
+    def flat(self) -> dict:
+        """script.json 형식: 장면을 같은 개수의 배열 셋으로 푼다(다른 단계는 sentences를 읽는다)."""
+        return self.model_dump(exclude={"scenes"}) | {
+            "sentences": [s.sentence for s in self.scenes], "prompts": [s.prompt for s in self.scenes],
+            "search_terms": [s.term for s in self.scenes]}
 
 
-SYSTEM = """너는 유튜브 쇼츠·릴스·틱톡용 한국어 내레이션 대본을 쓴다. 대본은 TTS가 그대로 읽고, 자막으로 화면에 뜨고, 영어 검색어로 찾은 무료 스톡 영상이 배경으로 깔린다.
+SYSTEM = """너는 유튜브 쇼츠·릴스·틱톡용 한국어 내레이션 대본을 쓴다. 대본은 TTS가 그대로 읽고, 자막으로 화면에 뜬다. 장면 하나가 문장 하나이고, 장면 영상은 prompt로 AI 영상 생성 서비스가 만들거나 term으로 스톡 영상에서 찾는다.
 
-- 읽었을 때 30~45초 길이. 문장 6~10개, 문장마다 45자 이내.
+- 읽었을 때 30~40초 길이. 장면 6~7개, 문장마다 45자 이내. 장면마다 생성 비용이 들어 장면 수를 늘리지 않는다.
 - 첫 문장은 3초 안에 계속 보게 만드는 훅이다. 질문이나 의외의 사실로 시작한다.
 - 말하듯 자연스러운 존댓말로 쓴다. TTS가 기호까지 읽으므로 문장에 이모지·해시태그·괄호·특수기호를 넣지 않는다.
 - 숫자와 사실은 널리 확인된 것만 쓴다. 확실하지 않으면 일반론으로 말한다.
 - 마지막 문장은 구독이나 댓글을 자연스럽게 부르는 한마디다.
-- search_terms는 Pexels에서 세로 영상이 잘 나오는 구체적인 영어 명사구다(예: "city night traffic", "coffee pouring"). "success" 같은 추상어는 피한다."""
+- prompt는 그 문장을 읽는 약 5초 동안 보일 한 장면을 영어 한 단락(60~90단어)으로 쓴다.
+- 모든 prompt를 같은 스타일 머리말로 시작한다(예: "Photoreal documentary, cinematic, golden hour."). 생성 서비스는 앞 프롬프트를 기억하지 않으므로 주인공·장소·시대·옷차림을 매번 다시 적어 장면이 이어지게 한다.
+- 핵심 피사체와 동작은 화면 가운데, 앞 5초 안에 둔다. 영상의 양옆과 뒷부분은 잘릴 수 있다. 카메라 움직임은 하나만 쓴다(예: slow push-in, sideways truck).
+- 눈에 안 보이는 원리나 수치는 숫자 대신 단면도(cutaway)와 빨간 선·화살표로 보여 준다.
+- prompt는 항상 "No on-screen text, no numbers, no logos."로 끝낸다. 실존 인물의 얼굴, 브랜드, 화면비 문구는 넣지 않는다.
+- term은 같은 장면을 스톡 영상에서 찾을 구체적인 영어 명사구다(예: "city night traffic", "coffee pouring"). "success" 같은 추상어는 피한다."""
 
 # 백만 토큰당 달러(입력, 출력). 모르는 모델이면 비용을 비워 둔다.
 PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-4-5": (1, 5)}
@@ -76,10 +92,38 @@ def ask(system: str, content, output_format, refusal: str, what: str):
                                 "cost_usd": cost(resp.model, u.input_tokens, u.output_tokens)}
 
 
+class Revision(BaseModel):
+    title: str = Field(description="쇼츠 제목. 40자 이내, 해시태그 없이")
+    description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
+    tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
+    sentences: list[str] = Field(description="장면마다 내레이션 한 문장. 받은 장면과 같은 개수, 같은 순서")
+
+
+REVISE = """
+
+## 지금 할 일
+이미 만든 대본을 사용자 요청대로 고친다. 장면 영상은 이미 만들어져 있으니 장면 수와 순서를 그대로 두고, 문장이 그 장면 화면과 어긋나지 않게 한다. 요청과 관계없는 문장·제목·설명·태그는 그대로 둔다. 위 규칙과 요청이 부딪히면 요청을 따른다."""
+
+
+def revise(s: dict, note: str) -> tuple[dict, dict]:
+    """완성된 대본(script.json)을 요청대로 고친다. 장면 수와 영상 프롬프트는 그대로."""
+    n = len(s["sentences"])
+    prompts = s.get("prompts") if len(s.get("prompts") or []) == n else [""] * n   # 예전 대본엔 없다
+    scenes = "\n".join(f"{i}. {t}" + (f"\n   (화면: {p})" if p else "")
+                       for i, (t, p) in enumerate(zip(s["sentences"], prompts), 1))
+    text = (f"제목: {s['title']}\n설명: {s['description']}\n태그: {', '.join(s['tags'])}\n장면 {n}개:\n{scenes}"
+            f"\n\n사용자 수정 요청: {note}")
+    out, usage = ask(SYSTEM + REVISE, text, Revision, "Claude가 이 요청으로는 대본을 고치지 않았어요. 요청을 바꿔 보세요.", "고친 대본")
+    sentences = [x.strip() for x in out.sentences]
+    if len(sentences) != n or not all(sentences):
+        raise RuntimeError(f"고친 대본의 장면 수가 맞지 않아요({len(sentences)}/{n}개). 다시 시도하세요.")
+    return s | out.model_dump() | {"sentences": sentences}, usage
+
+
 def write(topic: str, brief: str | None = None) -> tuple[Script, dict]:
     """brief: 추천 주제에서 왔으면 훅·전개 방향 참고."""
-    text = f"주제: {topic}" + (f"\n\n참고(최근 인기 쇼츠 분석에서 나온 방향): {brief}" if brief else "")
+    text = f"주제: {topic}" + (f"\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n{brief}" if brief else "")
     script, usage = ask(SYSTEM, text, Script, "Claude가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요.", "대본")
-    if not script.sentences:
+    if not script.scenes:
         raise RuntimeError("대본을 받지 못했어요(문장이 비었어요).")
     return script, usage

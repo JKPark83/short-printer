@@ -127,7 +127,10 @@ def test_create_job_from_pick_uses_server_values(monkeypatch):
     r = client.post("/jobs", data={"trend": t.id, "pick": "0", "voice": VOICE, "topic": "해킹"}, follow_redirects=False)
     assert r.status_code == 303
     d = Job.load(queued[0]).data
-    assert (d["topic"], d["brief"], d["source"]) == ("라면 끓이는 과학", "물 양부터 의심하게", {"trend": t.id, "pick": 0})
+    assert (d["topic"], d["source"]) == ("라면 끓이는 과학", {"trend": t.id, "pick": 0})
+    # 방향에 근거 쇼츠 분석이 붙는다. 모르는 ref(nope)는 건너뛴다
+    assert d["brief"].startswith("방향: 물 양부터 의심하게\n포맷: 꿀팁·하우투\n지금 만들 이유: 라면 쇼츠가 빨리 오른다\n화면 검색어 후보: ramen boiling")
+    assert "컷 평균 3.8초" in d["brief"] and "인기 이유 신상이라" in d["brief"] and d["brief"].count("- 참고 쇼츠") == 1
     html = client.get(f"/jobs/{d['id']}").text
     assert "추천 주제에서 만듦" in html and f"/trends/{t.id}#p-0" in html and "물 양부터 의심하게" in html
     assert client.post("/jobs", data={"trend": t.id, "pick": "5", "voice": VOICE}).status_code == 400

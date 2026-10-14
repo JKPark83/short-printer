@@ -27,22 +27,13 @@ YOUTUBE_TOKEN = ROOT / ".secrets" / "youtube_token.json"
 # 웹 화면이 받는 호스트 이름. tailscale serve로 열 때는 .env의 SP_HOSTS에 machine.tailnet.ts.net을 쉼표로 더한다
 HOSTS = ["127.0.0.1", "localhost", *filter(None, map(str.strip, os.environ.get("SP_HOSTS", "").split(",")))]
 
-# edge-tts 한국어 목소리 (무료, 키 없음)
-VOICES = {
-    "ko-KR-SunHiNeural": "선희 (여)",
-    "ko-KR-InJoonNeural": "인준 (남)",
-    "ko-KR-HyunsuMultilingualNeural": "현수 (남, 다국어)",
-}
-SECRET_KEYS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "PEXELS_API_KEY", "PIXABAY_API_KEY", "ELEVENLABS_API_KEY",
-               "YOUTUBE_API_KEY")   # YouTube 키는 URL 쿼리에 들어가 꼭 가린다
+VIDEO = os.environ.get("SP_VIDEO") or "flow"   # 영상 공급자(video.VIDEO 키). flow | stock
 
 
 def secret(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
-# ElevenLabs(유료): 키와 목소리 ID가 둘 다 있으면 목소리 목록 맨 앞(기본값)에 둔다
+# ElevenLabs(유료): 키와 목소리 ID가 둘 다 있어야 켜진다(voice.ElevenLabs.ready)
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"
-if secret("ELEVENLABS_API_KEY") and ELEVENLABS_VOICE_ID:
-    VOICES = {"elevenlabs": "ElevenLabs (유료)", **VOICES}

@@ -3,9 +3,10 @@
 {% block main %}
 {% set up = job.upload or {} %}
 {% set busy = job.status in ACTIVE or up.status in ACTIVE %}
+{% set editable = job.status == 'done' and up.status not in ACTIVE and up.status != 'done' %}
 {% set files = '/files/' ~ job.id ~ '/' %}
 {% set bust = '?v=' ~ (job.finished_at or '') %}
-<main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-footage c-voice c-subs c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
+<main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-voice c-subs c-footage c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
   <a class="back" href="/">{{ icon('arrow-left') }}대시보드</a>
 
   <header id="head" class="job-head">
@@ -17,7 +18,7 @@
     </div>
     <div class="jh-actions">
       <span class="badge b-{{ job.status }}">{{ STATUS[job.status] }}</span>
-      {% if job.status in ('failed', 'interrupted', 'draft') %}
+      {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') %}
       <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
       {% endif %}
     </div>
@@ -45,6 +46,9 @@
       {% elif job.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
         <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+      {% elif job.status == 'waiting' %}
+      <div class="banner banner-warn">{{ icon('upload', 18) }}
+        <div><strong>장면 클립을 기다려요</strong><p class="muted">빠진 장면 클립을 올려 주세요. Flow 설정: 16:9 · 8초 · 결과 1개 · <a href="#c-footage">장면 목록</a> · 올리기가 끝날 때까지 이 화면에 머물러 주세요</p></div></div>
       {% endif %}
       {% for n in job.notices %}
       <div class="banner banner-info">{{ icon('info', 18) }}<p>{{ n }}</p></div>
@@ -65,32 +69,38 @@
           {% endfor %}
           <dt>문장</dt>
           <dd><ol class="sentences">{% for s in script.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
-          <dt>검색어</dt>
-          <dd><span class="chips">{% for t in script.search_terms %}<span class="chip">{{ t }}</span>{% endfor %}</span></dd>
         </dl>
-        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
-      </section>
-
-      <section id="c-footage" class="card" aria-labelledby="h-footage">
-        <div class="card-head"><h2 id="h-footage"><span class="num">2</span>영상 소스</h2></div>
-        {% if clips %}
-        <div class="clips">
-          {% for c in clips %}
-          <figure>
-            <a href="{{ c.url }}" target="_blank" rel="noopener" aria-label="{{ c.source or 'Pexels' }}에서 {{ c.term }} 영상 보기 (새 창)">
-              <img src="{{ c.image }}" alt="{{ c.term }} 영상 장면" loading="lazy" width="120" height="213"></a>
-            <figcaption><span class="chip">{{ c.term }}</span> 촬영 <a href="{{ c.user_url }}" target="_blank" rel="noopener">{{ c.user }}</a> ({{ c.source or 'Pexels' }})</figcaption>
-          </figure>
-          {% endfor %}
-        </div>
-        {% elif clips is not none %}
-        <div class="gradient-row"><span class="swatch" aria-hidden="true"></span><p class="muted">그라데이션 배경으로 만들어요. Pixabay나 Pexels 키를 넣으면 대본 검색어로 영상을 찾아 붙여요.</p></div>
+        {% if editable %}
+        <details id="script-edit" class="script-edit">
+          <summary>대본 고치기</summary>
+          <form class="edit-form">
+            <label for="se-title">제목</label>
+            <input id="se-title" name="title" maxlength="100" required pattern=".*\S.*" value="{{ script.title }}">
+            <label for="se-desc">설명</label>
+            <textarea id="se-desc" name="description" rows="3" maxlength="5000">{{ script.description }}</textarea>
+            <label for="se-tags">태그 <span class="muted">(쉼표로 나눠요)</span></label>
+            <input id="se-tags" name="tags" value="{{ script.tags|join(', ') }}">
+            <span class="label">문장</span>
+            <ol class="sentences">{% for s in script.sentences %}
+              <li><input name="sentences" maxlength="100" required pattern=".*\S.*" value="{{ s }}" aria-label="문장 {{ loop.index }}"></li>{% endfor %}
+            </ol>
+            <p class="muted">문장을 바꾸면 음성·자막·렌더를 다시 해요. 장면 클립과 썸네일은 그대로예요.</p>
+            <button id="script-save" class="btn btn-secondary" type="submit" data-post="script">{{ icon('check') }}저장</button>
+          </form>
+          <form class="edit-form">
+            <label for="se-note">Claude에게 수정 요청</label>
+            <textarea id="se-note" name="note" rows="2" maxlength="300" required placeholder="예: 2번 문장을 더 짧게 / 첫 문장을 질문으로 / 마지막 문장은 댓글 유도로"></textarea>
+            <p class="muted">장면 수는 그대로 두고 Claude가 고친 뒤 음성·자막·렌더를 다시 해요.</p>
+            <button id="script-revise" class="btn btn-secondary" type="submit" data-post="script/revise">{{ icon('sparkles') }}Claude로 고치기</button>
+          </form>
+        </details>
+        {% endif %}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
 
       <section id="c-voice" class="card" aria-labelledby="h-voice">
         <div class="card-head">
-          <h2 id="h-voice"><span class="num">3</span>음성</h2>
+          <h2 id="h-voice"><span class="num">2</span>음성</h2>
           {% if job.steps.voice.status == 'done' %}<span class="mono muted">{{ job.steps.voice.engine }} · 문장 {{ script.sentences|length }}개</span>{% endif %}
         </div>
         {% if job.steps.voice.status == 'done' %}
@@ -100,13 +110,49 @@
 
       <section id="c-subs" class="card" aria-labelledby="h-subs">
         <div class="card-head">
-          <h2 id="h-subs"><span class="num">4</span>자막</h2>
+          <h2 id="h-subs"><span class="num">3</span>자막</h2>
           {% if cues %}<span class="mono muted">{{ cues|length }}줄</span>{% endif %}
         </div>
         {% if cues %}
         <ol class="cues" tabindex="0" aria-label="자막 목록">
           {% for c in cues %}<li><time>{{ c.start|cue_ts }}</time><span>{{ c.text }}</span></li>{% endfor %}
         </ol>
+        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+      </section>
+
+      <section id="c-footage" class="card" aria-labelledby="h-footage">
+        <div class="card-head">
+          <h2 id="h-footage"><span class="num">4</span>영상 소스</h2>
+          {% if scenes %}<span class="mono muted">클립 {{ scenes|selectattr('v')|list|length }}/{{ scenes|length }}</span>{% endif %}
+        </div>
+        {% if scenes %}
+        <ol class="scenes">{% for s in scenes %}
+          <li id="scene-{{ s.i }}" class="scene">
+            <p class="scene-line"><span class="num">{{ s.i + 1 }}</span><span>{{ s.sentence }}</span>{% if s.sec %}<span class="mono muted">{{ '%.1f'|format(s.sec) }}초</span>{% endif %}</p>
+            {% if s.prompt %}
+            <details><summary>프롬프트</summary><p class="prompt">{{ s.prompt }}</p></details>
+            <button class="btn btn-secondary" type="button" data-copy="{{ s.prompt }}" aria-label="장면 {{ s.i + 1 }} 프롬프트 복사">{{ icon('copy') }}프롬프트 복사</button>
+            {% else %}<p class="muted">프롬프트가 없는 예전 대본이에요. 문장을 보고 만들어 주세요.</p>{% endif %}
+            {% if s.v %}
+            <video src="{{ files }}clips/{{ s.file }}?v={{ s.v }}" controls muted playsinline preload="metadata" aria-label="장면 {{ s.i + 1 }} 클립"></video>
+            {% if s.clip and s.clip.user %}<p class="scene-src"><span class="chip">{{ s.clip.term }}</span> 촬영 <a href="{{ s.clip.user_url }}" target="_blank" rel="noopener">{{ s.clip.user }}</a> ({{ s.clip.source }})</p>
+            {% elif s.clip %}<p class="scene-src">{{ s.clip.source }}</p>{% endif %}
+            {% endif %}
+            {% if can_upload %}<label class="btn {{ 'btn-secondary' if s.v else 'btn-primary' }}">{{ icon('upload') }}{{ '클립 바꾸기' if s.v else '클립 올리기' }}
+              <input class="sr-only" type="file" accept="video/mp4,video/quicktime,video/*" data-clip="{{ s.i }}" aria-label="장면 {{ s.i + 1 }} 클립 {{ '바꾸기' if s.v else '올리기' }}"></label>{% endif %}
+          </li>{% endfor %}</ol>
+        {% elif clips and clips[0].image %}
+        <div class="clips">
+          {% for c in clips %}
+          <figure>
+            <a href="{{ c.url }}" target="_blank" rel="noopener" aria-label="{{ c.source or 'Pexels' }}에서 {{ c.term }} 영상 보기 (새 창)">
+              <img src="{{ c.image }}" alt="{{ c.term }} 영상 장면" loading="lazy" width="120" height="213"></a>
+            <figcaption><span class="chip">{{ c.term }}</span> 촬영 <a href="{{ c.user_url }}" target="_blank" rel="noopener">{{ c.user }}</a> ({{ c.source or 'Pexels' }})</figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+        {% elif clips == [] %}
+        <div class="gradient-row"><span class="swatch" aria-hidden="true"></span><p class="muted">그라데이션 배경으로 만든 예전 작업이에요.</p></div>
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
 
@@ -123,16 +169,21 @@
           <dl class="kv">
             {% if thumb %}
             <dt>문구</dt><dd><span>{{ thumb.lines|join(' / ') }}{% if thumb.accent %} <span class="muted">· 강조 {{ thumb.accent }}</span>{% endif %}</span></dd>
-            <dt>사진</dt><dd><span>{% if thumb.photo %}<a href="{{ thumb.photo.url }}" target="_blank" rel="noopener">Pixabay</a> · 촬영 <a href="{{ thumb.photo.user_url }}" target="_blank" rel="noopener">{{ thumb.photo.user }}</a> · <span class="chip">{{ thumb.photo.query }}</span>{% else %}{{ thumb.background }} 배경(맞는 사진 없음){% endif %}</span></dd>
+            <dt>배경</dt><dd><span>{% if thumb.photo %}<a href="{{ thumb.photo.url }}" target="_blank" rel="noopener">Pixabay</a> · 촬영 <a href="{{ thumb.photo.user_url }}" target="_blank" rel="noopener">{{ thumb.photo.user }}</a> · <span class="chip">{{ thumb.photo.query }}</span>{% else %}{{ thumb.background }}{% endif %}</span></dd>
             {% if thumb.reason %}<dt>이유</dt><dd><span>{{ thumb.reason }}</span></dd>{% endif %}
+            {% if thumb.note %}<dt>요청</dt><dd><span>{{ thumb.note }}</span></dd>{% endif %}
             {% else %}
             <dt>문구</dt><dd><span class="muted">예전 방식(제목 + 영상 장면)으로 만든 썸네일이에요</span></dd>
             {% endif %}
           </dl>
         </div>
         <p class="muted thumb-note">영상 첫 0.5초에도 들어가요. 규칙은 .claude/skills/shorts-thumbnail/SKILL.md를 따라요.</p>
-        {% if job.status == 'done' and up.status not in ACTIVE and up.status != 'done' %}
-        <button id="rethumb" class="btn btn-secondary" type="button" data-rethumb>{{ icon('rotate') }}다시 만들기</button>
+        {% if editable %}
+        <form class="edit-form">
+          <label for="thumb-note">수정 요청 <span class="muted">(비우면 새 문구로 다시)</span></label>
+          <textarea id="thumb-note" name="note" rows="2" maxlength="300" placeholder="예: 숫자를 넣어서 더 궁금하게 / '손해'를 강조 / 문구를 '이거 모르면 손해'로"></textarea>
+          <button id="rethumb" class="btn btn-secondary" type="submit" data-post="thumbnail">{{ icon('rotate') }}다시 만들기</button>
+        </form>
         {% endif %}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>

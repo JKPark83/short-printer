@@ -15,8 +15,11 @@ class Cut(io.BytesIO):
 
 def test_truncated_download_fails(monkeypatch, tmp_path):
     monkeypatch.setattr(footage, "_open", lambda url, **h: Cut(b"x") if url == "L" else io.BytesIO(SEARCH.encode()))
+    monkeypatch.setenv("PEXELS_API_KEY", "k")
+    monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="끝까지"):
-        footage.fetch("Pexels", ["cat"], tmp_path / "clips", print)
+        list(footage.Stock().make([{"i": 0, "file": "clip0.mp4", "term": "cat"}], tmp_path, print))
+    assert not (tmp_path / "clip0.mp4").exists()   # 덜 받은 파일은 장면 자리에 두지 않는다
 
 
 class Done(io.BytesIO):
@@ -38,9 +41,20 @@ def test_pixabay_prefers_vertical_and_caches_search(monkeypatch, tmp_path):
     monkeypatch.setenv("PIXABAY_API_KEY", "k")
     monkeypatch.delenv("PEXELS_API_KEY", raising=False)
     assert footage.source() == "Pixabay"
-    clips = footage.fetch("Pixabay", ["cat", "dog"], tmp_path / "a", print)
+    for d in ("a", "b"):
+        (tmp_path / d).mkdir()
+    clips = list(footage.Stock().make([{"i": 0, "file": "clip0.mp4", "term": "cat"},
+                                       {"i": 1, "file": "clip1.mp4", "term": "dog"}], tmp_path / "a", print))
     assert calls[1] == "T"   # 세로 영상, 긴 변이 1920에 가까운 크기
     assert calls[3] == "W"   # 이미 쓴 영상은 건너뛰고, 빈 large는 고르지 않는다
     assert clips[0]["source"] == "Pixabay" and clips[0]["user_url"] == "https://pixabay.com/users/u-7/"
-    footage.fetch("Pixabay", ["cat"], tmp_path / "b", print)
+    list(footage.Stock().make([{"i": 0, "file": "clip0.mp4", "term": "cat"}], tmp_path / "b", print))
     assert sum(u.startswith(footage.PIXABAY) for u in calls) == 2   # cat은 캐시에서 읽는다
+
+
+def test_stock_skips_scene_without_term(monkeypatch, tmp_path):
+    calls, logs = [], []
+    monkeypatch.setattr(footage, "_open", lambda url, **h: calls.append(url))
+    monkeypatch.setenv("PEXELS_API_KEY", "k")
+    assert list(footage.Stock().make([{"i": 0, "file": "clip0.mp4", "term": None}], tmp_path, logs.append)) == []
+    assert "결과 없음" in logs[0] and calls == []

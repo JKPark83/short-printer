@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import config
 
-STEPS = ("script", "footage", "voice", "subtitles", "thumbnail", "render")
+STEPS = ("script", "voice", "subtitles", "footage", "thumbnail", "render")   # 사람을 기다리는 영상 소스는 뒤로
 LABELS = {"script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막", "thumbnail": "썸네일", "render": "렌더"}
 
 
@@ -32,10 +32,9 @@ def read_json(path: Path, default=None):
 
 
 def redact(text: str) -> str:
-    """로그·오류 문구에 키 값이 섞이지 않게 가린다."""
-    for name in config.SECRET_KEYS:
-        key = config.secret(name)
-        if key:
+    """로그·오류 문구에 키 값이 섞이지 않게 가린다. 새 공급자 키도 이름만 이 규칙을 따르면 된다."""
+    for name, key in os.environ.items():
+        if name.endswith(("_API_KEY", "_AUTH_TOKEN")) and len(key) >= 8:   # 짧은 값은 아무 낱말이나 가린다
             text = text.replace(key, "***")
     return text
 

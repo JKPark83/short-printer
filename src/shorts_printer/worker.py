@@ -4,10 +4,10 @@ import queue
 import threading
 
 from . import pipeline, trends
-from .jobs import Job, upload_state
+from .jobs import Job, atomic_write_json, upload_state
 
 _q: queue.Queue[tuple[str, str]] = queue.Queue()   # (run|upload|trend, job_id 또는 trend_id)
-_lock = threading.Lock()
+_lock = threading.RLock()   # put_clip이 락 안에서 enqueue를 부른다
 _thread: threading.Thread | None = None
 log = logging.getLogger(__name__)
 
@@ -35,17 +35,24 @@ def enqueue_upload(job_id: str) -> bool:
     return True
 
 
-def enqueue_rethumb(job_id: str) -> bool:
-    """썸네일을 새로 만들고 다시 렌더한다. 올린 뒤엔 영상과 어긋나니 막는다."""
+def redo(job_id: str, steps=("thumbnail", "render"), script: dict | None = None, **fields) -> bool:
+    """steps만 다시 돈다(썸네일·대본 고치기, 클립 교체). 올린 뒤엔 영상과 어긋나니 막는다.
+    script: 손으로 고친 대본(script.json에 쓴다). fields: job.json에 남길 값(thumb_note·script_note).
+    steps가 비면 저장만 한다(제목·설명·태그만 고칠 때)."""
     with _lock:
         job = Job.load(job_id)
         data = job.data
-        if data["status"] != "done" or (data.get("upload") or {}).get("status") in ("queued", "running", "done"):
+        if data["status"] not in ("done", "failed", "interrupted") \
+                or (data.get("upload") or {}).get("status") in ("queued", "running", "done"):
             return False
-        steps = data["steps"]
-        for s in ("thumbnail", "render"):
-            steps[s] = {"status": "pending", "engine": None, "sec": None}
-        job.update(status="queued", steps=steps)
+        if script is not None:   # 락 안에서: 검사와 쓰기 사이에 작업이 시작되지 않게
+            atomic_write_json(job.dir / "script.json", script)
+        if not steps:
+            return True
+        all_steps = data["steps"]
+        for s in steps:
+            all_steps[s] = {"status": "pending", "engine": None, "sec": None}
+        job.update(status="queued", steps=all_steps, **fields)
     _q.put(("run", job_id))
     return True
 

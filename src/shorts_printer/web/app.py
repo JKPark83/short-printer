@@ -1,6 +1,8 @@
-"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 다섯 단계 진행 보기 → 완성 영상."""
+"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 여섯 단계 진행 보기(장면 클립 올리기) → 완성 영상."""
+import asyncio
+import os
 import re
-import shutil
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -13,18 +15,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
-from .. import config, footage, script, trends, worker, youtube
+from .. import config, ffmpeg, pipeline, script, trends, video, voice, worker, youtube
 from ..jobs import LABELS, STEPS, Job, read_json, upload_state
 from ..trends import Trend
 
 HERE = Path(__file__).parent
 DAILY_GOAL = 3   # 하루 목표 편수
 ACTIVE = ("queued", "running")
+MAX_CLIP = 200 * 1024 * 1024   # 클립 한 개 상한(app.js에도 같은 값)
+MAX_NOTE = 300   # 썸네일·대본 수정 요청 글자 수 상한(job.html maxlength와 같은 값)
 QUOTA_PER_RUN, QUOTA_DAY = 101, 10_000   # 주제 찾기 한 번: search.list 100 + videos.list 1 / YouTube 무료 할당량(하루)
 # ponytail: 어림값(영상 8개 × 프레임 8장 + 선정 1번). 실제 값은 분석 화면의 사용량에 남는다
 EST_TOKENS = (55_000, 11_000)
 STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "done": "완성",
-          "failed": "실패", "interrupted": "중단"}
+          "failed": "실패", "interrupted": "중단", "waiting": "클립 대기"}
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
 # Lucide 아이콘 경로(ISC 라이선스). 이모지 대신 쓴다.
@@ -177,11 +181,12 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/files", StaticFiles(directory=config.JOBS_DIR, check_dir=False), name="files")
 app.mount("/trend-files", StaticFiles(directory=config.TRENDS_DIR, check_dir=False), name="trend-files")
 templates = Jinja2Templates(directory=HERE / "templates")
+VOICES = voice.choices()   # 켤 때 한 번. 쓸 수 있는 공급자의 목소리만
 templates.env.globals |= {
     "v": int(datetime.now().timestamp()),   # 서버를 켠 시각으로 정적 파일 캐시를 깬다
     "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "LABELS": LABELS, "STATUS": STATUS, "STATE": STATE,
     "ACTIVE": ACTIVE, "youtube": youtube, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS,
-    "QUOTA_PER_RUN": QUOTA_PER_RUN, "QUOTA_DAY": QUOTA_DAY, "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON, "VOICES": config.VOICES,
+    "QUOTA_PER_RUN": QUOTA_PER_RUN, "QUOTA_DAY": QUOTA_DAY, "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON, "VOICES": VOICES,
 }
 templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "kn": kn, "ago": ago}
 
@@ -219,19 +224,18 @@ def _stats(jobs: list[dict]) -> dict:
 def _checks() -> list[tuple[str, str, str]]:
     """(ok|warn|bad, 이름, 한 줄 설명). 값은 보여 주지 않고 있는지만 본다."""
     claude = config.secret("ANTHROPIC_API_KEY") or config.secret("ANTHROPIC_AUTH_TOKEN")
-    src = footage.source()
     ff = Path(config.FFMPEG).exists()
-    return [
+    checks = [
         ("ok" if claude else "bad", "Claude API 키",
          config.CLAUDE_MODEL if claude else ".env에 ANTHROPIC_API_KEY를 넣어 주세요"),
-        ("ok" if src else "warn", "영상 소스 키",
-         f"{src} 영상 검색" if src else "없으면 그라데이션 배경 · 무료 키는 pixabay.com/api/docs"),
         ("ok" if ff else "bad", "ffmpeg-full",
          config.FFMPEG if ff else "brew install ffmpeg-full 또는 .env에 SP_FFMPEG"),
-        ("ok" if "elevenlabs" in config.VOICES else "warn", "ElevenLabs",
-         config.ELEVENLABS_MODEL if "elevenlabs" in config.VOICES
-         else "선택 · .env에 ELEVENLABS_API_KEY와 ELEVENLABS_VOICE_ID를 넣으면 유료 목소리"),
-        ("ok", "edge-tts", "무료 · 키 없음" + (" · 막히면 macOS say(Yuna)" if shutil.which("say") else "")),
+    ]
+    v = video.default()
+    checks += [("ok" if p.ready() else "warn", f"영상 · {p.label}" + (" (기본)" if k == v else ""), p.hint)
+               for k, p in video.VIDEO.items()]
+    checks += [("ok" if p.ready() else "warn", f"음성 · {p.label}", p.hint) for p in voice.TTS.values()]
+    return checks + [
         ("ok", "YouTube 업로드", "비공개로 올려요") if youtube.ready()
         else ("warn", "YouTube 업로드", "선택 · .env에 YOUTUBE_CLIENT_SECRET, 터미널에서 uv run sp youtube-login"),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
@@ -247,6 +251,27 @@ def _latest_picks() -> dict | None:
     return None
 
 
+def _can_upload(data: dict) -> bool:
+    """클립을 올리거나 바꿀 수 있나: 돌고 있지 않고, 아직 유튜브에 올리지 않았을 때."""
+    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ("queued", "running", "done")
+
+
+def _scenes(job: Job) -> list[dict]:
+    """장면 카드용. 끝난 예전 작업(클립 수 ≠ 문장 수)은 []를 돌려 예전 화면으로 보인다."""
+    s = read_json(job.dir / "script.json")
+    if not s:
+        return []
+    clips = {c["file"]: c for c in read_json(job.dir / "clips.json", [])}
+    if job.data["steps"]["footage"]["status"] == "done" and len(clips) != len(s["sentences"]):
+        return []
+    out = video.scenes(s, read_json(job.dir / "timing.json"))
+    for x in out:
+        p = job.dir / "clips" / x["file"]
+        x["v"] = p.stat().st_mtime_ns if p.exists() else None   # 미리보기 캐시 깨기(같은 초에 바꿔도)
+        x["clip"] = clips.get(x["file"])   # 출처(스톡 촬영자 등)
+    return out
+
+
 @app.get("/")
 def index(request: Request):
     jobs = [j.data for j in reversed(Job.all())]
@@ -258,15 +283,16 @@ def index(request: Request):
 
 @app.post("/jobs")
 def create_job(topic: str = Form(""), voice: str = Form(...), trend: str | None = Form(None), pick: int | None = Form(None)):
-    if voice not in config.VOICES:
+    if voice not in VOICES:
         raise HTTPException(400, "모르는 목소리예요")
     if trend is not None:
         # 추천에서 만들 때는 주제·방향을 서버가 picks.json에서 꺼낸다(클라이언트가 보낸 값은 믿지 않는다)
-        picks = _picks(_load(Trend, trend))
+        t = _load(Trend, trend)
+        picks = _picks(t)
         if pick is None or not 0 <= pick < len(picks):
             raise HTTPException(400, "그 추천을 찾지 못했어요")
         p = picks[pick]
-        job = Job.create(p["topic"], voice, brief=p["angle"], source={"trend": trend, "pick": pick})
+        job = Job.create(p["topic"], voice, brief=trends.brief(t.dir, p), source={"trend": trend, "pick": pick})
         worker.enqueue(job.id)
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
     topic = topic.strip()
@@ -283,7 +309,8 @@ def job_page(request: Request, job_id: str):
     return templates.TemplateResponse(request, "job.html", {
         "job": job.data, "script": read_json(job.dir / "script.json"), "clips": read_json(job.dir / "clips.json"),
         "cues": read_json(job.dir / "cues.json"), "has_thumb": (job.dir / "thumbnail.jpg").exists(),
-        "thumb": read_json(job.dir / "thumb.json"), "log": _tail(job)})
+        "thumb": read_json(job.dir / "thumb.json"), "log": _tail(job),
+        "scenes": _scenes(job), "can_upload": _can_upload(job.data)})
 
 
 @app.get("/api/jobs/{job_id}")
@@ -301,14 +328,48 @@ def retry(job_id: str):
     return {"ok": True}
 
 
-@app.post("/api/jobs/{job_id}/thumbnail")
-def rethumb(job_id: str):
+def _note(note: str) -> str:
+    if len(note) > MAX_NOTE:
+        raise HTTPException(400, f"수정 요청은 {MAX_NOTE}자까지 적을 수 있어요")
+    return note.strip()
+
+
+def _redo(job_id: str, steps: tuple, uploaded: str, **kw) -> None:
+    """완성 뒤 고치기. 안 되면 409(uploaded: 이미 올렸을 때 안내)."""
     job = _load(Job, job_id)
-    if not worker.enqueue_rethumb(job_id):
-        data = job.data
-        raise HTTPException(409, "완성된 작업만 썸네일을 다시 만들 수 있어요" if data["status"] != "done"
-                            else "이미 올린 영상은 스튜디오에서 썸네일을 바꾸세요")
-    return {"ok": True}
+    if not worker.redo(job_id, steps, **kw):
+        raise HTTPException(409, "완성된 작업만 고칠 수 있어요" if job.data["status"] != "done" else uploaded)
+
+
+@app.post("/api/jobs/{job_id}/thumbnail")
+def rethumb(job_id: str, note: str = Form("")):
+    _redo(job_id, ("thumbnail", "render"), "이미 올린 영상은 스튜디오에서 썸네일을 바꾸세요", thumb_note=_note(note))
+    return {"ok": True, "msg": "썸네일을 다시 만들고 영상도 다시 렌더해요"}
+
+
+@app.post("/api/jobs/{job_id}/script")
+def save_script(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
+                sentences: list[str] = Form([])):
+    """손으로 고친 대본. 문장이 바뀌면 음성부터 다시(장면 클립·썸네일은 그대로), 아니면 저장만."""
+    old = read_json(_load(Job, job_id).dir / "script.json")
+    lines, title = [s.strip() for s in sentences], title.strip()
+    if not old or len(lines) != len(old["sentences"]) or not all(lines) or any(len(s) > 100 for s in lines):
+        raise HTTPException(400, "문장은 장면 수만큼, 비우지 않고 100자 안으로 적어 주세요")
+    if not title or len(title) > 100 or len(description) > 5000:
+        raise HTTPException(400, "제목은 1~100자, 설명은 5000자까지 적을 수 있어요")
+    tags = [t for t in (x.strip().lstrip("#").strip() for x in tags.split(",")) if t]
+    rerun = lines != old["sentences"]
+    _redo(job_id, ("voice", "subtitles", "render") if rerun else (), "이미 올린 영상은 대본을 고칠 수 없어요",
+          script=old | {"title": title, "description": description.strip(), "tags": tags, "sentences": lines})
+    return {"ok": True, "msg": "저장했어요. 음성·자막·렌더를 다시 해요" if rerun else "저장했어요"}
+
+
+@app.post("/api/jobs/{job_id}/script/revise")
+def revise_script(job_id: str, note: str = Form("")):
+    if not (note := _note(note)):
+        raise HTTPException(400, "고칠 내용을 적어 주세요")
+    _redo(job_id, ("script", "voice", "subtitles", "render"), "이미 올린 영상은 대본을 고칠 수 없어요", script_note=note)
+    return {"ok": True, "msg": "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
 
 
 @app.post("/api/jobs/{job_id}/upload")
@@ -320,6 +381,55 @@ def upload(job_id: str):
         data = job.data
         raise HTTPException(409, "완성된 영상만 올릴 수 있어요" if data["status"] != "done"
                             else "이미 올렸어요" if data["upload"]["status"] == "done" else "이미 올리는 중이에요")
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/clips/{i}")
+async def put_clip(request: Request, job_id: str, i: int):
+    """장면 i(0부터) 클립 원본을 raw body로 받는다. 다 모이면 이어서, 완성 뒤 교체면 뒤 단계만 다시."""
+    job = _load(Job, job_id)
+    s = read_json(job.dir / "script.json")
+    if not s or not _can_upload(job.data):   # 큰 파일을 받기 전에 거절
+        raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
+    if not 0 <= i < len(s["sentences"]):
+        raise HTTPException(404, "그 장면이 없어요")
+    if int(request.headers.get("content-length") or 0) > MAX_CLIP:
+        raise HTTPException(413, "클립이 너무 커요(200MB 이하)")
+    d = job.dir / "clips"
+    d.mkdir(exist_ok=True)
+    # 동시에 같은 장면을 올려도 겹치지 않는 이름. 서버가 꺼져 남은 것은 recover()가 지운다
+    tmp, size = d / f"clip{i}.{secrets.token_hex(4)}.tmp.mp4", 0
+    try:
+        # ponytail: 쓰기는 동기라 받는 동안 이벤트 루프를 잠깐씩 잡는다. 혼자 쓰는 로컬 앱이라 충분하다
+        with open(tmp, "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_CLIP:   # Content-Length 없이 와도 상한을 지킨다
+                    raise HTTPException(413, "클립이 너무 커요(200MB 이하)")
+                f.write(chunk)
+        with open(tmp, "rb") as f:
+            if f.read(8)[4:8] != b"ftyp":   # mp4·mov 머리
+                raise HTTPException(400, "mp4나 mov 영상만 올릴 수 있어요")
+        try:   # 한 프레임 디코드해 영상인지 본다(아이폰 .mov·HEVC도 통과)
+            await asyncio.to_thread(ffmpeg.run, ["-f", "mov", "-i", tmp.name, "-map", "0:v:0", "-frames:v", 1,
+                                                 "-f", "null", "-"], d)
+        except RuntimeError:
+            raise HTTPException(400, "영상 파일이 아니에요") from None
+        dst = d / f"clip{i}.mp4"
+        with worker._lock:   # 확인·교체·다시 넣기를 한 번에(RLock이라 안에서 enqueue 가능)
+            job = Job.load(job_id)
+            if not _can_upload(job.data):   # 받는 사이 다시 시도·업로드가 시작됐다
+                raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
+            os.replace(tmp, dst)
+            video.set_clip(job.dir, {"file": dst.name, "source": "직접 올림"})
+            job.log(f"장면 {i + 1} 클립 올림 ({size // 1024}KB)")
+            if job.data["steps"]["footage"]["status"] == "done":   # 완성(또는 뒤 단계 실패) 뒤 교체: 다음 단계만
+                worker.redo(job_id, ("thumbnail", "render") if i == 0 else ("render",))
+            elif not pipeline.missing_clips(job.dir):
+                worker.enqueue(job_id)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return {"ok": True}
 
 

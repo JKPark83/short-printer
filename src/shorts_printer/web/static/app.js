@@ -24,10 +24,22 @@ async function swap(url, ids) {
   for (const id of ids) {
     const cur = document.getElementById(id), fresh = doc.getElementById(id);
     if (cur?.querySelector('iframe')) continue;   // 재생 중인 미리보기는 끊지 않는다(수집이 끝난 뒤라 내용도 그대로다)
-    if (cur && fresh && !cur.isEqualNode(fresh)) cur.replaceWith(fresh.cloneNode(true));   // 사본: doc의 바깥 조각은 다음 비교까지 온전히 둔다
+    if (!cur || !fresh) continue;
+    // 펼쳐 둔 프롬프트는 새 조각에도 펼친 채로 둔다(이것만 다르면 바꾸지 않는다)
+    for (const d of cur.querySelectorAll('.scene[id] details[open]')) fresh.querySelector(`#${CSS.escape(d.closest('.scene').id)} details`)?.setAttribute('open', '');
+    for (const d of cur.querySelectorAll('details[id][open]')) fresh.querySelector('#' + CSS.escape(d.id))?.setAttribute('open', '');
+    if (cur.isEqualNode(fresh)) continue;
+    const next = fresh.cloneNode(true);   // 사본: doc의 바깥 조각은 다음 비교까지 온전히 둔다
+    // 올리는 중이거나 그대로인 장면 카드는 그대로 옮겨 둔다(진행 표시·파일 입력·재생 중인 미리보기를 잃지 않게)
+    for (const c of cur.querySelectorAll('.scene[id]')) {
+      const n = next.querySelector('#' + CSS.escape(c.id));
+      if (n && (c.getAttribute('aria-busy') === 'true' || c.isEqualNode(n))) n.replaceWith(c);
+    }
+    cur.replaceWith(next);
   }
   // tabindex=-1 칸(진행 단계 등)은 한 번 옮긴 포커스라 다시 주지 않는다(바뀔 때마다 화면 읽기가 되풀이된다)
-  if (key && !a.isConnected && a.tabIndex >= 0) document.querySelector(key)?.focus();
+  // 옮겨 둔 카드 안이면 같은 요소, 아니면 새 조각에서 찾는다
+  if (key && document.activeElement !== a && a.tabIndex >= 0) (a.isConnected ? a : document.querySelector(key))?.focus();
   return doc;
 }
 
@@ -111,7 +123,41 @@ if (api) {
     if (busy(d.status) || busy(d.upload?.status) || d.sig !== sig) timer = setTimeout(tick, 1500);
   };
   if (page.dataset.active === '1') tick();
+  // 휴대폰에서 Flow 앱을 다녀오면 화면이 묵어 있다
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(true); });
 }
+
+// ── 장면 클립 올리기(Flow에서 받은 파일). 파일 그대로 보내고, 남은 업로드가 없을 때 화면을 다시 받는다
+const MAX_CLIP = 200 * 1024 * 1024;   // app.py MAX_CLIP과 같게
+let uploading = 0;
+document.addEventListener('change', async e => {
+  const inp = e.target.closest('input[data-clip]');
+  const f = inp?.files[0];
+  if (!f) return;
+  const n = +inp.dataset.clip + 1, card = inp.closest('.scene');
+  inp.value = '';
+  if (f.size > MAX_CLIP) { toast(`장면 ${n} 클립이 너무 커요(200MB 이하)`, true); return; }
+  inp.disabled = true;
+  card.setAttribute('aria-busy', 'true');
+  // 토스트가 사라진 뒤에도 올리는 중인 걸 알 수 있게 버튼 글자를 바꾼다
+  const label = [...inp.closest('label').childNodes].find(t => t.nodeType === 3 && t.textContent.trim()), was = label.textContent;
+  label.textContent = '올리는 중…';
+  uploading++;
+  toast(`장면 ${n} 올리는 중`);
+  try {
+    const r = await fetch(`${api}/clips/${inp.dataset.clip}`, { method: 'POST', headers: { 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `장면 ${n} 클립을 올리지 못했어요`);
+    toast(`장면 ${n} 올렸어요`);
+  } catch (err) {
+    toast(err instanceof TypeError ? '서버에 닿지 않아요' : err.message, true);
+  }
+  inp.disabled = false;
+  label.textContent = was;
+  card.removeAttribute('aria-busy');
+  if (--uploading === 0) await tick(true);   // waiting 동안은 sig가 그대로라 강제로. 마지막 클립이면 queued가 되어 폴링이 이어진다
+  // 올리는 동안 비활성화로 포커스를 잃었으면 같은 장면의 파일 입력으로 돌려준다
+  if (document.activeElement === document.body) $(`input[data-clip="${inp.dataset.clip}"]`)?.focus();
+});
 
 // ── 복사·미리보기·다시 시도·업로드 (조각이 바뀌어도 동작하게 위임)
 document.addEventListener('click', async e => {
@@ -148,13 +194,17 @@ document.addEventListener('click', async e => {
     }
     return;
   }
-  const re = e.target.closest('[data-rethumb]');
+  // 완성 뒤 고치기(썸네일·대본): 버튼이 든 폼을 data-post 주소로 보낸다
+  const re = e.target.closest('[data-post]');
   if (re) {
+    e.preventDefault();   // 폼 제출(엔터 포함) 대신 fetch로
+    if (!re.form.reportValidity()) return;
     re.disabled = true;
     try {
-      const r = await fetch(`${api}/thumbnail`, { method: 'POST' });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '썸네일을 다시 만들지 못했어요');
-      toast('썸네일을 다시 만들고 영상도 다시 렌더해요');
+      const r = await fetch(`${api}/${re.dataset.post}`, { method: 'POST', body: new FormData(re.form) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : '고치지 못했어요');
+      toast(j.msg);
       await tick(true);
       if (!re.isConnected) $('#stepper').focus();
     } catch (err) {

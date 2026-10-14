@@ -5,7 +5,8 @@ import pytest
 
 from shorts_printer import script
 
-OK = script.Script(title="t", description="d", tags=["a"], sentences=["하나", "둘"], search_terms=["coffee"])
+OK = script.Script(title="t", description="d", tags=["a"], scenes=[script.Scene(sentence="하나", prompt="p1", term="coffee"),
+                                                                 script.Scene(sentence="둘", prompt="p2", term="cup")])
 
 
 def fake_client(monkeypatch, resp=None, exc=None):
@@ -51,6 +52,12 @@ def test_refusal_and_missing_key_become_korean_errors(monkeypatch):
         script.write("x")
 
 
+def test_flat_keeps_parallel_lists():
+    f = OK.flat()
+    assert f["sentences"] == ["하나", "둘"] and f["prompts"] == ["p1", "p2"] and f["search_terms"] == ["coffee", "cup"]
+    assert "scenes" not in f and f["title"] == "t"
+
+
 def test_cost_unknown_model_is_none():
     assert script.cost("claude-sonnet-5-5-20260901", 1_000_000, 0) == 2
     assert script.cost("mystery", 1, 1) is None
@@ -61,12 +68,24 @@ def test_live_claude_writes_korean_script():
     if not script.config.secret("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY 없음")
     s, usage = script.write("커피를 처음 마신 사람들")
-    assert 4 <= len(s.sentences) <= 12 and s.search_terms and usage["output_tokens"] > 0
+    assert 6 <= len(s.scenes) <= 7 and all("No on-screen text" in x.prompt and x.term for x in s.scenes) and usage["output_tokens"] > 0
 
 
 def test_brief_is_appended(monkeypatch):
     calls = fake_client(monkeypatch, resp())
     script.write("커피", "첫 문장은 질문으로")
-    assert calls[0]["messages"][0]["content"] == "주제: 커피\n\n참고(최근 인기 쇼츠 분석에서 나온 방향): 첫 문장은 질문으로"
+    assert calls[0]["messages"][0]["content"] == "주제: 커피\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n첫 문장은 질문으로"
     script.write("커피")
     assert calls[1]["messages"][0]["content"] == "주제: 커피"
+
+
+def test_revise_keeps_scene_count_and_prompts(monkeypatch):
+    s = OK.flat()
+    calls = fake_client(monkeypatch, resp(parsed_output=script.Revision(title="새 제목", description="d", tags=["a"],
+                                                                         sentences=[" 하나! ", "둘!"])))
+    new, usage = script.revise(s, "느낌표를 붙여 줘")
+    assert new["sentences"] == ["하나!", "둘!"] and new["prompts"] == ["p1", "p2"] and new["title"] == "새 제목"
+    assert "(화면: p1)" in calls[0]["messages"][0]["content"] and "느낌표를 붙여 줘" in calls[0]["messages"][0]["content"]
+    fake_client(monkeypatch, resp(parsed_output=script.Revision(title="t", description="d", tags=[], sentences=["하나"])))
+    with pytest.raises(RuntimeError, match="장면 수"):
+        script.revise(s, "줄여 줘")

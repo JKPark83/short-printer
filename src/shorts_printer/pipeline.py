@@ -1,37 +1,55 @@
-"""다섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다."""
+"""여섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
+빠진 장면 클립이 있으면 waiting으로 멈춘다."""
 import time
+from pathlib import Path
 
-from . import footage, render, script, subtitles, thumbnail, voice, youtube
+from . import render, script, subtitles, thumbnail, video, voice, youtube
 from .jobs import LABELS, STEPS, Job, atomic_write_json, now, read_json, redact, upload_state
 
 
+class Wait(Exception):
+    """사람 손이 필요해 멈춘다(클립 올리기). 실패가 아니다."""
+
+
+def missing_clips(job_dir: Path) -> list[int]:
+    """아직 안 올라온 장면 번호(0부터). 장면 = 대본 문장."""
+    n = len(read_json(job_dir / "script.json")["sentences"])
+    return [i for i in range(n) if not (job_dir / "clips" / f"clip{i}.mp4").exists()]
+
+
 def step_script(job: Job) -> str:
+    if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
+        s, usage = script.revise(read_json(job.dir / "script.json"), note)
+        atomic_write_json(job.dir / "script.json", s)
+        job.update(usage=script.add_usage(job.data["usage"], usage))
+        job.log(f"대본 고침: {note}")
+        return usage["model"]
     s, usage = script.write(job.data["topic"], job.data.get("brief"))   # 예전 job.json엔 brief가 없다
-    atomic_write_json(job.dir / "script.json", s.model_dump())
+    atomic_write_json(job.dir / "script.json", s.flat())
     job.update(usage=usage)
-    job.log(f"제목: {s.title} · 문장 {len(s.sentences)}개 · 검색어 {', '.join(s.search_terms)}")
+    job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
     return usage["model"]
 
 
 def step_footage(job: Job) -> str:
-    note, src = None, footage.source()
-    if src:
-        clips = footage.fetch(src, read_json(job.dir / "script.json")["search_terms"], job.dir / "clips", job.log)
-        if not clips:
-            note = f"{src}에서 맞는 영상을 못 찾아 그라데이션 배경으로 만들어요"
-    else:
-        clips, note = [], "영상 소스 키(PIXABAY_API_KEY 또는 PEXELS_API_KEY)가 없어 그라데이션 배경으로 만들어요"
-    atomic_write_json(job.dir / "clips.json", clips)
-    if note:
-        job.log(note)
-        if note not in job.data["notices"]:
-            job.update(notices=job.data["notices"] + [note])
-    return f"{src.lower()} {len(clips)}개" if clips else "그라데이션"
+    """장면마다 클립 하나. 공급자가 만들 수 있는 건 만들고, 빠진 장면은 사람이 올릴 때까지 waiting."""
+    p = video.VIDEO[video.default()]
+    d = job.dir / "clips"
+    d.mkdir(exist_ok=True)
+    scenes = video.scenes(read_json(job.dir / "script.json"), read_json(job.dir / "timing.json"))
+    for c in p.make([s for s in scenes if not (d / s["file"]).exists()], d, job.log):
+        video.set_clip(job.dir, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
+    if miss := missing_clips(job.dir):
+        raise Wait(f"장면 클립 {len(scenes) - len(miss)}/{len(scenes)}개")
+    got = {c["file"]: c for c in read_json(job.dir / "clips.json", [])}
+    # 장면 순서로 다시 쓴다. 기록 없이 파일만 있는 장면(손으로 넣은 파일)은 직접 올림으로
+    atomic_write_json(job.dir / "clips.json", [got.get(s["file"], {"file": s["file"], "source": "직접 올림"}) for s in scenes])
+    return f"{p.label} {len(scenes)}개"
 
 
 def step_voice(job: Job) -> str:
     engine = voice.synth(read_json(job.dir / "script.json")["sentences"], job.data["voice"], job.dir, job.log)
-    want = "ElevenLabs" if job.data["voice"] == "elevenlabs" else "edge-tts"
+    want = voice.owner(job.data["voice"]).label
     if engine != want:
         note = f"{want}가 안 돼 {'macOS 기본 목소리(Yuna)' if engine == 'macOS say' else engine}로 읽었어요"
         if note not in job.data["notices"]:
@@ -47,27 +65,22 @@ def step_subtitles(job: Job) -> str:
 
 
 def step_thumbnail(job: Job) -> str:
-    """썸네일 스킬대로 문구·사진을 정해 thumbnail.jpg를 만든다. 렌더가 이걸 영상 첫 0.5초에 넣는다."""
+    """썸네일 스킬대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립. 렌더가 이걸 영상 첫 0.5초에 넣는다."""
     clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
-    taken = {t["photo"]["id"] for j in Job.all() if j.id != job.id and (t := read_json(j.dir / "thumb.json")) and t["photo"]}
-    t = thumbnail.make(job.dir, read_json(job.dir / "script.json"), job.data["topic"], job.log, taken)
+    t = thumbnail.make(job.dir, read_json(job.dir / "script.json"), job.data["topic"], job.log,
+                       job.data.get("thumb_note") or "")
     t["background"] = render.thumbnail(job.dir, t["lines"], t["accent"], t["position"], clips[0] if clips else None)
     atomic_write_json(job.dir / "thumb.json", t)
     job.update(thumb_usage=t["usage"])
-    if not t["photo"]:
-        note = f"썸네일에 맞는 Pixabay 사진을 못 찾아 {t['background']} 배경으로 만들었어요"
-        job.log(note)
-        if note not in job.data["notices"]:
-            job.update(notices=job.data["notices"] + [note])
-    return "pixabay 사진" if t["photo"] else t["background"]
+    return t["background"]
 
 
 def step_render(job: Job) -> str:
     clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
-    voice_sec = read_json(job.dir / "timing.json")[-1]["end"]
+    timing = read_json(job.dir / "timing.json")
     t = read_json(job.dir / "thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
     title = (t["lines"], t["accent"]) if t else ([read_json(job.dir / "script.json")["title"]], "")
-    job.update(duration=render.render(job.dir, clips, voice_sec, title))
+    job.update(duration=render.render(job.dir, clips, timing[-1]["end"], title, [t["start"] for t in timing]))
     return "ffmpeg"
 
 
@@ -86,6 +99,11 @@ def run_steps(rec, steps, labels: dict, run: dict, done_msg: str) -> None:
         t0 = time.monotonic()
         try:
             engine = run[name](rec)
+        except Wait as w:   # 클립 대기: 실패가 아니라 멈춤. 클립이 다 오면 다시 큐에 넣는다
+            rec.step(name, status="pending")
+            rec.log(f"{labels[name]} 대기: {w}")
+            rec.update(status="waiting")
+            return
         except BaseException as e:   # Ctrl+C도 실패로 남겨 다시 시도할 수 있게
             msg = redact(str(e)) or type(e).__name__
             rec.step(name, status="failed", sec=round(time.monotonic() - t0, 1))
