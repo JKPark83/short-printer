@@ -13,7 +13,7 @@ def main() -> None:
     web.add_argument("--port", type=int, default=8765)
     run = sub.add_parser("run", help="주제 하나로 쇼츠 한 편을 만든다")
     run.add_argument("topic")
-    run.add_argument("--voice", default=next(iter(voice.choices())), choices=voice.choices())
+    run.add_argument("--voice", default=next(iter(voice.VOICES)), choices=voice.VOICES)
     tr = sub.add_parser("trends", help="인기 쇼츠를 분석해 주제를 추천한다")
     tr.add_argument("keyword", nargs="?", default="")
     tr.add_argument("--period", default=trends.DEFAULT_PERIOD, choices=trends.PERIODS)

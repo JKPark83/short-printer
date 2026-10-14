@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Protocol
 
-from . import config, flow_auto, footage, render
+from . import config, flow_auto, render
 from .jobs import atomic_write_json, read_json
 
 
@@ -32,7 +32,7 @@ class Flow:
         return ()
 
 
-VIDEO: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": flow_auto.FlowAuto(), "stock": footage.Stock()}
+VIDEO: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": flow_auto.FlowAuto()}
 
 
 def default() -> str:
@@ -50,8 +50,8 @@ def scenes(script: dict, timing: list[dict] | None) -> list[dict]:
         return v if len(v) == n else [None] * n
     secs = ([k / 30 for k in render.frames([t["start"] for t in timing], timing[-1]["end"] + render.TAIL, n)]
             if timing else [None] * n)
-    return [{"i": i, "file": f"clip{i}.mp4", "sentence": s, "prompt": p, "term": t, "sec": sec}
-            for i, (s, p, t, sec) in enumerate(zip(script["sentences"], col("prompts"), col("search_terms"), secs))]
+    return [{"i": i, "file": f"clip{i}.mp4", "sentence": s, "prompt": p, "sec": sec}
+            for i, (s, p, sec) in enumerate(zip(script["sentences"], col("prompts"), secs))]
 
 
 def set_clip(job_dir: Path, meta: dict) -> None:

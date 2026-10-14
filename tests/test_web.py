@@ -1,5 +1,3 @@
-import shutil
-
 from fastapi.testclient import TestClient
 
 from shorts_printer import config, worker, youtube
@@ -10,7 +8,7 @@ client = TestClient(web.app, base_url="http://127.0.0.1")   # with 블록 없이
 
 
 def done_job():
-    job = Job.create("커피", "ko-KR-SunHiNeural")
+    job = Job.create("커피", "LKOcTG4J4tYTPR9DnLeM")
     atomic_write_json(job.dir / "script.json", {"title": "제목", "description": "설명", "tags": ["커피 상식", "카페"],
                                                 "sentences": ["하나", "둘"], "prompts": ["p1", "p2"],
                                                 "search_terms": ["coffee", "cup"]})
@@ -33,14 +31,13 @@ def test_dashboard_lists_jobs_and_stats():
 def test_create_validates_and_redirects(monkeypatch):
     queued = []
     monkeypatch.setattr(worker, "enqueue", queued.append)
-    assert client.post("/jobs", data={"topic": "  ", "voice": "ko-KR-SunHiNeural"}).status_code == 400
-    assert client.post("/jobs", data={"topic": "커피", "voice": "nope"}).status_code == 400
-    r = client.post("/jobs", data={"topic": " 커피 ", "voice": "ko-KR-InJoonNeural"}, follow_redirects=False)
+    assert client.post("/jobs", data={"topic": "  ", "voice": "elevenlabs"}).status_code == 400
+    assert client.post("/jobs", data={"topic": "커피", "voice": "ko-KR-SunHiNeural"}).status_code == 400   # 지운 목소리
+    r = client.post("/jobs", data={"topic": " 커피 ", "voice": "elevenlabs"}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == f"/jobs/{queued[0]}"
     assert Job.load(queued[0]).data["topic"] == "커피"
-    # macOS say 목소리는 say가 있을 때만 목록에 있다
-    r = client.post("/jobs", data={"topic": "커피", "voice": "Yuna"}, follow_redirects=False)
-    assert r.status_code == (303 if shutil.which("say") else 400)
+    html = client.get("/").text
+    assert html.index(">미스터킴<") < html.index(">미스터최<")   # 첫 칸이 기본값
 
 
 def test_job_page_api_and_retry_rules():
@@ -54,7 +51,7 @@ def test_job_page_api_and_retry_rules():
 
 
 def test_recover_marks_running_jobs_interrupted():
-    job = Job.create("커피", "ko-KR-SunHiNeural")
+    job = Job.create("커피", "LKOcTG4J4tYTPR9DnLeM")
     job.step("script", status="done")
     job.step("footage", status="running")
     job.update(status="running")
@@ -78,7 +75,7 @@ def test_unknown_model_cost_keeps_pages_up():
 
 def test_rejects_cross_site_post_and_foreign_host(monkeypatch):
     monkeypatch.setattr(worker, "enqueue", lambda _id: True)
-    form = {"topic": "커피", "voice": "ko-KR-SunHiNeural"}
+    form = {"topic": "커피", "voice": "elevenlabs"}
     assert client.post("/jobs", data=form, headers={"Origin": "http://localhost:3000"}).status_code == 403
     assert client.post("/jobs", data=form, headers={"Origin": "http://127.0.0.1"}, follow_redirects=False).status_code == 303
     # tailscale serve: 브라우저는 https, 앱은 http로 받는다
@@ -126,7 +123,7 @@ MP4 = b"\0\0\0\x18ftypmp42" + b"x" * 16   # ftyp 머리만 있는 가짜(디코�
 
 
 def scene_job(status="waiting", done=("script",)):
-    job = Job.create("커피", "ko-KR-SunHiNeural")
+    job = Job.create("커피", "LKOcTG4J4tYTPR9DnLeM")
     atomic_write_json(job.dir / "script.json", {"title": "t", "description": "d", "tags": [],
                                                 "sentences": ["하나", "둘"], "prompts": ["p1", "p2"]})
     job.update(status=status, steps=job.data["steps"] | {s: {"status": "done", "engine": "x", "sec": 1.0} for s in done})
@@ -188,21 +185,24 @@ def test_clip_replace_after_done_rerenders_only(monkeypatch):
     assert [c["source"] for c in read_json(job.dir / "clips.json")] == ["직접 올림", "직접 올림"]
     job.update(status="failed")
     assert client.post(f"{url}/1", content=MP4).status_code == 200 and len(seen) == 3
-    job.update(upload=upload_state("done"))
-    assert client.post(f"{url}/1", content=MP4).status_code == 409
+    job.update(upload=upload_state("running"))
+    assert client.post(f"{url}/1", content=MP4).status_code == 409   # 올리는 중
 
 
 def test_checks_list_providers(monkeypatch):
     monkeypatch.setattr(config, "VIDEO", "flow")
     checks = web._checks()
     labels = [c[1] for c in checks]
-    assert labels[0] == "Claude API 키" and "영상 · Google Flow (기본)" in labels and "음성 · edge-tts" in labels
+    assert labels[0] == "Claude API 키" and "영상 · Google Flow (기본)" in labels and "음성 · ElevenLabs" in labels
+    html = client.get("/").text   # 대시보드 카드가 아니라 상단바의 점 하나 + 펼침
+    assert 'popovertarget="env-pop"' in html and "Claude API 키" in html and 'id="h-env"' not in html
 
 
 def test_script_edit_direct_and_revise():
     job = scene_job("done", STEPS)
-    url = f"/api/jobs/{job.id}/script"
-    assert 'id="script-edit"' in client.get(f"/jobs/{job.id}").text
+    url = f"/api/jobs/{job.id}/edit"
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'id="script-edit"' in html and 'id="savebar"' in html and 'form="edit"' in html
     form = {"title": "t", "description": "d", "tags": "", "sentences": ["하나", "둘"]}
     # 제목·태그만: 저장만, 다시 돌지 않는다
     assert client.post(url, data=form | {"tags": "#커피, , 카페"}).json()["msg"] == "저장했어요"
@@ -217,10 +217,80 @@ def test_script_edit_direct_and_revise():
     assert worker._q.get_nowait() == ("run", job.id)
     assert client.post(url, data=form).status_code == 409   # 만드는 중
     job.update(status="done")
-    assert client.post(f"{url}/revise", data={"note": " "}).status_code == 400
-    assert client.post(f"{url}/revise", data={"note": "더 짧게"}).status_code == 200
+    rev = f"/api/jobs/{job.id}/script/revise"
+    assert client.post(rev, data={"note": " "}).status_code == 400
+    assert client.post(rev, data={"note": "더 짧게"}).status_code == 200
     d = job.data
     assert d["script_note"] == "더 짧게" and d["steps"]["script"]["status"] == "pending" and d["steps"]["footage"]["status"] == "done"
     assert worker._q.get_nowait() == ("run", job.id)
-    job.update(status="done", upload=upload_state("done"))
-    assert "대본" in client.post(url, data=form).json()["detail"]
+    # 목소리만 바꿔도 음성부터 다시. 모르는 목소리는 거절
+    job.update(status="done")
+    assert client.post(url, data=form | {"voice": "nope"}).status_code == 400
+    assert client.post(url, data=form | {"voice": "elevenlabs"}).status_code == 200
+    d = job.data
+    assert d["voice"] == "elevenlabs" and d["status"] == "queued" and d["steps"]["voice"]["status"] == "pending"
+    assert worker._q.get_nowait() == ("run", job.id)
+    job.update(status="done", upload=upload_state("running"))
+    assert "올리는 중" in client.post(url, data=form).json()["detail"]
+    # 이미 올린 작업도 고칠 수 있다. 다시 만들면 올린 기록을 옮겨 새로 올릴 수 있게
+    job.update(upload=upload_state("done", video_id="old"))
+    assert client.post(url, data=form).json()["msg"] == "저장했어요" and job.data["upload"]["status"] == "done"
+    assert client.post(url, data=form | {"voice": "LKOcTG4J4tYTPR9DnLeM"}).json()["msg"] == "저장했어요. 음성·자막·렌더를 다시 해요"
+    d = job.data
+    assert d["upload"] is None and d["uploaded_before"]["video_id"] == "old"
+    assert worker._q.get_nowait() == ("run", job.id)
+
+
+def test_edit_subtitles_and_thumbnail_by_hand(monkeypatch):
+    job = scene_job("done", STEPS)
+    atomic_write_json(job.dir / "cues.json", [{"start": 0, "end": 1, "text": "하나"}, {"start": 1, "end": 2, "text": "둘"}])
+    atomic_write_json(job.dir / "thumb.json", {"lines": ["물 양", "비밀"], "accent": "비밀", "position": "top", "usage": None, "texts": []})
+    (job.dir / "thumbnail.jpg").write_bytes(b"x")
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'name="cues" form="edit"' in html and 'name="thumb" form="edit"' in html and "data-sample" in html
+    url, form = f"/api/jobs/{job.id}/edit", {"title": "t", "description": "d", "tags": "", "sentences": ["하나", "둘"]}
+    edit = form | {"cues": ["하나", "둘"], "thumb": ["물 양", "비밀"], "accent": "비밀"}
+    assert client.post(url, data=edit).json()["msg"] == "저장했어요"   # 그대로면 저장만
+    assert client.post(url, data=edit | {"cues": ["하나"]}).status_code == 400
+    # 자막 줄만 → 렌더만(시각은 그대로)
+    assert client.post(url, data=edit | {"cues": ["하나!", "둘"]}).json()["msg"] == "저장했어요. 렌더를 다시 해요"
+    assert read_json(job.dir / "cues.json")[0] == {"start": 0, "end": 1, "text": "하나!"}
+    assert [s for s in STEPS if job.data["steps"][s]["status"] == "pending"] == ["render"]
+    worker._q.get_nowait()
+    # 썸네일 문구 → 썸네일·렌더, 문구에 없는 강조는 뺀다
+    job.update(status="done")
+    assert client.post(url, data=edit | {"thumb": ["가" * 13, ""]}).status_code == 400
+    assert client.post(url, data=edit | {"thumb": ["물 550ml", ""], "accent": "비밀"}).status_code == 200
+    d = job.data
+    assert d["thumb_hand"] == {"lines": ["물 550ml"], "accent": ""} and d["steps"]["thumbnail"]["status"] == "pending"
+    worker._q.get_nowait()
+    # 미리 듣기: 아는 목소리만, 한 번 만든 견본은 다시 부르지 않는다
+    calls = []
+    monkeypatch.setattr(config, "ROOT", job.dir)
+    monkeypatch.setattr(web.voice.TTS, "ready", lambda: True)
+    monkeypatch.setattr(web.voice.TTS, "speak", lambda v, text, out: calls.append(v) or out.write_bytes(b"mp3"))
+    assert client.get("/api/voices/nope/sample").status_code == 404
+    for _ in range(2):
+        assert client.get("/api/voices/elevenlabs/sample").content == b"mp3"
+    assert calls == ["elevenlabs"]
+
+
+def test_dashboard_marks_uploaded():
+    job = done_job()
+    assert "미업로드" in client.get("/").text
+    job.update(upload=upload_state("done", video_id="v"))
+    html = client.get("/").text
+    assert "업로드됨" in html and "is-up" in html and "미업로드" not in html
+
+
+def test_delete_job_removes_folder_but_not_while_running():
+    job = done_job()
+    assert 'data-delete="' + job.id in client.get("/").text
+    assert client.post(f"/api/jobs/{job.id}/delete").json() == {"ok": True}
+    assert not job.dir.exists() and client.post(f"/api/jobs/{job.id}/delete").status_code == 404
+    busy = done_job()
+    busy.update(status="running")
+    assert client.post(f"/api/jobs/{busy.id}/delete").status_code == 409 and busy.dir.exists()
+    busy.update(status="done", upload=upload_state("running"))
+    assert client.post(f"/api/jobs/{busy.id}/delete").status_code == 409
+    assert 'data-delete="' + busy.id not in client.get("/").text

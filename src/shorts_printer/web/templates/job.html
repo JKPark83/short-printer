@@ -3,7 +3,7 @@
 {% block main %}
 {% set up = job.upload or {} %}
 {% set busy = job.status in ACTIVE or up.status in ACTIVE %}
-{% set editable = job.status == 'done' and up.status not in ACTIVE and up.status != 'done' %}
+{% set editable = job.status in ('done', 'failed', 'interrupted') and up.status not in ACTIVE %}
 {% set files = '/files/' ~ job.id ~ '/' %}
 {% set bust = '?v=' ~ (job.finished_at or '') %}
 <main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-voice c-subs c-footage c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
@@ -14,7 +14,7 @@
       <h1>{{ job.topic }}</h1>
       <p class="meta"><code>{{ job.id }}</code> · {{ VOICES.get(job.voice, job.voice) }} · {{ job.created_at|hm }}</p>
       {% if job.source %}<p class="meta"><a class="src-link" href="/trends/{{ job.source.trend }}#p-{{ job.source.pick }}">{{ icon('sparkles', 14) }}추천 주제에서 만듦</a></p>{% endif %}
-      {% if job.brief %}<p class="brief"><span class="muted">참고 방향</span> {{ job.brief }}</p>{% endif %}
+      {% if job.brief %}<details id="brief" class="brief"><summary>참고 방향</summary><p>{{ job.brief }}</p></details>{% endif %}
     </div>
     <div class="jh-actions">
       <span class="badge b-{{ job.status }}">{{ STATUS[job.status] }}</span>
@@ -66,6 +66,39 @@
         </div>
         {% if script %}
         {% set tagline %}{% for t in script.tags %}#{{ t|replace(' ', '') }}{{ ' ' if not loop.last }}{% endfor %}{% endset %}
+        {% if editable %}
+        {# 바로 고치기: 칸을 눌러 고치면 처음 값과 비교해 저장 막대가 뜬다(app.js dirty). 목소리·자막·썸네일 칸도 form="edit"로 같이 묶인다.
+           data-regen: 그 칸을 바꾸면 다시 만드는 단계(저장 막대 안내) #}
+        <form id="edit" class="inline-edit">
+          <dl class="kv">
+            {% for label, name, value, copy in [('제목', 'title', script.title, script.title), ('설명', 'description', script.description, script.description), ('태그', 'tags', script.tags|join(', '), tagline)] %}
+            <dt><label for="se-{{ name }}">{{ label }}</label></dt>
+            <dd>{% if name == 'description' %}<textarea id="se-{{ name }}" class="ie" name="{{ name }}" rows="3" maxlength="5000">{{ value }}</textarea>
+              {% else %}<input id="se-{{ name }}" class="ie" name="{{ name }}" value="{{ value }}"{% if name == 'title' %} maxlength="100" required pattern=".*\S.*"{% else %} placeholder="쉼표로 나눠요"{% endif %}>{% endif %}
+              <button class="btn-icon" type="button" data-copy="{{ copy }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
+            {% endfor %}
+            <dt>문장</dt>
+            <dd><ol class="sentences">{% for s in script.sentences %}
+              <li><textarea class="ie" name="sentences" rows="2" maxlength="100" required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea></li>{% endfor %}
+            </ol></dd>
+          </dl>
+          <p class="muted ie-tip">대본·목소리·자막·썸네일 문구를 눌러 바로 고치고, 아래 막대에서 한 번에 저장해요. 바뀐 것에 필요한 단계만 다시 만들어요(장면 클립은 그대로).{% if up.status == 'done' %} 이미 올린 영상은 YouTube에 그대로 두고, 다시 만든 영상을 새로 올릴 수 있어요.{% endif %}</p>
+          <div id="savebar" class="savebar" role="region" aria-label="저장하지 않은 변경" hidden>
+            <p><strong id="sb-count"></strong> <span id="sb-hint" class="muted"></span></p>
+            <button class="btn btn-secondary" type="reset">되돌리기</button>
+            <button id="script-save" class="btn btn-primary" type="submit" data-post="edit">{{ icon('check') }}<span>저장</span></button>
+          </div>
+        </form>
+        <details id="script-edit" class="script-edit">
+          <summary>Claude에게 수정 요청</summary>
+          <form class="edit-form">
+            <label for="se-note">고칠 내용</label>
+            <textarea id="se-note" name="note" rows="2" maxlength="300" required placeholder="예: 2번 문장을 더 짧게 / 첫 문장을 질문으로 / 마지막 문장은 댓글 유도로"></textarea>
+            <p class="muted">장면 수는 그대로 두고 Claude가 고친 뒤 음성·자막·렌더를 다시 해요.</p>
+            <button id="script-revise" class="btn btn-secondary" type="submit" data-post="script/revise">{{ icon('sparkles') }}Claude로 고치기</button>
+          </form>
+        </details>
+        {% else %}
         <dl class="kv">
           {% for label, value in [('제목', script.title), ('설명', script.description), ('태그', tagline)] %}
           <dt>{{ label }}</dt>
@@ -74,30 +107,6 @@
           <dt>문장</dt>
           <dd><ol class="sentences">{% for s in script.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
         </dl>
-        {% if editable %}
-        <details id="script-edit" class="script-edit">
-          <summary>대본 고치기</summary>
-          <form class="edit-form">
-            <label for="se-title">제목</label>
-            <input id="se-title" name="title" maxlength="100" required pattern=".*\S.*" value="{{ script.title }}">
-            <label for="se-desc">설명</label>
-            <textarea id="se-desc" name="description" rows="3" maxlength="5000">{{ script.description }}</textarea>
-            <label for="se-tags">태그 <span class="muted">(쉼표로 나눠요)</span></label>
-            <input id="se-tags" name="tags" value="{{ script.tags|join(', ') }}">
-            <span class="label">문장</span>
-            <ol class="sentences">{% for s in script.sentences %}
-              <li><input name="sentences" maxlength="100" required pattern=".*\S.*" value="{{ s }}" aria-label="문장 {{ loop.index }}"></li>{% endfor %}
-            </ol>
-            <p class="muted">문장을 바꾸면 음성·자막·렌더를 다시 해요. 장면 클립과 썸네일은 그대로예요.</p>
-            <button id="script-save" class="btn btn-secondary" type="submit" data-post="script">{{ icon('check') }}저장</button>
-          </form>
-          <form class="edit-form">
-            <label for="se-note">Claude에게 수정 요청</label>
-            <textarea id="se-note" name="note" rows="2" maxlength="300" required placeholder="예: 2번 문장을 더 짧게 / 첫 문장을 질문으로 / 마지막 문장은 댓글 유도로"></textarea>
-            <p class="muted">장면 수는 그대로 두고 Claude가 고친 뒤 음성·자막·렌더를 다시 해요.</p>
-            <button id="script-revise" class="btn btn-secondary" type="submit" data-post="script/revise">{{ icon('sparkles') }}Claude로 고치기</button>
-          </form>
-        </details>
         {% endif %}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
@@ -109,7 +118,17 @@
         </div>
         {% if job.steps.voice.status == 'done' %}
         <audio controls preload="none" src="{{ files }}voice.wav?v={{ job.steps.voice.sec }}"></audio>
-        {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+        {% elif not (editable and script) %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+        {% if editable and script %}
+        <div class="voice-pick">
+          <label for="se-voice">목소리</label>
+          <select id="se-voice" class="ie" name="voice" form="edit" data-regen="음성·자막·렌더">
+            {% if job.voice not in VOICES %}<option value="" selected disabled>{{ job.voice }} (지금은 쓸 수 없어요)</option>{% endif %}
+            {% for key, label in VOICES.items() %}<option value="{{ key }}"{% if key == job.voice %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-secondary" type="button" data-sample="se-voice">{{ icon('play', 16) }}미리 듣기</button>
+        </div>
+        {% endif %}
       </section>
 
       <section id="c-subs" class="card" aria-labelledby="h-subs">
@@ -119,7 +138,9 @@
         </div>
         {% if cues %}
         <ol class="cues" tabindex="0" aria-label="자막 목록">
-          {% for c in cues %}<li><time>{{ c.start|cue_ts }}</time><span>{{ c.text }}</span></li>{% endfor %}
+          {% for c in cues %}<li data-start="{{ c.start }}"><time>{{ c.start|cue_ts }}</time>
+            {%- if editable %}<input class="ie" name="cues" form="edit" value="{{ c.text }}" maxlength="40" required data-regen="렌더" aria-label="자막 {{ loop.index }}">
+            {%- else %}<span>{{ c.text }}</span>{% endif %}</li>{% endfor %}
         </ol>
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
@@ -171,7 +192,14 @@
           <a href="{{ files }}thumbnail.jpg?v={{ thumb.texts|length if thumb else 0 }}" target="_blank" rel="noopener" aria-label="썸네일 크게 보기 (새 창)">
             <img src="{{ files }}thumbnail.jpg?v={{ thumb.texts|length if thumb else 0 }}" alt="썸네일: {{ thumb.lines|join(' ') if thumb else script.title }}" width="135" height="240"></a>
           <dl class="kv">
-            {% if thumb %}
+            {% if thumb and editable %}
+            <dt><label for="th-1">문구</label></dt>
+            <dd class="thumb-lines">
+              <input id="th-1" class="ie" name="thumb" form="edit" value="{{ thumb.lines[0] }}" maxlength="12" required data-regen="썸네일·렌더" aria-label="썸네일 첫 줄">
+              <input class="ie" name="thumb" form="edit" value="{{ thumb.lines[1] if thumb.lines|length > 1 else '' }}" maxlength="12" placeholder="둘째 줄(없어도 돼요)" data-regen="썸네일·렌더" aria-label="썸네일 둘째 줄"></dd>
+            <dt><label for="th-accent">강조</label></dt>
+            <dd><input id="th-accent" class="ie" name="accent" form="edit" value="{{ thumb.accent }}" maxlength="12" placeholder="문구 안의 낱말 하나" data-regen="썸네일·렌더"></dd>
+            {% elif thumb %}
             <dt>문구</dt><dd><span>{{ thumb.lines|join(' / ') }}{% if thumb.accent %} <span class="muted">· 강조 {{ thumb.accent }}</span>{% endif %}</span></dd>
             <dt>배경</dt><dd><span>{% if thumb.photo %}<a href="{{ thumb.photo.url }}" target="_blank" rel="noopener">Pixabay</a> · 촬영 <a href="{{ thumb.photo.user_url }}" target="_blank" rel="noopener">{{ thumb.photo.user }}</a> · <span class="chip">{{ thumb.photo.query }}</span>{% else %}{{ thumb.background }}{% endif %}</span></dd>
             {% if thumb.reason %}<dt>이유</dt><dd><span>{{ thumb.reason }}</span></dd>{% endif %}
@@ -183,11 +211,14 @@
         </div>
         <p class="muted thumb-note">영상 첫 0.5초에도 들어가요. 규칙은 .claude/skills/shorts-thumbnail/SKILL.md를 따라요.</p>
         {% if editable %}
-        <form class="edit-form">
-          <label for="thumb-note">수정 요청 <span class="muted">(비우면 새 문구로 다시)</span></label>
-          <textarea id="thumb-note" name="note" rows="2" maxlength="300" placeholder="예: 숫자를 넣어서 더 궁금하게 / '손해'를 강조 / 문구를 '이거 모르면 손해'로"></textarea>
-          <button id="rethumb" class="btn btn-secondary" type="submit" data-post="thumbnail">{{ icon('rotate') }}다시 만들기</button>
-        </form>
+        <details id="thumb-edit" class="script-edit">
+          <summary>Claude에게 새 문구 요청</summary>
+          <form class="edit-form">
+            <label for="thumb-note">수정 요청 <span class="muted">(비우면 새 문구로 다시)</span></label>
+            <textarea id="thumb-note" name="note" rows="2" maxlength="300" placeholder="예: 숫자를 넣어서 더 궁금하게 / '손해'를 강조 / 문구를 '이거 모르면 손해'로"></textarea>
+            <button id="rethumb" class="btn btn-secondary" type="submit" data-post="thumbnail">{{ icon('rotate') }}Claude로 다시 만들기</button>
+          </form>
+        </details>
         {% endif %}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
@@ -214,6 +245,7 @@
           <p class="muted">비공개로 올라갔어요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
           {% if up.note %}<p class="err">{{ up.note }}</p>{% endif %}
           {% else %}
+          {% if job.uploaded_before %}<p class="muted">예전에 올린 영상 <a class="mono" href="https://youtu.be/{{ job.uploaded_before.video_id }}" target="_blank" rel="noopener">youtu.be/{{ job.uploaded_before.video_id }}</a>은 YouTube에 그대로 있어요. 고친 영상을 올린 뒤 필요 없으면 스튜디오에서 지우세요.</p>{% endif %}
           {% if up.status == 'failed' %}<p class="err">{{ up.error }}</p>{% endif %}
           {% if youtube.ready() %}
           <button id="upload" class="btn btn-primary" type="button" data-upload>{{ icon('rotate' if up.status == 'failed' else 'upload') }}{{ '다시 올리기' if up.status == 'failed' else '승인하고 YouTube에 올리기' }}</button>

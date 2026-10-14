@@ -6,7 +6,7 @@ from shorts_printer.trends import Trend
 from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")
-VOICE = "ko-KR-SunHiNeural"
+VOICE = "LKOcTG4J4tYTPR9DnLeM"
 
 
 def video(i, **kw):

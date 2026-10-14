@@ -51,8 +51,8 @@ def test_old_job_gets_thumbnail_step_and_rethumb_rules():
         assert put == [("run", job.id)] and job.data["status"] == "queued" and job.data["thumb_note"] == "숫자 넣기"
         assert {job.data["steps"][s]["status"] for s in ("thumbnail", "render")} == {"pending"}
         assert client.post(f"/api/jobs/{job.id}/thumbnail").status_code == 409   # 만드는 중
-        job.update(status="done", upload={"status": "done", "video_id": "v"})
-        assert "스튜디오" in client.post(f"/api/jobs/{job.id}/thumbnail").json()["detail"]
+        job.update(status="done", upload={"status": "running", "video_id": None})
+        assert "올리는 중" in client.post(f"/api/jobs/{job.id}/thumbnail").json()["detail"]
     finally:
         del worker._q.put
 

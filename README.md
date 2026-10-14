@@ -4,7 +4,7 @@
 [MoneyPrinter](https://github.com/FujiwaraChoki/MoneyPrinter)의 흐름을 따르되, 대본은 Claude API로 쓰고 진행 상황은 웹 화면에서 봅니다.
 
 ```
-주제 → 1 대본(Claude, 장면마다 영어 영상 프롬프트) → 2 음성(ElevenLabs·edge-tts·macOS say) → 3 자막(ASS) → 4 영상 소스(Google Flow 클립을 직접 올림, 또는 스톡) → 5 썸네일(Claude 문구 + 첫 장면 배경) → 6 렌더(ffmpeg) → final.mp4
+주제 → 1 대본(Claude, 장면마다 영어 영상 프롬프트) → 2 음성(ElevenLabs) → 3 자막(ASS) → 4 영상 소스(Google Flow 클립, 직접 올리거나 자동) → 5 썸네일(Claude 문구 + 첫 장면 배경) → 6 렌더(ffmpeg) → final.mp4
 ```
 
 ## 준비
@@ -20,10 +20,7 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 | Claude API (`ANTHROPIC_API_KEY`) | 필수 | 유료, 한 편에 몇 센트 | 대본 단계에서 멈춥니다 |
 | Google Flow (`SP_VIDEO=flow`, 기본) | 기본 영상 공급자 | Google AI 구독 크레딧(장면마다 생성) | 키는 없습니다. 사람이 Flow에서 만들어 작업 화면에 올립니다 |
 | Google Flow 자동 (`SP_VIDEO=flow-auto`) | 클립을 사람 대신 만들 때 | 위와 같음(장면마다 6크레딧) | 키는 없습니다. `uv run sp chrome`으로 띄운 창에서 처음 한 번 Google 로그인 |
-| Pixabay (`PIXABAY_API_KEY`) | `SP_VIDEO=stock`일 때 | 무료 | 둘 다 없으면 Flow(직접 올림)로 돌아갑니다 |
-| Pexels (`PEXELS_API_KEY`) | `SP_VIDEO=stock`일 때 | 무료, 2026-10부터 새 키 발급 중단 | 키가 둘 다 있으면 세로 필터가 있는 Pexels를 씁니다 |
-| ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 선택 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 목소리 목록(voice.py `ElevenLabs.voices`)에서 고릅니다. 실패하면 edge-tts로 다시 읽습니다 |
-| edge-tts | 키 없음 | 무료(비공식) | macOS `say`(Yuna)로 읽습니다 |
+| ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 필수 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 음성 단계에서 멈춥니다. `ELEVENLABS_VOICE_ID`는 목소리 '미스터최'에만 씁니다 |
 | YouTube Data API (`YOUTUBE_CLIENT_SECRET`) | 선택 | 무료, 하루 업로드 100편 | 업로드 버튼이 안 나옵니다. 직접 올립니다 |
 | YouTube Data API 키 (`YOUTUBE_API_KEY`) | 선택 | 무료, 하루 10,000유닛(주제 찾기 한 번 약 101유닛) | 주제 찾기를 못 씁니다. 주제는 직접 넣습니다 |
 
@@ -33,11 +30,10 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 
 ## 영상과 음성 공급자
 
-- **영상**은 `.env`의 `SP_VIDEO` 하나로 고릅니다. `flow`(기본)는 사람이 장면 클립을 올리고, `stock`은 Pexels·Pixabay에서 장면마다 검색어로 찾습니다. 고른 공급자를 쓸 수 없으면(키 없음) Flow로 돌아갑니다.
-  - 작업에 고정하지 않고 영상 소스 단계가 돌 때마다 읽습니다. Flow 크레딧이 떨어지면 `.env`만 `stock`으로 바꾸고 서버를 다시 켜면, 클립을 기다리던 작업도 [다시 시도]로 스톡으로 이어 갑니다.
+- **영상**은 `.env`의 `SP_VIDEO` 하나로 고릅니다. `flow`(기본)는 사람이 장면 클립을 올리고, `flow-auto`는 전용 Chrome이 Flow를 대신 눌러 만듭니다. 고른 공급자를 쓸 수 없으면(Chrome 없음) Flow로 돌아갑니다.
+  - 작업에 고정하지 않고 영상 소스 단계가 돌 때마다 읽습니다. `.env`만 바꾸고 서버를 다시 켜면 클립을 기다리던 작업도 [다시 시도]로 새 공급자로 이어 갑니다.
   - 스톡도 못 찾은 장면은 그라데이션으로 넘어가지 않고 "클립 대기"로 멈춥니다. 그 장면만 직접 올리면 됩니다.
-- **음성(TTS)**은 새 작업 화면의 목소리 목록에서 고릅니다. 목록에는 지금 쓸 수 있는 공급자의 목소리만 나옵니다(ElevenLabs는 키가 있을 때, 유나는 macOS에서만).
-  - 고른 목소리가 실패하면 edge-tts 선희 → macOS say 유나 순서로 처음부터 다시 읽습니다. 고른 것과 같은 공급자는 건너뜁니다. 한 영상 안에서 목소리가 섞이지 않습니다.
+- **음성(TTS)**은 ElevenLabs 목소리 넷(미스터킴·이하나·지수·미스터최, voice.py `VOICES`) 가운데 고릅니다. 기본은 미스터킴입니다. 대체 공급자는 없어서 실패하면 음성 단계에서 멈춥니다.
 - 대시보드 환경 점검에 공급자마다 한 줄씩 나옵니다. 지금 쓰는 영상 공급자에는 "(기본)"이 붙습니다.
 
 **공급자를 더하는 법** (예: Seedance, Veo. 지금은 구현하지 않았습니다)
@@ -52,7 +48,7 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 
 ```bash
 uv run sp web                    # http://127.0.0.1:8765
-uv run sp run "고양이가 상자를 좋아하는 이유" --voice ko-KR-InJoonNeural   # 화면 없이 한 편
+uv run sp run "고양이가 상자를 좋아하는 이유" --voice iWLjl1zCuqXRkW6494ve   # 화면 없이 한 편
 ```
 
 - 대시보드에서 주제와 목소리를 고르고 [만들기]를 누르면 대기열에 들어갑니다. 한 번에 한 편씩 만듭니다.
@@ -146,6 +142,5 @@ uv run pytest -m live            # 실제 Claude API를 부르는 테스트(키 
 
 ## 알아 둘 점
 
-- **edge-tts 패치.** 2026년 10월 Microsoft 쪽 주소 변경으로 edge-tts 7.2.8이 403을 냅니다. `voice.py`에서 접속 주소를 새 주소로 바꿔 씁니다([rany2/edge-tts#491](https://github.com/rany2/edge-tts/pull/491)). edge-tts가 고쳐진 버전을 내면 그 줄을 지우면 됩니다.
 - **키 관리.** 키는 `.env`에만 둡니다. 로그와 화면의 오류 메시지에서는 이름이 `_API_KEY`나 `_AUTH_TOKEN`으로 끝나는 키의 값을 가립니다.
 - **업로드는 YouTube 비공개만 합니다.** 올리는 도중 서버를 끄면 "실패"로 남습니다. 이미 올라갔을 수 있으니 YouTube 스튜디오에서 확인한 뒤 [다시 올리기]를 누르세요.

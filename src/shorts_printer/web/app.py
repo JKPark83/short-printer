@@ -3,6 +3,7 @@ import asyncio
 import os
 import re
 import secrets
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import PlainTextResponse, RedirectResponse
+from fastapi.responses import FileResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -49,6 +50,7 @@ ICONS = {
     "chevron": '<path d="m9 18 6-6-6-6"/>',
     "sparkles": '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/>',
     "trending": '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+    "trash": '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
     "film": '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/>',
 }
 NODE_ICON = {"pending": "circle", "running": "loader", "done": "check", "failed": "x"}
@@ -181,7 +183,7 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 app.mount("/files", StaticFiles(directory=config.JOBS_DIR, check_dir=False), name="files")
 app.mount("/trend-files", StaticFiles(directory=config.TRENDS_DIR, check_dir=False), name="trend-files")
 templates = Jinja2Templates(directory=HERE / "templates")
-VOICES = voice.choices()   # 켤 때 한 번. 쓸 수 있는 공급자의 목소리만
+VOICES = voice.VOICES   # 앞이 화면 기본값
 templates.env.globals |= {
     "v": int(datetime.now().timestamp()),   # 서버를 켠 시각으로 정적 파일 캐시를 깬다
     "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "LABELS": LABELS, "STATUS": STATUS, "STATE": STATE,
@@ -234,13 +236,16 @@ def _checks() -> list[tuple[str, str, str]]:
     v = video.default()
     checks += [("ok" if p.ready() else "warn", f"영상 · {p.label}" + (" (기본)" if k == v else ""), p.hint)
                for k, p in video.VIDEO.items()]
-    checks += [("ok" if p.ready() else "warn", f"음성 · {p.label}", p.hint) for p in voice.TTS.values()]
+    checks.append(("ok" if voice.TTS.ready() else "bad", f"음성 · {voice.TTS.label}", voice.TTS.hint))
     return checks + [
         ("ok", "YouTube 업로드", "비공개로 올려요") if youtube.ready()
         else ("warn", "YouTube 업로드", "선택 · .env에 YOUTUBE_CLIENT_SECRET, 터미널에서 uv run sp youtube-login"),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
         else ("warn", "YouTube Data API 키", "선택 · 주제 찾기용 · .env에 YOUTUBE_API_KEY"),
     ]
+
+
+templates.env.globals["env_checks"] = _checks   # 모든 화면 상단바의 환경 점검
 
 
 def _latest_picks() -> dict | None:
@@ -252,8 +257,8 @@ def _latest_picks() -> dict | None:
 
 
 def _can_upload(data: dict) -> bool:
-    """클립을 올리거나 바꿀 수 있나: 돌고 있지 않고, 아직 유튜브에 올리지 않았을 때."""
-    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ("queued", "running", "done")
+    """클립을 올리거나 바꿀 수 있나: 만들거나 YouTube에 올리는 중이 아닐 때(올린 뒤에 바꾸면 새로 올린다)."""
+    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ACTIVE
 
 
 def _scenes(job: Job) -> list[dict]:
@@ -275,9 +280,8 @@ def _scenes(job: Job) -> list[dict]:
 @app.get("/")
 def index(request: Request):
     jobs = [j.data for j in reversed(Job.all())]
-    checks = _checks()
     return templates.TemplateResponse(request, "index.html", {
-        "jobs": jobs, "stats": _stats(jobs), "checks": checks, "claude_ok": checks[0][0] == "ok",
+        "jobs": jobs, "stats": _stats(jobs), "claude_ok": _checks()[0][0] == "ok",
         "active": any(j["status"] in ACTIVE for j in jobs), "rec": _latest_picks()})
 
 
@@ -328,6 +332,18 @@ def retry(job_id: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{job_id}/delete")
+def delete_job(job_id: str):
+    """작업 폴더를 통째로 지운다. 이미 올린 YouTube 영상은 그대로 둔다."""
+    job = _load(Job, job_id)
+    with worker._lock:   # 검사와 지우기 사이에 작업이 시작되지 않게
+        data = job.data
+        if data["status"] in ACTIVE or (data.get("upload") or {}).get("status") in ACTIVE:
+            raise HTTPException(409, "제작·업로드 중인 작업은 지울 수 없어요")
+        shutil.rmtree(job.dir)
+    return {"ok": True}
+
+
 @app.post("/api/jobs/{job_id}/confirm")
 def confirm(job_id: str):
     """민감 분야 대본을 사람이 확인했다. 장면 만들기부터 이어서."""
@@ -341,41 +357,80 @@ def _note(note: str) -> str:
     return note.strip()
 
 
-def _redo(job_id: str, steps: tuple, uploaded: str, **kw) -> None:
-    """완성 뒤 고치기. 안 되면 409(uploaded: 이미 올렸을 때 안내)."""
+def _redo(job_id: str, steps: tuple, **kw) -> None:
+    """완성 뒤 고치기. 만들거나 올리는 중이면 409."""
     job = _load(Job, job_id)
     if not worker.redo(job_id, steps, **kw):
-        raise HTTPException(409, "완성된 작업만 고칠 수 있어요" if job.data["status"] != "done" else uploaded)
+        raise HTTPException(409, "완성된 작업만 고칠 수 있어요" if job.data["status"] not in ("done", "failed", "interrupted")
+                            else "YouTube에 올리는 중에는 고칠 수 없어요")
 
 
 @app.post("/api/jobs/{job_id}/thumbnail")
 def rethumb(job_id: str, note: str = Form("")):
-    _redo(job_id, ("thumbnail", "render"), "이미 올린 영상은 스튜디오에서 썸네일을 바꾸세요", thumb_note=_note(note))
+    _redo(job_id, ("thumbnail", "render"), thumb_note=_note(note), thumb_hand=None)
     return {"ok": True, "msg": "썸네일을 다시 만들고 영상도 다시 렌더해요"}
 
 
-@app.post("/api/jobs/{job_id}/script")
-def save_script(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
-                sentences: list[str] = Form([])):
-    """손으로 고친 대본. 문장이 바뀌면 음성부터 다시(장면 클립·썸네일은 그대로), 아니면 저장만."""
-    old = read_json(_load(Job, job_id).dir / "script.json")
-    lines, title = [s.strip() for s in sentences], title.strip()
+@app.get("/api/voices/{key}/sample")
+def voice_sample(key: str):
+    if key not in VOICES:
+        raise HTTPException(404, "모르는 목소리예요")
+    try:
+        return FileResponse(voice.sample(key), media_type="audio/mpeg")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e)) from None
+
+
+def _clean(s: str) -> str:
+    return " ".join(s.split())   # 칸 안의 줄바꿈은 띄어쓰기로
+
+
+@app.post("/api/jobs/{job_id}/edit")
+def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
+              sentences: list[str] = Form([]), voice: str = Form(""), cues: list[str] = Form([]),
+              thumb: list[str] = Form([]), accent: str = Form("")):
+    """상세 화면에서 손으로 고친 값. 바뀐 칸을 보고 다시 할 단계만 고른다.
+    문장·목소리 → 음성부터(자막은 새로 나뉘어 고친 자막 줄은 버린다), 자막 줄 → 렌더, 썸네일 문구 → 썸네일·렌더.
+    제목·설명·태그만이면 저장만. 장면 클립은 그대로."""
+    job = _load(Job, job_id)
+    old, was = read_json(job.dir / "script.json"), job.data["voice"]
+    lines, title, voice = [_clean(s) for s in sentences], title.strip(), voice or was
+    if voice != was and voice not in VOICES:
+        raise HTTPException(400, "모르는 목소리예요")
     if not old or len(lines) != len(old["sentences"]) or not all(lines) or any(len(s) > 100 for s in lines):
         raise HTTPException(400, "문장은 장면 수만큼, 비우지 않고 100자 안으로 적어 주세요")
     if not title or len(title) > 100 or len(description) > 5000:
         raise HTTPException(400, "제목은 1~100자, 설명은 5000자까지 적을 수 있어요")
     tags = [t for t in (x.strip().lstrip("#").strip() for x in tags.split(",")) if t]
-    rerun = lines != old["sentences"]
-    _redo(job_id, ("voice", "subtitles", "render") if rerun else (), "이미 올린 영상은 대본을 고칠 수 없어요",
-          script=old | {"title": title, "description": description.strip(), "tags": tags, "sentences": lines})
-    return {"ok": True, "msg": "저장했어요. 음성·자막·렌더를 다시 해요" if rerun else "저장했어요"}
+    files = {"script.json": old | {"title": title, "description": description.strip(), "tags": tags, "sentences": lines}}
+    fields, steps = {"voice": voice}, set()
+    if lines != old["sentences"] or voice != was:
+        steps |= {"voice", "subtitles", "render"}
+    elif cues and (before := read_json(job.dir / "cues.json")):
+        texts = [_clean(c) for c in cues]
+        if len(texts) != len(before) or not all(texts) or any(len(t) > 40 for t in texts):
+            raise HTTPException(400, "자막은 줄 수 그대로, 비우지 않고 40자 안으로 적어 주세요")
+        if texts != [c["text"] for c in before]:
+            files["cues.json"] = [c | {"text": t} for c, t in zip(before, texts)]
+            steps.add("render")
+    if thumb and (t := read_json(job.dir / "thumb.json")):
+        hand = [_clean(x) for x in thumb if x.strip()]
+        accent = accent.strip() if accent.strip() and accent.strip() in " ".join(hand) else ""   # 문구에 없는 강조는 뺀다
+        if (hand, accent) != (t["lines"], t.get("accent", "")):
+            if not 1 <= len(hand) <= 2 or any(len(x) > 12 for x in hand):
+                raise HTTPException(400, "썸네일 문구는 1~2줄, 줄마다 12자 안으로 적어 주세요")
+            fields["thumb_hand"] = {"lines": hand, "accent": accent}
+            steps |= {"thumbnail", "render"}
+    steps = tuple(s for s in STEPS if s in steps)
+    _redo(job_id, steps, files=files, **fields)
+    return {"ok": True, "msg": f"저장했어요. {'·'.join(LABELS[s] for s in steps)}를 다시 해요" if steps else "저장했어요"}
 
 
 @app.post("/api/jobs/{job_id}/script/revise")
 def revise_script(job_id: str, note: str = Form("")):
     if not (note := _note(note)):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
-    _redo(job_id, ("script", "voice", "subtitles", "render"), "이미 올린 영상은 대본을 고칠 수 없어요", script_note=note)
+    _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
     return {"ok": True, "msg": "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
 
 

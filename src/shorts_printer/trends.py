@@ -346,7 +346,7 @@ class PickOut(BaseModel):
     why_now: str = Field(description="지금 이 주제를 만들 이유. 참고 쇼츠 근거로 한두 문장")
     scores: ClaudeScores
     refs: list[str] = Field(description="근거가 된 쇼츠 video_id 1~3개")
-    search_terms: list[str] = Field(description="Pexels·Pixabay에서 찾을 영어 검색어 3~5개")
+    search_terms: list[str] = Field(description="화면에 보일 장면을 나타내는 영어 키워드 3~5개")
 
 
 class Excluded(BaseModel):

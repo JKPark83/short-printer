@@ -5,8 +5,8 @@ import pytest
 
 from shorts_printer import script
 
-OK = script.Script(title="t", description="d", tags=["a"], sensitive="", scenes=[script.Scene(sentence="하나", prompt="p1", term="coffee"),
-                                                                 script.Scene(sentence="둘", prompt="p2", term="cup")])
+OK = script.Script(title="t", description="d", tags=["a"], sensitive="", scenes=[script.Scene(sentence="하나", prompt="p1"),
+                                                                 script.Scene(sentence="둘", prompt="p2")])
 
 
 def fake_client(monkeypatch, resp=None, exc=None):
@@ -54,7 +54,7 @@ def test_refusal_and_missing_key_become_korean_errors(monkeypatch):
 
 def test_flat_keeps_parallel_lists():
     f = OK.flat()
-    assert f["sentences"] == ["하나", "둘"] and f["prompts"] == ["p1", "p2"] and f["search_terms"] == ["coffee", "cup"]
+    assert f["sentences"] == ["하나", "둘"] and f["prompts"] == ["p1", "p2"]
     assert "scenes" not in f and f["title"] == "t"
 
 
@@ -68,7 +68,7 @@ def test_live_claude_writes_korean_script():
     if not script.config.secret("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY 없음")
     s, usage = script.write("커피를 처음 마신 사람들")
-    assert 6 <= len(s.scenes) <= 7 and all("No on-screen text" in x.prompt and x.term for x in s.scenes) and usage["output_tokens"] > 0
+    assert 6 <= len(s.scenes) <= 7 and all("No on-screen text" in x.prompt for x in s.scenes) and usage["output_tokens"] > 0
 
 
 def test_brief_is_appended(monkeypatch):

@@ -54,30 +54,30 @@ def step_footage(job: Job) -> str:
 
 
 def step_voice(job: Job) -> str:
-    engine = voice.synth(read_json(job.dir / "script.json")["sentences"], job.data["voice"], job.dir, job.log)
-    want = voice.owner(job.data["voice"]).label
-    if engine != want:
-        note = f"{want}가 안 돼 {'macOS 기본 목소리(Yuna)' if engine == 'macOS say' else engine}로 읽었어요"
-        if note not in job.data["notices"]:
-            job.update(notices=job.data["notices"] + [note])
-    return engine
+    return voice.synth(read_json(job.dir / "script.json")["sentences"], job.data["voice"], job.dir, job.log)
 
 
 def step_subtitles(job: Job) -> str:
     cues = subtitles.cues(read_json(job.dir / "timing.json"))
-    subtitles.write_ass(job.dir / "subs.ass", cues)
-    atomic_write_json(job.dir / "cues.json", cues)
+    atomic_write_json(job.dir / "cues.json", cues)   # subs.ass는 렌더가 쓴다(상세 화면에서 고친 자막도 들어가게)
     return f"ASS {len(cues)}줄"
 
 
 def step_thumbnail(job: Job) -> str:
-    """썸네일 스킬대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립. 문구는 렌더가 위 띠 제목으로도 쓴다."""
+    """썸네일 스킬대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립. 문구는 렌더가 위 띠 제목으로도 쓴다.
+    상세 화면에서 문구를 손으로 고쳤으면(thumb_hand) Claude 없이 그 문구로 만든다."""
     clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
-    t = thumbnail.make(job.dir, read_json(job.dir / "script.json"), job.data["topic"], job.log,
-                       job.data.get("thumb_note") or "")
+    if hand := job.data.get("thumb_hand"):
+        old = read_json(job.dir / "thumb.json") or {}
+        t = old | hand | {"position": old.get("position", "top"), "usage": old.get("usage"), "note": "",
+                          "texts": old.get("texts", []) + [" / ".join(hand["lines"])]}
+        job.log(f"썸네일 문구(직접 고침): {' / '.join(hand['lines'])}")
+    else:
+        t = thumbnail.make(job.dir, read_json(job.dir / "script.json"), job.data["topic"], job.log,
+                           job.data.get("thumb_note") or "")
     t["background"] = render.thumbnail(job.dir, t["lines"], t["accent"], t["position"], clips[0] if clips else None)
     atomic_write_json(job.dir / "thumb.json", t)
-    job.update(thumb_usage=t["usage"])
+    job.update(thumb_usage=t["usage"], thumb_hand=None)
     return t["background"]
 
 
@@ -86,6 +86,8 @@ def step_render(job: Job) -> str:
     timing = read_json(job.dir / "timing.json")
     t = read_json(job.dir / "thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
     title = (t["lines"], t["accent"]) if t else ([read_json(job.dir / "script.json")["title"]], "")
+    if cues := read_json(job.dir / "cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
+        subtitles.write_ass(job.dir / "subs.ass", cues)
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], title, [t["start"] for t in timing]))
     return "ffmpeg"
 

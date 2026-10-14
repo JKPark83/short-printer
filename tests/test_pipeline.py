@@ -112,8 +112,6 @@ def test_auto_provider_fills_what_it_can_then_waits(monkeypatch):
 
 def test_default_video_falls_back_to_flow(monkeypatch):
     monkeypatch.setattr(config, "VIDEO", "stock")
-    monkeypatch.delenv("PEXELS_API_KEY", raising=False)
-    monkeypatch.delenv("PIXABAY_API_KEY", raising=False)
     assert video.default() == "flow"
     monkeypatch.setattr(config, "VIDEO", "nope")
     assert video.default() == "flow"

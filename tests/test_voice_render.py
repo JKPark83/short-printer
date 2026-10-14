@@ -15,11 +15,10 @@ pytestmark = pytest.mark.skipif(not Path(config.FFMPEG).exists(), reason="ffmpeg
 
 
 class Fake:
-    def __init__(self, label, speak, voices=()):
-        self.label, self.hint, self.voices, self._speak, self.calls = label, "", dict.fromkeys(voices, ""), speak, []
+    label, hint = "ElevenLabs", ""
 
-    def ready(self):
-        return True
+    def __init__(self, speak, ready=True):
+        self._speak, self.calls, self.ready = speak, [], lambda: ready
 
     def speak(self, v, text, out):
         self.calls.append(v)
@@ -32,15 +31,11 @@ def fake_speak(text, out):
     return path, None
 
 
-def test_voice_joins_sentences_with_gap_and_falls_back(tmp_path, monkeypatch):
-    def broken(text, out):
-        raise ConnectionError("403")
-
-    edge = Fake("edge-tts", broken, voice.Edge.voices)
-    monkeypatch.setitem(voice.TTS, "edge", edge)
-    monkeypatch.setitem(voice.TTS, "say", Fake("macOS say", fake_speak, ["Yuna"]))
-    assert voice.synth(["하나", "둘"], "ko-KR-SunHiNeural", tmp_path, lambda m: None) == "macOS say"
-    assert edge.calls == ["ko-KR-SunHiNeural"]   # 같은 공급자는 한 번만
+def test_voice_joins_sentences_with_gap(tmp_path, monkeypatch):
+    fake = Fake(fake_speak)
+    monkeypatch.setattr(voice, "TTS", fake)
+    assert voice.synth(["하나", "둘"], "LKOcTG4J4tYTPR9DnLeM", tmp_path, lambda m: None) == "ElevenLabs"
+    assert fake.calls == ["LKOcTG4J4tYTPR9DnLeM"] * 2
     t = read_json(tmp_path / "timing.json")
     assert t[0]["start"] == 0 and t[0]["end"] == pytest.approx(0.5, abs=0.06)
     assert t[1]["start"] == pytest.approx(t[0]["end"] + voice.GAP, abs=0.01)
@@ -48,8 +43,8 @@ def test_voice_joins_sentences_with_gap_and_falls_back(tmp_path, monkeypatch):
 
 
 def test_render_gradient_with_subtitles(tmp_path, monkeypatch):
-    monkeypatch.setitem(voice.TTS, "edge", Fake("edge-tts", fake_speak, voice.Edge.voices))
-    voice.synth(["커피 한 잔"], "ko-KR-SunHiNeural", tmp_path, lambda m: None)
+    monkeypatch.setattr(voice, "TTS", Fake(fake_speak))
+    voice.synth(["커피 한 잔"], "elevenlabs", tmp_path, lambda m: None)
     timing = read_json(tmp_path / "timing.json")
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing))
     dur = render.render(tmp_path, [], timing[-1]["end"])
@@ -64,24 +59,14 @@ def test_render_gradient_with_subtitles(tmp_path, monkeypatch):
     assert "{\\c" in (tmp_path / "title.ass").read_text() and ",2,80,80,1390," in (tmp_path / "title.ass").read_text()
 
 
-def test_elevenlabs_word_times_shift_by_sentence_start_and_fall_back(tmp_path, monkeypatch):
+def test_elevenlabs_word_times_shift_by_sentence_start(tmp_path, monkeypatch):
     def speak_with_words(text, out):
         return fake_speak(text, out)[0], [{"text": text, "start": 0.1}]
 
-    monkeypatch.setitem(voice.TTS, "elevenlabs", Fake("ElevenLabs", speak_with_words, ["elevenlabs"]))
+    monkeypatch.setattr(voice, "TTS", Fake(speak_with_words))
     assert voice.synth(["하나", "둘"], "elevenlabs", tmp_path, lambda m: None) == "ElevenLabs"
     t = read_json(tmp_path / "timing.json")
     assert t[1]["words"] == [{"text": "둘", "start": pytest.approx(t[1]["start"] + 0.1, abs=0.002)}]
-
-    def broken(text, out):
-        raise RuntimeError("ElevenLabs 401")
-
-    edge = Fake("edge-tts", fake_speak, voice.Edge.voices)
-    monkeypatch.setitem(voice.TTS, "elevenlabs", Fake("ElevenLabs", broken, ["elevenlabs"]))
-    monkeypatch.setitem(voice.TTS, "edge", edge)
-    assert voice.synth(["하나"], "elevenlabs", tmp_path, lambda m: None) == "edge-tts"
-    assert edge.calls == ["ko-KR-SunHiNeural"]
-    assert "words" not in read_json(tmp_path / "timing.json")[0]
 
 
 def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_path, monkeypatch):
@@ -104,25 +89,19 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
     voice.ElevenLabs().speak("elevenlabs", "탑", tmp_path / "s01")
     voice.ElevenLabs().speak("iWLjl1zCuqXRkW6494ve", "탑", tmp_path / "s02")
     assert [r.split("/")[-2] for r in urls[1:]] == ["envID", "iWLjl1zCuqXRkW6494ve"]
-    assert voice.owner("iWLjl1zCuqXRkW6494ve").label == "ElevenLabs"
 
 
-def test_voice_owner_and_choices(monkeypatch):
-    assert voice.owner("ko-KR-InJoonNeural").label == "edge-tts"
-    assert voice.owner("Yuna").label == "macOS say"
-    assert voice.owner("elevenlabs").label == "ElevenLabs"
-    assert voice.owner("ko-KR-Unknown").label == "edge-tts"
-    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
-    assert "elevenlabs" not in voice.choices() and "ko-KR-SunHiNeural" in voice.choices()
+def test_voices_default_mister_kim():
+    assert list(voice.VOICES.values()) == ["미스터킴", "이하나", "지수", "미스터최"]
 
 
-def test_synth_raises_when_no_tts_ready(tmp_path, monkeypatch):
-    for k, p in list(voice.TTS.items()):
-        off = Fake(p.label, fake_speak, p.voices)
-        off.ready = lambda: False
-        monkeypatch.setitem(voice.TTS, k, off)
-    with pytest.raises(RuntimeError, match="TTS가 없어요"):
+def test_synth_refuses_old_voice_and_missing_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(voice, "TTS", Fake(fake_speak))
+    with pytest.raises(RuntimeError, match="다른 목소리"):
         voice.synth(["하나"], "ko-KR-SunHiNeural", tmp_path, lambda m: None)
+    monkeypatch.setattr(voice, "TTS", Fake(fake_speak, ready=False))
+    with pytest.raises(RuntimeError, match="ELEVENLABS_API_KEY"):
+        voice.synth(["하나"], "elevenlabs", tmp_path, lambda m: None)
 
 
 def test_scene_frames_follow_sentence_starts():
@@ -144,8 +123,8 @@ def duration(path):
 
 
 def test_render_wide_clips_by_sentence(tmp_path, monkeypatch):
-    monkeypatch.setitem(voice.TTS, "edge", Fake("edge-tts", fake_speak, voice.Edge.voices))
-    voice.synth(["하나", "둘"], "ko-KR-SunHiNeural", tmp_path, lambda m: None)
+    monkeypatch.setattr(voice, "TTS", Fake(fake_speak))
+    voice.synth(["하나", "둘"], "elevenlabs", tmp_path, lambda m: None)
     timing = read_json(tmp_path / "timing.json")
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing))
     clips = make_clips(tmp_path, 2)
@@ -163,8 +142,8 @@ def test_thumbnail_from_clip_shorter_than_seek(tmp_path):
 
 
 def test_render_old_stock_jobs_loop_clips(tmp_path, monkeypatch):
-    monkeypatch.setitem(voice.TTS, "edge", Fake("edge-tts", fake_speak, voice.Edge.voices))
-    voice.synth(["하나", "둘", "셋"], "ko-KR-SunHiNeural", tmp_path, lambda m: None)
+    monkeypatch.setattr(voice, "TTS", Fake(fake_speak))
+    voice.synth(["하나", "둘", "셋"], "elevenlabs", tmp_path, lambda m: None)
     timing = read_json(tmp_path / "timing.json")
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing))
     dur = render.render(tmp_path, make_clips(tmp_path, 2), timing[-1]["end"], None, [t["start"] for t in timing])

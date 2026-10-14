@@ -29,13 +29,13 @@ HOSTS = ["127.0.0.1", "localhost", *filter(None, map(str.strip, os.environ.get("
 
 # 채널 분야. 대본과 추천 주제가 이 분야 안에서 돈다
 CHANNEL = os.environ.get("SP_CHANNEL") or "사람들에게 실제로 도움이 되는 상식"
-VIDEO = os.environ.get("SP_VIDEO") or "flow"   # 영상 공급자(video.VIDEO 키). flow | stock
+VIDEO = os.environ.get("SP_VIDEO") or "flow"   # 영상 공급자(video.VIDEO 키). flow | flow-auto
 
 
 def secret(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
-# ElevenLabs(유료): 키와 목소리 ID가 둘 다 있어야 켜진다(voice.ElevenLabs.ready)
+# ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 목소리 '미스터최'(voice.VOICES의 "elevenlabs")
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"

@@ -21,7 +21,7 @@
 
 **완료·검증됨**
 - 6단계 파이프라인: 대본(Claude, 장면마다 영어 프롬프트) → 음성(TTS 공급자) → 자막(ASS) → 영상 소스(영상 공급자, 기본 Google Flow 직접 올림) → 썸네일(Claude 문구 + 첫 장면 배경) → 렌더(ffmpeg). 결과물은 1080×1920 mp4. 위아래 검은 띠, 위 띠에 썸네일 문구, 첫 0.5초는 썸네일.
-- 영상·TTS는 공급자 등록부(`video.VIDEO`, `voice.TTS`) 뒤에 있다. 영상은 `.env`의 `SP_VIDEO`(flow | stock), 음성은 작업마다 고른 목소리.
+- 영상·TTS는 공급자 등록부(`video.VIDEO`, `voice.TTS`) 뒤에 있다. 영상은 `.env`의 `SP_VIDEO`(flow | flow-auto), 음성은 작업마다 고른 목소리.
 - 웹 화면은 대시보드와 작업 상세 두 페이지다.
   - 대시보드: 새 작업, 환경 점검, 작업 목록, 오늘 목표 3편.
   - 작업 상세: 단계 표시, 단계별 결과 카드, 실행 로그, 완성 영상, 다시 시도.
@@ -36,7 +36,6 @@
 - 실제 Claude 대본 생성. 브라우저 E2E에서는 script.json을 손으로 넣었다.
 - 사용자가 22:09에 `.env`를 저장했고, `ANTHROPIC_API_KEY`는 값이 있다(값은 열어 보지 않음). `CLAUDE_MODEL`은 비어 있다.
 - Flow 반자동 흐름 전체: 휴대폰(tailscale serve)에서 프롬프트 복사 → Flow 생성 → 장면별 업로드 → 자동 재개 → 완성 뒤 클립 교체로 렌더만 다시.
-- `SP_VIDEO=stock`으로 한 편 끝까지, 목소리 "유나"로 한 편.
 - 22:12에 사용자가 `sp web`(포트 8765)을 새로 켰다. `.env`를 저장한 뒤라 키를 읽었을 것이다.
 
 ## 실행
@@ -45,7 +44,7 @@
 cd /Users/jkpark/my-toy/shorts-printer
 uv sync
 uv run sp web                 # http://127.0.0.1:8765
-uv run sp run "주제" --voice ko-KR-SunHiNeural   # 화면 없이 한 편
+uv run sp run "주제" --voice LKOcTG4J4tYTPR9DnLeM   # 화면 없이 한 편
 uv run pytest -q              # 기본으로 live 제외
 uv run pytest -q -m live      # 실제 Claude 호출(비용 발생)
 ```
@@ -56,9 +55,8 @@ uv run pytest -q -m live      # 실제 Claude 호출(비용 발생)
 |---|---|
 | `src/shorts_printer/config.py` | `.env` 로더, ffmpeg 경로, 기본 모델, 영상 공급자(`SP_VIDEO`), 허용 호스트(`SP_HOSTS`) |
 | `script.py` | Claude 대본(Pydantic `Script`: 제목, 설명, 태그, 장면 6~7개 `Scene{sentence, prompt, term}`), 비용 계산. script.json에는 `sentences`·`prompts`·`search_terms`를 같은 개수의 배열로 푼다 |
-| `video.py` | 영상 공급자 등록부 `VIDEO`(flow, stock), `default()`(SP_VIDEO, 못 쓰면 flow), 장면 목록 `scenes()`(장면별 초 포함), `set_clip()` |
-| `footage.py` | 스톡 공급자 `Stock`(Pexels·Pixabay, 장면마다 검색어로 하나). `download()`는 tmp에 받은 뒤 `os.replace`(다른 공급자도 씀) |
-| `voice.py` | TTS 등록부 `TTS`(ElevenLabs, edge-tts, macOS say). 고른 목소리가 실패하면 `FALLBACK`(선희 → 유나) 순서로 처음부터 다시 읽는다. 문장별 길이를 timing.json에 기록 |
+| `video.py` | 영상 공급자 등록부 `VIDEO`(flow, flow-auto), `default()`(SP_VIDEO, 못 쓰면 flow), 장면 목록 `scenes()`(장면별 초 포함), `set_clip()` |
+| `voice.py` | ElevenLabs 하나(`TTS`)와 목소리 넷 `VOICES`(맨 앞 미스터킴이 기본). 대체 공급자는 없다. 문장별 길이를 timing.json에 기록 |
 | `subtitles.py` / `render.py` / `ffmpeg.py` | 자막 cue·ASS 생성, ffmpeg 렌더(타임아웃 600초). 장면은 문장 시작 시각으로 나누고(`frames()`), 클립은 1080×880 칸에 맞춰 가운데를 자른다. 짧으면 마지막 화면에서 멈춤 |
 | `thumbnail.py` | 썸네일 스킬(`.claude/skills/shorts-thumbnail/SKILL.md`) 본문을 지시문으로 문구를 정한다. 합성은 `render.thumbnail`(배경은 첫 장면 클립 0.5초, 없으면 단색) |
 | `pipeline.py` | 단계 실행. 이미 끝난 단계는 건너뛰고, 실패하거나 Ctrl+C로 멈추면 failed로 기록. 빠진 장면 클립이 있으면 `Wait`로 멈춰 status `waiting`(실패 아님). `publish()`는 YouTube 업로드 |
@@ -80,19 +78,18 @@ uv run pytest -q -m live      # 실제 Claude 호출(비용 발생)
   - 응답을 읽기 전에 refusal인지 확인한다.
   - 비용은 `resp.model` 기준으로 계산하고, 모르는 모델이면 None으로 두고 화면에서 숨긴다.
   - 기본 모델은 `claude-opus-5-5`이고, `.env`의 `CLAUDE_MODEL`로 바꾼다.
-- **edge-tts 7.2.8 패치**: Microsoft가 접속 주소를 바꿨기 때문에 `edge_tts.communicate.WSS_URL`을 api.msedgeservices.com으로 덮어쓴다(voice.py 상단). 비공식 서비스라 다시 막힐 수 있다.
 - **썸네일**: 규칙은 SKILL.md 한 곳에만 둔다(코드에 규칙을 다시 적지 않는다). 렌더의 위 띠 제목은 thumb.json의 문구를 쓰고, 없으면 대본 제목. 글자 크기는 `1400 // 가장 긴 줄 글자 수`(위 띠 최대 140, 썸네일 최대 150).
 - **ffmpeg**: 자막 필터(libass) 때문에 `ffmpeg-full`(`/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`)을 쓴다.
 - **공급자**
-  - 영상 공급자 계약은 `label`, `hint`, `ready()`, `make(scenes, out, log)`, TTS 공급자는 `label`, `hint`, `voices`, `ready()`, `speak(voice, text, out)`. 등록부는 dict 하나다.
-  - 영상 공급자는 job.json에 고정하지 않는다. 영상 소스 단계가 돌 때마다 `SP_VIDEO`를 읽어서, Flow 크레딧이 떨어지면 `.env`만 바꾸고 서버를 다시 켜면 대기 중 작업도 [다시 시도]로 stock으로 이어 간다(config는 시작할 때 읽는다).
-  - 목소리 값은 평평한 ID(`"elevenlabs"`, `"ko-KR-SunHiNeural"`, `"Yuna"`)이고 `voice.owner()`가 공급자를 찾는다. 예전 job.json이 그대로 읽힌다.
+  - 영상 공급자 계약은 `label`, `hint`, `ready()`, `make(scenes, out, log)`. 등록부는 dict 하나다. TTS는 ElevenLabs 하나뿐이다.
+  - 영상 공급자는 job.json에 고정하지 않는다. 영상 소스 단계가 돌 때마다 `SP_VIDEO`를 읽어서, `.env`만 바꾸고 서버를 다시 켜면 대기 중 작업도 [다시 시도]로 새 공급자로 이어 간다(config는 시작할 때 읽는다).
+  - 목소리 값은 ElevenLabs 목소리 ID이고 `"elevenlabs"`는 .env `ELEVENLABS_VOICE_ID`(미스터최)다. 예전 작업의 edge·say 목소리는 음성 단계에서 "다른 목소리를 골라 주세요"로 멈춘다.
 - **단계 순서**: script → voice → subtitles → footage → thumbnail → render. 음성을 먼저 만들어 공급자와 작업 화면이 장면별 초(`sec`)를 안다. 사람을 기다리는 단계는 뒤로 갔다.
 - **클립 대기**: 빠진 장면이 있으면 공급자가 아니라 `step_footage`가 `Wait`를 던진다(수동·자동 같은 규칙). 마지막 클립이 올라가면 서버가 바로 큐에 넣는다. footage가 done인 작업에서 클립을 바꾸면 렌더만(장면 0이면 썸네일도) 다시 돈다. 올린 작업은 409.
 - **새 영상 공급자 붙이기**(Seedance·Veo는 구현 안 함): 파일 하나 + `video.VIDEO`에 한 줄 + `.env.example`에 키 한 줄. `make`가 지킬 것:
   - 없는 장면만 받는다. `scene["prompt"]`가 None이면 log 남기고 건너뛴다.
   - 길이는 지원 길이 가운데 `sec - 0.5` 이상인 가장 짧은 값. 화면비는 4:3, 없으면 16:9, 소리 끔.
-  - 결과는 `footage.download(url, out / scene["file"])`로 받고(원자적), 장면마다 `{"file", "source": label}`을 yield.
+  - 결과는 `out / scene["file"]`에 원자적으로 쓰고(tmp에 쓴 뒤 `os.replace`), 장면마다 `{"file", "source": label}`을 yield.
   - 장면 하나의 영구 실패(정책 거절)는 건너뛰고, 429·5xx는 안에서 재시도, 인증 오류는 던진다(다시 시도하면 없는 장면만 다시 요청).
   - 비동기 생성이면 작업 ID를 `out / f"clip{i}.task"`에 적어 두고 재시작 때 새로 요청하지 말고 그 ID를 폴링한다(두 번 과금 방지).
   - 유료 공급자를 붙이면 `job_cost`에 영상 비용을 더한다.
@@ -127,7 +124,7 @@ uv run pytest -q -m live      # 실제 Claude 호출(비용 발생)
    5. 하루 2~3편을 예약해서 자동으로 만들지, 지금처럼 버튼으로 만들지
    6. 배경음악을 넣을지
    7. ~~휴대폰 등 밖에서 접속할지~~ → `tailscale serve`(tailnet 전용)로 열었고 로그인은 없다. 기계를 여럿이 쓰거나 공개로 열 때 로그인을 붙인다
-   8. edge-tts를 유지할지, Gemini TTS(무료 등급)로 바꿀지
+   8. ~~edge-tts를 유지할지~~ → 지우고 ElevenLabs 목소리 넷만 쓴다
    9. 지금 상태로 커밋할지
 3. **답에 따라 할 일**: 예약 실행, Gemini TTS, 배경음악, 로그인
 

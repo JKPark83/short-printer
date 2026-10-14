@@ -35,20 +35,23 @@ def enqueue_upload(job_id: str) -> bool:
     return True
 
 
-def redo(job_id: str, steps=("thumbnail", "render"), script: dict | None = None, **fields) -> bool:
-    """steps만 다시 돈다(썸네일·대본 고치기, 클립 교체). 올린 뒤엔 영상과 어긋나니 막는다.
-    script: 손으로 고친 대본(script.json에 쓴다). fields: job.json에 남길 값(thumb_note·script_note).
-    steps가 비면 저장만 한다(제목·설명·태그만 고칠 때)."""
+def redo(job_id: str, steps=("thumbnail", "render"), files: dict | None = None, **fields) -> bool:
+    """steps만 다시 돈다(상세 화면에서 고치기, 클립 교체). 만들거나 올리는 중이면 막는다.
+    files: 손으로 고친 json({파일 이름: 값}, script.json·cues.json). fields: job.json에 남길 값(voice·thumb_note 등).
+    steps가 비면 저장만 한다(제목·설명·태그만 고칠 때). 이미 올린 작업을 다시 만들면 올린 기록을 uploaded_before로
+    옮겨 고친 영상을 새로 올릴 수 있게 한다(예전 영상은 YouTube에 그대로 남는다)."""
     with _lock:
         job = Job.load(job_id)
         data = job.data
-        if data["status"] not in ("done", "failed", "interrupted") \
-                or (data.get("upload") or {}).get("status") in ("queued", "running", "done"):
+        up = data.get("upload") or {}
+        if data["status"] not in ("done", "failed", "interrupted") or up.get("status") in ("queued", "running"):
             return False
-        if script is not None:   # 락 안에서: 검사와 쓰기 사이에 작업이 시작되지 않게
-            atomic_write_json(job.dir / "script.json", script)
+        for name, value in (files or {}).items():   # 락 안에서: 검사와 쓰기 사이에 작업이 시작되지 않게
+            atomic_write_json(job.dir / name, value)
         if not steps:
             return True
+        if up.get("status") == "done":
+            fields |= {"upload": None, "uploaded_before": up}
         all_steps = data["steps"]
         for s in steps:
             all_steps[s] = {"status": "pending", "engine": None, "sec": None}
