@@ -21,7 +21,7 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 | Google Flow (`SP_VIDEO=flow`, 기본) | 기본 영상 공급자 | Google AI 구독 크레딧(장면마다 생성) | 키는 없습니다. 사람이 Flow에서 만들어 작업 화면에 올립니다 |
 | Pixabay (`PIXABAY_API_KEY`) | `SP_VIDEO=stock`일 때 | 무료 | 둘 다 없으면 Flow(직접 올림)로 돌아갑니다 |
 | Pexels (`PEXELS_API_KEY`) | `SP_VIDEO=stock`일 때 | 무료, 2026-10부터 새 키 발급 중단 | 키가 둘 다 있으면 세로 필터가 있는 Pexels를 씁니다 |
-| ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 선택 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 목소리 목록에 안 나옵니다. 실패하면 edge-tts로 다시 읽습니다 |
+| ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 선택 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 목소리 목록(voice.py `ElevenLabs.voices`)에서 고릅니다. 실패하면 edge-tts로 다시 읽습니다 |
 | edge-tts | 키 없음 | 무료(비공식) | macOS `say`(Yuna)로 읽습니다 |
 | YouTube Data API (`YOUTUBE_CLIENT_SECRET`) | 선택 | 무료, 하루 업로드 100편 | 업로드 버튼이 안 나옵니다. 직접 올립니다 |
 | YouTube Data API 키 (`YOUTUBE_API_KEY`) | 선택 | 무료, 하루 10,000유닛(주제 찾기 한 번 약 101유닛) | 주제 찾기를 못 씁니다. 주제는 직접 넣습니다 |
