@@ -171,6 +171,25 @@ def test_finish_picks_scores_total_and_sort():
     assert r["excluded"] == [{"video_id": "v3", "reason": "r"}]
 
 
+def test_pick_prompt_has_channel_and_today(monkeypatch):
+    t = trends.Trend.create()
+    trends.atomic_write_json(t.dir / "videos.json", [])
+    trends.atomic_write_json(t.dir / "analyses.json", {})
+    monkeypatch.setattr(trends.config, "CHANNEL", "생활 상식")
+    seen = {}
+
+    def fake_ask(system, text, *a):
+        seen.update(system=system, text=text)
+        raise StopIteration
+
+    monkeypatch.setattr(trends, "ask", fake_ask)
+    with pytest.raises(StopIteration):
+        trends.step_pick(t)
+    assert "채널 분야: 생활 상식" in seen["text"]
+    assert f"오늘: {datetime.now():%Y-%m-%d}" in seen["text"]
+    assert "난방비 절약 꿀팁" in seen["system"]
+
+
 def test_percentile_single_video():
     assert trends.percentile([{"id": "a", "views_per_hour": 1}], "a") == 1.0
 
