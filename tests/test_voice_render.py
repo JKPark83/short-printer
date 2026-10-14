@@ -162,6 +162,26 @@ def test_render_wide_clips_by_sentence(tmp_path, ch):
     assert ",2,80,80,1390," in (tmp_path / "thumb.ass").read_text()
 
 
+def test_render_full_layout_fills_screen(tmp_path, ch):
+    full = ch.model_copy(update={"style": ch.style.model_copy(update={"layout": "full"})})
+    voice.synth(Fake(fake_speak), full, ["하나"], "elevenlabs", tmp_path, lambda m: None)
+    timing = read_json(tmp_path / "timing.json")
+    lay = render.LAYOUTS["full"]
+    subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), full.font, lay.sub)
+    clips = make_clips(tmp_path, 1)
+    render.render(tmp_path, clips, timing[-1]["end"], full, KO, (["커피 상식"], "상식"), [t["start"] for t in timing])
+    probe = subprocess.run([config.FFMPEG, "-hide_banner", "-i", tmp_path / "final.mp4"], capture_output=True, text=True)
+    assert "1080x1920" in probe.stderr
+    # band와 다른 자리: 제목은 위 UI 아래 위 정렬, 자막은 아래 제목칸 위
+    assert ",8,80,80,280," in (tmp_path / "title.ass").read_text() and ",8,90,90,1385," in (tmp_path / "subs.ass").read_text()
+    # 띠 없이 전체 화면: 영상과 썸네일 모두 맨 위 줄(band면 검은 띠)도 영상이 차 있다
+    render.thumbnail(tmp_path, ["커피"], "", "top", full, KO, "clip0.mp4")
+    for name in ("final.mp4", "thumbnail.jpg"):
+        top = subprocess.run([config.FFMPEG, "-v", "error", "-i", tmp_path / name, "-vf", "crop=1080:100:0:0",
+                              "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True).stdout
+        assert max(top) > 64, name
+
+
 def test_thumbnail_from_clip_shorter_than_seek(tmp_path, ch):
     (tmp_path / "clips").mkdir()
     ffmpeg.run(["-f", "lavfi", "-i", "testsrc=s=640x360:d=0.3:r=30", "-pix_fmt", "yuv420p", tmp_path / "clips" / "clip0.mp4"])

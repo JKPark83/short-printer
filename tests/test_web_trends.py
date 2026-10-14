@@ -1,6 +1,9 @@
+import shutil
+
 import pytest
 from fastapi.testclient import TestClient
 
+from shorts_printer import config
 from shorts_printer.adapters.youtube import YouTube
 from shorts_printer.core import trends
 from shorts_printer.core.pipeline import Job
@@ -18,6 +21,14 @@ def offline(monkeypatch):
     """업로드 토큰(.secrets)을 보지 않게 하고, 앞 테스트가 남긴 채널 쿠키를 비운다."""
     monkeypatch.setattr(YouTube, "ready", lambda self: False)
     client.cookies.clear()
+
+
+@pytest.fixture(autouse=True)
+def ko_only(tmp_path, monkeypatch):
+    """실제 channels/에 채널이 늘어도 첫 채널(쿠키 없을 때 기본)이 ko-40sec-facts가 되게 한다."""
+    root = tmp_path / "ko"
+    shutil.copytree(config.CHANNELS_DIR / CH, root / CH)
+    monkeypatch.setattr(config, "CHANNELS_DIR", root)
 
 
 def video(i, **kw):

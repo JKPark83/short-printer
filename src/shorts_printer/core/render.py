@@ -2,6 +2,7 @@
 import os
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from ..infra import ffmpeg
 from ..infra.store import atomic_write_text
@@ -14,12 +15,24 @@ TAIL = 0.6   # 마지막 문장 뒤 여유(초)
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
 # 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 아래 띠 맨 위에(subtitles MarginV)
 BOX_Y, BOX_H = 560, 880
-# 어떤 클립이든(16:9 Flow, 9:16 스톡) 가운데를 잘라 영상칸 1080x880/30fps로
-CLIP_VF = f"scale=1080:{BOX_H}:force_original_aspect_ratio=increase,crop=1080:{BOX_H},setsar=1,fps=30,format=yuv420p"
-FRAME_VF = f"pad=1080:1920:0:{BOX_Y}:black"
+# 어떤 클립이든(16:9 Flow, 9:16 스톡) 가운데를 잘라 영상칸 1080x{h}/30fps로
+CLIP_VF = "scale=1080:{h}:force_original_aspect_ratio=increase,crop=1080:{h},setsar=1,fps=30,format=yuv420p"
+FRAME_VF = "pad=1080:1920:0:{y}:black"
 TITLE_POS = (2, 1920 - BOX_Y + 30)   # 제목 아랫줄이 영상 위 30px에 오게
-# (Alignment, MarginV): 쇼츠 화면의 위 검색창·아래 제목칸을 피한다. top = 위 검은 띠, 영상 제목과 같은 자리
-THUMB_POS = {"top": TITLE_POS, "bottom": (2, 560)}
+# (Alignment, MarginV): 쇼츠 화면의 아래 제목칸을 피한다. 위(top)는 배치의 영상 제목과 같은 자리
+THUMB_BOTTOM = (2, 560)
+
+
+class Layout(NamedTuple):
+    y: int                   # 영상칸 위 끝
+    h: int                   # 영상칸 높이
+    title: tuple[int, int]   # 제목 (Alignment, MarginV)
+    sub: int                 # 자막 윗줄(위 정렬 MarginV)
+
+
+# 화면 배치(channel.toml style.layout). full은 9:16 전체에 텔롭: 위아래 약 250px은 쇼츠 UI가 덮으므로
+# 제목은 위 UI 바로 아래에 위 정렬(가운데보다 위), 자막은 아래 제목·채널 이름 칸 위(1385~ 한 줄)
+LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920, (8, 280), 1385)}
 GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
 
 
@@ -39,24 +52,25 @@ def frames(starts: list[float], dur: float, n: int) -> list[int]:
 
 def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, splitter: Splitter,
            title: tuple[list[str], str] | None = None, starts: list[float] | None = None) -> float:
-    """title=(줄들, 강조 낱말)이면 위 띠에 영상 내내 띄운다. starts는 문장 시작 시각(장면 경계)."""
+    """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 영상 내내 띄운다. starts는 문장 시작 시각(장면 경계)."""
     dur = round(voice_sec + TAIL, 2)
+    lay = LAYOUTS[ch.style.layout]
     args, chains = [], []
     if clips:
         same = bool(starts) and len(clips) == len(starts)   # 장면 클립: 짧으면 마지막 화면에서 멈춤
         for i, (c, k) in enumerate(zip(clips, frames(starts or [0], dur, len(clips)), strict=True)):
             args += ([] if same else ["-stream_loop", "-1"]) + ["-i", f"clips/{c}"]   # 예전 스톡 작업은 반복
             pad = f"tpad=stop_mode=clone:stop_duration={k / 30 + 0.1:.2f}," if same else ""
-            chains.append(f"[{i}:v]{CLIP_VF},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
+            chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
         chains.append("".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[bg]")
     else:
         args += ["-f", "lavfi", "-i", GRADIENT.format(*(c[1:] for c in ch.style.background), dur=dur)]
-        chains.append(f"[0:v]crop=1080:{BOX_H},format=yuv420p[bg]")
+        chains.append(f"[0:v]crop=1080:{lay.h},format=yuv420p[bg]")
     n = len(clips) or 1
     if title:
-        caption_ass(job_dir / "title.ass", *title, 140, TITLE_POS, ch, splitter)
+        caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
     # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
-    chains += [f"[bg]{FRAME_VF}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", f"[{n}:a]apad[a]"]
+    chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", f"[{n}:a]apad[a]"]
     ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
@@ -81,15 +95,16 @@ def caption_ass(path: Path, lines: list[str], accent: str, max_size: int, pos: t
 
 def thumbnail(job_dir: Path, lines: list[str], accent: str, position: str, ch: Channel, splitter: Splitter,
               clip: str | None = None) -> str:
-    """thumbnail.jpg(1080x1920). 배경은 첫 클립 장면, 없으면 단색. 영상과 같은 배치(위아래 검은 띠). 쓴 배경 종류를 돌려준다."""
-    caption_ass(job_dir / "thumb.ass", lines, accent, 150, THUMB_POS[position], ch, splitter)
+    """thumbnail.jpg(1080x1920). 배경은 첫 클립 장면, 없으면 단색. 영상과 같은 배치(band면 위아래 검은 띠). 쓴 배경 종류를 돌려준다."""
+    lay = LAYOUTS[ch.style.layout]
+    caption_ass(job_dir / "thumb.ass", lines, accent, 150, lay.title if position == "top" else THUMB_BOTTOM, ch, splitter)
     if clip:
         # 0.5초 장면. 입력 seek는 0.5초보다 짧은 클립에서 프레임이 없어 실패하니 마지막 프레임을 늘려 둔다
         bg, kind, pre = ["-i", f"clips/{clip}"], "영상 장면", "tpad=stop_mode=clone:stop_duration=0.5,trim=start=0.5,"
     else:
         bg, kind, pre = ["-f", "lavfi", "-i", f"color=c=0x{ch.style.background[0][1:]}:s=1080x1920"], "단색", ""
     # 피드에서 작게 봐도 눈에 띄게 대비·채도를 조금 올린다
-    vf = (f"{pre}scale=1080:{BOX_H}:force_original_aspect_ratio=increase,crop=1080:{BOX_H},pad=1080:1920:0:{BOX_Y}:black,"
+    vf = (f"{pre}scale=1080:{lay.h}:force_original_aspect_ratio=increase,crop=1080:{lay.h},pad=1080:1920:0:{lay.y}:black,"
           "setsar=1,eq=contrast=1.08:saturation=1.2,ass=thumb.ass")
     ffmpeg.run([*bg, "-vf", vf, "-frames:v", 1, "-q:v", 3, "thumbnail.jpg"], cwd=job_dir)
     return kind

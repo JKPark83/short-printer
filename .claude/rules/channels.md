@@ -43,9 +43,11 @@
 | `[style]` `font` | 글꼴. 비우면 언어 기본(ko Apple SD Gothic Neo · ja Hiragino Sans · en Helvetica Neue) |
 | `[style]` `accent` / `background` | 강조색 `#RRGGBB` / 클립 없을 때 배경 그라데이션 두 색 |
 | `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본 |
+| `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |
+| `[publish]` `footer` | 업로드할 때 설명 맨 끝에 빈 줄 하나 두고 붙는 문구(AI 표시 등). 비우면 안 붙는다 |
 | `[trends]` `region` / `language` | 추천 수집 지역 코드 / 언어(비우면 `language`) |
 | `[trends]` `keywords` | 키워드 없이 찾을 때 OR로 묶어 검색할 낱말들 |
 | `[trends]` `production` | 우리 제작 방식 한 단락(분석·선정 지시문에 들어간다) |
