@@ -1,5 +1,5 @@
 """여섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
-빠진 장면 클립이 있으면 waiting으로 멈춘다."""
+화면에서 만든 작업은 대본 뒤에, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
 from typing import ClassVar
 
@@ -25,13 +25,19 @@ class Job(Record):
 
     @classmethod
     def create(cls, channel: str, topic: str, voice: str, brief: str | None = None,
-               source: dict | None = None) -> "Job":
-        """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}."""
-        return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source)
+               source: dict | None = None, review: bool = False) -> "Job":
+        """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}.
+        review: 사람이 대본을 확정(confirmed)해야 음성부터 만든다(화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다)."""
+        return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source, review=review)
 
 
 class Wait(Exception):
     """사람 손이 필요해 멈춘다(클립 올리기). 실패가 아니다."""
+
+
+def in_review(data: dict) -> bool:
+    """대본을 사람이 확정하기를 기다리는 중."""
+    return data["status"] == "waiting" and bool(data.get("review")) and not data.get("confirmed")
 
 
 def missing_clips(job: Job) -> list[int]:
@@ -42,7 +48,8 @@ def missing_clips(job: Job) -> list[int]:
 
 def step_script(job: Job, sv: Services) -> str:
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
-        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note)
+        draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
+        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft))
         job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
@@ -81,6 +88,8 @@ def step_footage(job: Job, sv: Services) -> str:
 
 
 def step_voice(job: Job, sv: Services) -> str:
+    if job.data.get("review") and not job.data.get("confirmed"):   # 음성부터 돈(크레딧)이 들어 대본을 먼저 확정한다
+        raise Wait("대본 확정")
     engine, timing = voice.synth(sv.tts, sv.channel, job.doc("script.json")["sentences"], job.data["voice"],
                                  job.dir, job.log)
     job.put("timing.json", timing)

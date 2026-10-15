@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from shorts_printer import config, registry
 from shorts_printer.adapters.youtube import YouTube
+from shorts_printer.core import channel
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.trends import Trend
 from shorts_printer.infra import store
@@ -78,7 +79,8 @@ def test_create_validates_and_redirects(monkeypatch):
     assert client.post("/jobs", data={"topic": "커피", "voice": "elevenlabs", "channel": "all"}).status_code == 400
     r = client.post("/jobs", data={"topic": " 커피 ", "voice": "elevenlabs", "channel": CH}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == f"/jobs/{queued[0]}"
-    assert (Job.load(queued[0]).data["topic"], Job.load(queued[0]).data["channel"]) == ("커피", CH)
+    d = Job.load(queued[0]).data
+    assert (d["topic"], d["channel"], d["review"]) == ("커피", CH, True)   # 화면에서 만든 작업은 대본 확인부터
     html = client.get("/").text
     assert html.index(">미스터킴<") < html.index(">미스터최<")   # 첫 칸이 기본값
 
@@ -228,6 +230,32 @@ def test_sensitive_banner_and_confirm(monkeypatch):
     assert "민감 분야" not in client.get(f"/jobs/{job.id}").text
 
 
+def test_review_edit_saves_and_confirm_starts(monkeypatch):
+    job = scene_job()
+    job.update(review=True)
+    html = client.get(f"/jobs/{job.id}").text
+    assert "대본을 확인해 주세요" in html and "대본 확인" in html and "대본을 확정하면 시작해요" in html
+    assert 'name="prompts"' in html and "클립 바꾸기" not in html
+    assert client.get("/").text.count("대본 확인")
+    enqueued = []
+    monkeypatch.setattr(web.q, "enqueue", lambda i: enqueued.append(i) or True)
+    url = f"/api/jobs/{job.id}/edit"
+    form = {"title": "t", "description": "d", "sentences": ["하나", "셋"], "prompts": ["p1", "p3"],
+            "voice": "elevenlabs"}
+    assert client.post(url, data=form | {"prompts": ["p1"]}).status_code == 400
+    assert client.post(url, data=form).status_code == 200
+    s, d = job.doc("script.json"), job.data
+    assert s["sentences"] == ["하나", "셋"] and s["prompts"] == ["p1", "p3"] and d["voice"] == "elevenlabs"
+    assert d["status"] == "waiting" and d["steps"]["voice"]["status"] == "pending" and web.q._q.empty()
+    rev = client.post(f"/api/jobs/{job.id}/script/revise", data={"note": "더 짧게"}).json()
+    assert "다시 확인" in rev["msg"] and job.data["status"] == "queued"
+    web.q._q.get_nowait()
+    assert client.post(f"/api/jobs/{job.id}/confirm").status_code == 409   # 고치는 중엔 확정 못 한다
+    job.update(status="waiting")
+    assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True} and enqueued == [job.id]
+    assert client.post(url, data=form).status_code == 409   # 확정 뒤엔 장면 프롬프트를 못 고친다
+
+
 def test_clip_replace_after_done_rerenders_only(monkeypatch):
     job = scene_job("done", STEPS)
     (job.dir / "clips").mkdir()
@@ -304,12 +332,13 @@ def test_script_edit_direct_and_revise():
 
 def test_edit_checks_only_changed_sentences_against_channel_length():
     job = scene_job("done", STEPS)
-    long = "가" * 120   # ko 채널 한도(55자의 두 배)를 넘는 예전 문장
+    cap = channel.load("ko-40sec-facts").script.sentence[1] * 2   # ko 채널 문장 한도의 두 배
+    long = "가" * (cap + 10)   # 한도를 넘는 예전 문장
     job.put("script.json", job.doc("script.json") | {"sentences": ["하나", long]})
     url, form = f"/api/jobs/{job.id}/edit", {"title": "t", "description": "d", "tags": ""}
     assert client.post(url, data=form | {"sentences": ["하나", long]}).status_code == 200   # 안 바꾼 문장은 통과
-    r = client.post(url, data=form | {"sentences": ["가" * 111, long]})
-    assert r.status_code == 400 and "110자" in r.json()["detail"]
+    r = client.post(url, data=form | {"sentences": ["가" * (cap + 1), long]})
+    assert r.status_code == 400 and f"{cap}자" in r.json()["detail"]
 
 
 def test_edit_subtitles_and_thumbnail_by_hand(monkeypatch):
@@ -332,7 +361,7 @@ def test_edit_subtitles_and_thumbnail_by_hand(monkeypatch):
     web.q._q.get_nowait()
     # 썸네일 문구 → 썸네일·렌더, 문구에 없는 강조는 뺀다
     job.update(status="done")
-    assert client.post(url, data=edit | {"thumb": ["가" * 13, ""]}).status_code == 400
+    assert client.post(url, data=edit | {"thumb": ["가" * 16, ""]}).status_code == 400
     assert client.post(url, data=edit | {"thumb": ["물 550ml", ""], "accent": "비밀"}).status_code == 200
     d = job.data
     assert d["thumb_hand"] == {"lines": ["물 550ml"], "accent": ""} and d["steps"]["thumbnail"]["status"] == "pending"

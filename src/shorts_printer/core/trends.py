@@ -1,5 +1,6 @@
 """주제 찾기: 채널 지역·언어에서 지금 인기 있는 쇼츠를 모아(YouTube Data API) 영상을 뜯어보고(yt-dlp·ffmpeg·LLM 비전)
 만들 만한 주제를 고른다.
+아이디어 모드(mode="idea")는 수집·분석을 건너뛰고 채널 기준(ideas.md)으로 LLM에게 바로 주제를 받는다.
 단계는 수집 → 분석 → 선정. 작업(Job)과 같은 규칙으로 끝난 단계는 건너뛰어 다시 시도할 수 있다."""
 import json
 import re
@@ -29,6 +30,8 @@ STEPS = ("collect", "analyze", "pick")
 LABELS = {"collect": "수집", "analyze": "분석", "pick": "선정"}
 PERIODS = {"1d": "24시간", "3d": "3일", "7d": "7일"}
 DEFAULT_PERIOD = "3d"
+MODES = {"trend": "인기 쇼츠 분석", "idea": "아이디어"}
+IDEA_N = 10        # 아이디어 모드 추천 수
 TOP_N = 8          # 분석할 쇼츠 수
 MIN_OK = 3         # 선정에 필요한 최소 쇼츠 수(수집·분석 모두)
 MAX_SEC = 180      # 쇼츠 최대 길이
@@ -69,10 +72,23 @@ class Trend(Record):
         return config.TRENDS_DIR
 
     @classmethod
-    def create(cls, channel: str, keyword: str = "", period: str = DEFAULT_PERIOD) -> "Trend":
+    def create(cls, channel: str, keyword: str = "", period: str = DEFAULT_PERIOD, mode: str = "trend") -> "Trend":
         if period not in PERIODS:
             raise ValueError(f"기간은 {', '.join(PERIODS)} 가운데 하나예요")
-        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:50], period=period)
+        if mode not in MODES:
+            raise ValueError(f"방식은 {', '.join(MODES)} 가운데 하나예요")
+        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:50], period=period, mode=mode)
+
+    @property
+    def idea(self) -> bool:
+        return self.data.get("mode", "trend") == "idea"   # 예전 기록에는 mode가 없다
+
+    def again(self) -> "Trend":
+        """같은 채널·키워드로 아이디어를 다시 뽑는 새 기록. 앞서 나온 주제(이어진 기록 포함, 최근 50개)는 피하게 넘긴다."""
+        shown = self.data.get("avoid", []) + [p["topic"] for p in (self.doc("picks.json") or {}).get("picks", [])]
+        t = Trend.create(self.data["channel"], self.data["keyword"], mode="idea")
+        t.update(avoid=shown[-50:])
+        return t
 
 
 # ---------- 1 수집 ----------
@@ -140,6 +156,8 @@ def is_short(video_id: str) -> bool:
 
 
 def step_collect(t: Trend, sv: Services) -> str:
+    if t.idea:
+        return "건너뜀"
     if not ready():
         raise RuntimeError(NO_KEY)
     d, now, ch = t.data, datetime.now(UTC), sv.channel
@@ -302,6 +320,8 @@ def analyze_video(trend_dir: Path, v: dict, sv: Services) -> tuple[dict, dict | 
 
 
 def step_analyze(t: Trend, sv: Services) -> str:
+    if t.idea:
+        return "건너뜀"
     videos, found = t.doc("videos.json"), t.doc("analyses.json", {})
     todo = [v for v in videos if found.get(v["id"], {}).get("status") not in OK]   # 끝난 영상은 다시 하지 않는다
     (t.dir / "frames").mkdir(exist_ok=True)
@@ -389,17 +409,88 @@ def finish_picks(out: PicksOut, videos: list[dict], weights: dict[str, int]) -> 
             "excluded": [e.model_dump() for e in out.excluded if e.video_id in ids]}
 
 
+class IdeaOut(BaseModel):
+    topic: str = Field(description="작업 주제로 그대로 쓸 한 줄. 80자 이내")
+    angle: str = Field(description="훅과 전개 방향. 대본 작가에게 넘길 참고. 200자 이내")
+    content: str = Field(description="간략한 내용: 핵심 답과 사실 2~3문장. 300자 이내")
+    format: Format
+    why_now: str = Field(description="왜 지금, 왜 사람들이 궁금해하는지 한두 문장")
+    scores: Scores
+    search_terms: list[str] = Field(description="화면에 보일 장면을 나타내는 영어 키워드 3~5개")
+
+
+class IdeasOut(BaseModel):
+    summary: str = Field(description="이번 목록의 방향 한두 문장")
+    picks: list[IdeaOut] = Field(description=f"추천 주제 {IDEA_N}개")
+
+
+def system_idea(ch: Channel) -> str:
+    """prompts/trend_idea.md에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
+    rules = ch.text("ideas.md") if (ch.dir / "ideas.md").exists() else ""
+    return prompts.render("trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
+                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N)
+
+
+def idea_weights(weights: dict[str, int]) -> dict[str, int]:
+    """아이디어 모드 가중치: 화제성을 뺀 셋. 가중치를 화제성에만 몰아 둔 채널은 셋을 똑같이 본다."""
+    w = {k: weights[k] for k in ("fit", "fresh", "safe")}
+    return w if sum(w.values()) else dict.fromkeys(w, 1)
+
+
+def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
+    """아이디어 모드: 조회수 근거가 없어 화제성을 빼고 나머지 가중치로 100점 만점을 다시 나눈다. 상위 IDEA_N개."""
+    w = idea_weights(weights)
+    picks = []
+    for p in out.picks:
+        scores = {k: min(5, max(1, v)) for k, v in p.scores.model_dump().items()}
+        total = round(100 * sum(w[k] * (scores[k] - 1) / 4 for k in w) / sum(w.values()))
+        picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:300],
+                      "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": [],
+                      "search_terms": p.search_terms})
+    picks.sort(key=lambda p: p["total"], reverse=True)
+    return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
+
+
+def _made(cid: str) -> str:
+    """이 채널에서 이미 만든 작업 주제 최근 30개(겹치지 않게 지시문에 넣는다)."""
+    made = [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid][-30:]
+    return "\n".join(f"- {m}" for m in made) or "(없음)"
+
+
+def _criteria(w: dict[str, int], keys) -> str:
+    return "\n".join(f"- {k} {CRITERIA[k][0]} (가중치 {w[k]}): {CRITERIA[k][1]}" for k in keys)
+
+
+def pick_ideas(t: Trend, sv: Services) -> str:
+    ch = sv.channel
+    keys = ("fit", "fresh", "safe")
+    text = (f"오늘: {datetime.now():%Y-%m-%d}\n좁힐 주제: {t.data['keyword'] or '없음'}\n\n"
+            f"점수 기준:\n{_criteria(ch.trends.weights, keys)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}")
+    if avoid := t.data.get("avoid"):
+        text += "\n\n앞서 추천했지만 고르지 않은 주제:\n" + "\n".join(f"- {a}" for a in avoid)
+    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제",
+                            refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 좁힐 주제를 바꿔 보세요.")
+    t.update(usage=add_usage(t.data["usage"], usage))
+    picks = finish_ideas(out, ch.trends.weights)
+    if not picks["picks"]:
+        raise RuntimeError("추천 주제를 받지 못했어요. 다시 시도해 보세요.")
+    t.put("picks.json", picks)
+    for i, p in enumerate(picks["picks"], 1):
+        t.log(f"추천 {i}: {p['topic']} ({p['total']}점)")
+    return usage["model"]
+
+
 def step_pick(t: Trend, sv: Services) -> str:
+    if t.idea:
+        return pick_ideas(t, sv)
     ch, w = sv.channel, sv.channel.trends.weights
     videos, found = t.doc("videos.json"), t.doc("analyses.json", {})
     rows = [{k: v[k] for k in ("id", "rank", "title", "duration", "views", "views_per_hour", "engagement", "age_hours")}
             | {"shots": found[v["id"]]["shot_count"], "analysis": found[v["id"]]["claude"]}
             for v in videos if found.get(v["id"], {}).get("status") in OK]
-    made = [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == ch.id][-30:]
-    criteria = "\n".join(f"- {k} {name} (가중치 {w[k]}): {desc}" for k, (name, desc) in CRITERIA.items())
     keyword = t.data["keyword"] or f"(없음, {ch.trends.region} 전체)"
     text = (f"오늘: {datetime.now():%Y-%m-%d}\n키워드: {keyword} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
-            f"선정 기준:\n{criteria}\n\n이미 만든 작업 주제:\n" + ("\n".join(f"- {m}" for m in made) or "(없음)") +
+            f"선정 기준:\n{_criteria(w, CRITERIA)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}"
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
     out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제",
                             refusal=f"{sv.llm.label}가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. "
@@ -420,6 +511,8 @@ def brief(trend: Trend, p: dict) -> str:
     found = trend.doc("analyses.json", {})
     lines = [f"방향: {p['angle']}", f"포맷: {p['format']}", f"지금 만들 이유: {p['why_now']}",
              f"화면 검색어 후보: {', '.join(p['search_terms'])}"]
+    if p.get("content"):   # 아이디어 모드: 핵심 답·사실
+        lines.insert(1, f"내용: {p['content']}")
     for r in p["refs"]:
         c = found.get(r, {}).get("claude")
         if r not in videos or not c:

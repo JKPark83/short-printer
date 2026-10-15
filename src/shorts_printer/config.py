@@ -42,3 +42,5 @@ def secret(name: str) -> str | None:
 # ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"
+# Typecast(유료): 목소리는 channel.toml [tts.voices]의 tc_… ID
+TYPECAST_MODEL = os.environ.get("TYPECAST_MODEL") or "ssfm-v30"

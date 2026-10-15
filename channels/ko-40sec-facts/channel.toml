@@ -9,16 +9,17 @@ llm = "claude"
 
 [script]
 scenes = 7
-sentence = [48, 55]
+sentence = [62, 68]   # 미스터킴 기준 초당 약 8.8자: 한 문장이 클립 8초를 거의 다 채운다
 unit = "chars"
-duration = "40~50초"
+duration = "52~56초"
 
 [tts]
 provider = "elevenlabs"
-default = "LKOcTG4J4tYTPR9DnLeM"
+default = "PDoCXqBQFGsvfO0hNkEs"
 sample = "안녕하세요. 오늘 알려 드릴 생활 꿀팁, 끝까지 보면 분명 도움이 될 거예요."
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
+PDoCXqBQFGsvfO0hNkEs = "크리스"
 LKOcTG4J4tYTPR9DnLeM = "미스터킴"
 QPFsEL6IBxlT15xfiD6C = "이하나"
 iWLjl1zCuqXRkW6494ve = "지수"
@@ -31,10 +32,11 @@ style = "Stylized 3D animated explainer, clean CGI visualization like an archite
 [style]
 accent = "#FFE500"
 background = ["#0f172a", "#14532d"]
+layout = "clean"   # 영상은 띠·제목 없이 9:16 전체 + 자막, 썸네일만 위아래 띠 + 제목
 
 [thumbnail]
-max_line = 9
-max_total = 16
+max_line = 12
+max_total = 22
 
 [publish]
 provider = "youtube"

@@ -50,7 +50,8 @@ class StyleCfg(BaseModel):
     accent: str = Field("#FFE500", pattern=HEX)
     background: tuple[str, str] = ("#0f172a", "#14532d")
     subtitle_limit: int = Field(0, ge=0)   # 0이면 언어 기본(Splitter.limit)
-    layout: Literal["band", "full"] = "band"   # band: 위아래 검은 띠 + 가운데 영상, full: 9:16 전체 + 텔롭
+    # band: 위아래 검은 띠 + 가운데 영상, full: 9:16 전체 + 텔롭, clean: 영상은 9:16 전체에 자막만·썸네일은 band
+    layout: Literal["band", "full", "clean"] = "band"
 
 
 class ThumbCfg(BaseModel):

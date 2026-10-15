@@ -18,6 +18,7 @@
 | `video_style.md` | 장면 영상 규칙: 화풍, 사람 표현, 원리 보여 주는 법 |
 | `thumbnail.md` | 썸네일 문구 규칙: 줄 수, 강조, 호기심 꼴, 하지 않는 것 |
 | `trends.md` | 추천 주제를 고를 때 먼저 볼 것(계절, 시청자가 바로 써먹는 것 등) |
+| `ideas.md` | 선택. 주제 찾기 아이디어 모드(영상 분석 없이 바로 추천)의 주제 기준. 없으면 `concept` 안에서 고른다 |
 
 글 파일은 부를 때마다 읽으므로 고치면 다음 작업부터 바로 반영된다. 맨 앞 `--- … ---` 머리말은 빠진다.
 이 글들은 공통 지시문 `prompts/*.md`(대본 뼈대·고쳐 쓰기·썸네일·쇼츠 분석·주제 고르기)의 `${channel_…}` 자리에 들어간다. 모든 채널에 걸리는 규칙은 `prompts/`를 고친다.
@@ -35,15 +36,15 @@
 | `[script]` `scenes` | 장면(=문장) 수 |
 | `[script]` `sentence` / `unit` | 문장 하나 길이 [최소, 최대]와 단위(`chars` 글자 · `words` 낱말) |
 | `[script]` `duration` | 목표 길이 문구(지시문에 들어간다. 예: `"40~50초"`) |
-| `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs`) |
+| `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs` · `typecast`) |
 | `[tts]` `default` / `sample` | 기본 목소리 키(없으면 voices 맨 앞) / 미리 듣기 문장(채널 언어) |
-| `[tts.voices]` | `{목소리 키: 화면 이름}`. ElevenLabs는 목소리 ID. `elevenlabs` 키는 `.env`의 `ELEVENLABS_VOICE_ID` |
+| `[tts.voices]` | `{목소리 키: 화면 이름}`. ElevenLabs는 목소리 ID(`elevenlabs` 키는 `.env`의 `ELEVENLABS_VOICE_ID`), Typecast는 `tc_…` ID |
 | `[video]` `provider` | `flow`(사람이 올림) · `flow-auto`(전용 Chrome). 쓸 수 없으면 flow |
 | `[video]` `style` | 모든 장면 프롬프트 앞 머리말. 영어 |
 | `[style]` `font` | 글꼴. 비우면 언어 기본(ko Apple SD Gothic Neo · ja Hiragino Sans · en Helvetica Neue) |
 | `[style]` `accent` / `background` | 강조색 `#RRGGBB` / 클립 없을 때 배경 그라데이션 두 색 |
 | `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본 |
-| `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) |
+| `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(영상은 띠·제목 없이 9:16 전체에 자막만, 썸네일은 band) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |

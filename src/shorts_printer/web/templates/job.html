@@ -3,7 +3,9 @@
 {% block main %}
 {% set up = job.upload or {} %}
 {% set busy = job.status in ACTIVE or up.status in ACTIVE %}
-{% set editable = job.status in ('done', 'failed', 'interrupted') and up.status not in ACTIVE %}
+{% set review = in_review(job) %}
+{% set editable = (job.status in ('done', 'failed', 'interrupted') or review) and up.status not in ACTIVE %}
+{% set locked %}<p class="empty-stage">대본을 확정하면 시작해요</p>{% endset %}
 {% set files = '/files/' ~ job.id ~ '/' %}
 {% set bust = '?v=' ~ (job.finished_at or '') %}
 <main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-voice c-subs c-footage c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
@@ -18,20 +20,38 @@
       {% if job.brief %}<details id="brief" class="brief"><summary>참고 방향</summary><p>{{ job.brief }}</p></details>{% endif %}
     </div>
     <div class="jh-actions">
-      <span class="badge b-{{ job.status }}">{{ STATUS[job.status] }}</span>
-      {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') %}
+      <span class="badge b-{{ job.status }}">{{ status_label(job) }}</span>
+      {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') and not review %}
       <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
       {% endif %}
     </div>
   </header>
 
-  <ol id="stepper" class="stepper" aria-label="제작 단계" tabindex="-1">
-    {% for s in STEPS %}{% set st = job.steps[s] %}
-    <li class="node n-{{ st.status }}"{% if st.status == 'running' %} aria-current="step"{% endif %}>
-      <span class="dot">{{ icon(NODE_ICON[st.status], 16, 'spin' if st.status == 'running' else '') }}</span>
-      <span class="n-label">{{ loop.index }} {{ LABELS[s] }}</span>
-      <span class="n-sub">{{ (st.sec ~ 's') if st.status == 'done' else STATE[st.status] }}</span>
-      <span class="n-engine">{{ st.engine or '' }}</span>
+  {# 단계 묶음. 화면에서 만든 작업(review)은 대본 뒤에 [대본 확정]이 있고, 확정 전 뒤 묶음은 흐리게 #}
+  {% set done_steps = job.steps|dictsort|selectattr('1.status', 'eq', 'done')|map('first')|list %}
+  <ol id="stepper" class="phases" aria-label="제작 단계" tabindex="-1">
+    {% for name, steps in PHASES %}{% set gate = loop.first and job.review %}
+    {% set all_done = steps|reject('in', done_steps)|list|length == 0 %}
+    <li class="phase{{ ' ph-locked' if not loop.first and job.review and not job.confirmed }}{{ ' ph-done' if all_done and (not gate or job.confirmed) }}" style="--n: {{ steps|length + (1 if gate else 0) }}">
+      <p class="ph-head"><span class="num">{{ loop.index }}</span>{{ name }}</p>
+      <ol class="stepper">
+        {% for s in steps %}{% set st = job.steps[s] %}
+        <li class="node n-{{ st.status }}"{% if st.status == 'running' %} aria-current="step"{% endif %}>
+          <span class="dot">{{ icon(NODE_ICON[st.status], 16, 'spin' if st.status == 'running' else '') }}</span>
+          <span class="n-label">{{ LABELS[s] }}</span>
+          <span class="n-sub">{{ (st.sec ~ 's') if st.status == 'done' else STATE[st.status] }}</span>
+          <span class="n-engine">{{ st.engine or '' }}</span>
+        </li>
+        {% endfor %}
+        {% if gate %}{% set g = 'done' if job.confirmed else 'wait' if review else 'pending' %}
+        <li class="node n-{{ g }}"{% if g == 'wait' %} aria-current="step"{% endif %}>
+          <span class="dot">{{ icon({'done': 'check', 'wait': 'pencil', 'pending': 'circle'}[g], 16) }}</span>
+          <span class="n-label">대본 확정</span>
+          <span class="n-sub">{{ {'done': '완료', 'wait': '확인 대기', 'pending': '대기'}[g] }}</span>
+          <span class="n-engine"></span>
+        </li>
+        {% endif %}
+      </ol>
     </li>
     {% endfor %}
   </ol>
@@ -47,6 +67,11 @@
       {% elif job.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
         <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+      {% elif review and script %}
+      <div class="banner banner-warn" role="alert">{{ icon('pencil', 18) }}
+        <div><strong>대본을 확인해 주세요</strong><p class="muted">문장을 바로 고치거나 Claude에게 수정 요청을 할 수 있어요. 목소리도 지금 골라요. 확정하면 음성·영상 소스·썸네일을 차례로 만들어요(이때부터 크레딧이 들어요).</p>
+          {% if script.sensitive %}<p class="muted"><strong>민감 분야({{ script.sensitive }}) 대본이에요.</strong> YouTube는 건강·법률·금융·정치를 AI가 전문가처럼 설명하는 영상을 수익화하지 않고, 틀린 정보는 신고·삭제될 수 있어요. 사실관계를 확인한 뒤에만 확정하세요.</p>{% endif %}
+          <button id="confirm" class="btn btn-primary" type="button" data-retry="confirm" data-done="대본을 확정했어요. 영상을 만들어요">{{ icon('check') }}대본 확정하고 영상 만들기</button></div></div>
       {% elif job.status == 'waiting' and script and script.sensitive and not job.confirmed %}
       <div class="banner banner-warn" role="alert">{{ icon('alert', 18) }}
         <div><strong>민감 분야({{ script.sensitive }}) 대본이에요</strong><p class="muted">YouTube는 건강·법률·금융·정치를 AI가 전문가처럼 설명하는 영상을 수익화하지 않고, 틀린 정보는 신고·삭제될 수 있어요. 대본의 사실관계를 확인한 뒤에만 계속하세요.</p>
@@ -80,22 +105,24 @@
             {% endfor %}
             <dt>문장</dt>
             <dd><ol class="sentences">{% for s in script.sentences %}
-              <li><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea></li>{% endfor %}
+              <li><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea>
+                {% if review and script.prompts %}<textarea class="ie ie-prompt" name="prompts" rows="1" maxlength="1000" required lang="en" aria-label="장면 {{ loop.index }} 영상 프롬프트">{{ script.prompts[loop.index0] }}</textarea>{% endif %}</li>{% endfor %}
             </ol></dd>
           </dl>
-          <p class="muted ie-tip">대본·목소리·자막·썸네일 문구를 눌러 바로 고치고, 아래 막대에서 한 번에 저장해요. 바뀐 것에 필요한 단계만 다시 만들어요(장면 클립은 그대로).{% if up.status == 'done' %} 이미 올린 영상은 YouTube에 그대로 두고, 다시 만든 영상을 새로 올릴 수 있어요.{% endif %}</p>
+          {% if review %}<p class="muted ie-tip">제목·설명·태그·문장과 문장 아래 장면 영상 프롬프트(영어)를 눌러 바로 고치고 아래 막대에서 저장한 뒤 [대본 확정]을 눌러요.</p>
+          {% else %}<p class="muted ie-tip">대본·목소리·자막·썸네일 문구를 눌러 바로 고치고, 아래 막대에서 한 번에 저장해요. 바뀐 것에 필요한 단계만 다시 만들어요(장면 클립은 그대로).{% if up.status == 'done' %} 이미 올린 영상은 YouTube에 그대로 두고, 다시 만든 영상을 새로 올릴 수 있어요.{% endif %}</p>{% endif %}
           <div id="savebar" class="savebar" role="region" aria-label="저장하지 않은 변경" hidden>
             <p><strong id="sb-count"></strong> <span id="sb-hint" class="muted"></span></p>
             <button class="btn btn-secondary" type="reset">되돌리기</button>
             <button id="script-save" class="btn btn-primary" type="submit" data-post="edit">{{ icon('check') }}<span>저장</span></button>
           </div>
         </form>
-        <details id="script-edit" class="script-edit">
+        <details id="script-edit" class="script-edit"{% if review %} open{% endif %}>
           <summary>Claude에게 수정 요청</summary>
           <form class="edit-form">
             <label for="se-note">고칠 내용</label>
             <textarea id="se-note" name="note" rows="2" maxlength="300" required placeholder="예: 2번 문장을 더 짧게 / 첫 문장을 질문으로 / 마지막 문장은 댓글 유도로"></textarea>
-            <p class="muted">장면 수는 그대로 두고 Claude가 고친 뒤 음성·자막·렌더를 다시 해요.</p>
+            <p class="muted">장면 수는 그대로 두고 Claude가 고쳐요.{% if review %} 바뀐 문장의 장면 프롬프트도 같이 고쳐요.{% else %} 고친 뒤 음성·자막·렌더를 다시 해요.{% endif %}</p>
             <button id="script-revise" class="btn btn-secondary" type="submit" data-post="script/revise">{{ icon('sparkles') }}Claude로 고치기</button>
           </form>
         </details>
@@ -112,14 +139,16 @@
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
 
+      <p class="phase-title"><span class="num">2</span>영상</p>
       <section id="c-voice" class="card" aria-labelledby="h-voice">
         <div class="card-head">
-          <h2 id="h-voice"><span class="num">2</span>음성</h2>
+          <h2 id="h-voice">음성</h2>
           {% if job.steps.voice.status == 'done' %}<span class="mono muted">{{ job.steps.voice.engine }} · 문장 {{ script.sentences|length }}개</span>{% endif %}
         </div>
         {% if job.steps.voice.status == 'done' %}
         <audio controls preload="none" src="{{ files }}voice.wav?v={{ job.steps.voice.sec }}"></audio>
         {% elif not (editable and script) %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
+        {% if review %}<p class="muted">확정 전에 목소리를 골라 두면 확정한 뒤 그 목소리로 만들어요.</p>{% endif %}
         {% if editable and script %}
         <div class="voice-pick">
           <label for="se-voice">목소리</label>
@@ -134,7 +163,7 @@
 
       <section id="c-subs" class="card" aria-labelledby="h-subs">
         <div class="card-head">
-          <h2 id="h-subs"><span class="num">3</span>자막</h2>
+          <h2 id="h-subs">자막</h2>
           {% if cues %}<span class="mono muted">{{ cues|length }}줄</span>{% endif %}
         </div>
         {% if cues %}
@@ -143,15 +172,17 @@
             {%- if editable %}<input class="ie" name="cues" form="edit" value="{{ c.text }}" maxlength="40" required data-regen="렌더" aria-label="자막 {{ loop.index }}">
             {%- else %}<span>{{ c.text }}</span>{% endif %}</li>{% endfor %}
         </ol>
+        {% elif review %}{{ locked }}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
 
       <section id="c-footage" class="card" aria-labelledby="h-footage">
         <div class="card-head">
-          <h2 id="h-footage"><span class="num">4</span>영상 소스</h2>
+          <h2 id="h-footage">영상 소스</h2>
           {% if scenes %}<span class="mono muted">클립 {{ scenes|selectattr('v')|list|length }}/{{ scenes|length }}</span>{% endif %}
         </div>
-        {% if scenes %}
+        {% if review %}{{ locked }}
+        {% elif scenes %}
         <ol class="scenes">{% for s in scenes %}
           <li id="scene-{{ s.i }}" class="scene">
             <p class="scene-line"><span class="num">{{ s.i + 1 }}</span><span>{{ s.sentence }}</span>{% if s.sec %}<span class="mono muted">{{ '%.1f'|format(s.sec) }}초</span>{% endif %}</p>
@@ -184,7 +215,7 @@
 
       <section id="c-thumb" class="card" aria-labelledby="h-thumb">
         <div class="card-head">
-          <h2 id="h-thumb"><span class="num">5</span>썸네일</h2>
+          <h2 id="h-thumb"><span class="num">3</span>썸네일</h2>
           {% set tu = job.thumb_usage %}
           {% if tu %}<span class="mono muted">{{ tu.model }} · in {{ tu.input_tokens }} · out {{ tu.output_tokens }}{% if tu.cost_usd is not none %} · ${{ '%.4f'|format(tu.cost_usd) }}{% endif %}</span>{% endif %}
         </div>
@@ -221,13 +252,14 @@
           </form>
         </details>
         {% endif %}
+        {% elif review %}{{ locked }}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
     </div>
 
     <aside class="side">
       <section id="final" class="card" aria-labelledby="h-final">
-        <div class="card-head"><h2 id="h-final"><span class="num">6</span>완성 영상</h2></div>
+        <div class="card-head"><h2 id="h-final"><span class="num">4</span>완성 영상</h2></div>
         {% if job.steps.render.status == 'done' %}
         <video class="video" controls preload="none" playsinline poster="{{ files }}poster.jpg{{ bust }}" src="{{ files }}final.mp4{{ bust }}"></video>
         <div class="final-meta">

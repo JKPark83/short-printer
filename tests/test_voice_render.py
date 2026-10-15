@@ -21,8 +21,9 @@ KO = Korean()
 
 
 @pytest.fixture
-def ch():
-    return channel.load("ko-40sec-facts")
+def ch():   # 배치는 band로 고정한다(채널 설정이 바뀌어도 테스트가 그대로 돌게)
+    c = channel.load("ko-40sec-facts")
+    return c.model_copy(update={"style": c.style.model_copy(update={"layout": "band"})})
 
 
 class Fake:
@@ -177,6 +178,24 @@ def test_render_full_layout_fills_screen(tmp_path, ch):
         assert max(top) > 64, name
 
 
+def test_render_clean_layout_no_title_band_thumbnail(tmp_path, ch):
+    clean = ch.model_copy(update={"style": ch.style.model_copy(update={"layout": "clean"})})
+    _, timing = voice.synth(Fake(fake_speak), clean, ["하나"], "elevenlabs", tmp_path, lambda m: None)
+    subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), clean.font,
+                        render.LAYOUTS["clean"].sub)
+    clips = make_clips(tmp_path, 1)
+    render.render(tmp_path, clips, timing[-1]["end"], clean, KO, (["커피 상식"], "상식"), [t["start"] for t in timing])
+    assert not (tmp_path / "title.ass").exists()   # 영상에는 제목이 없다
+    render.thumbnail(tmp_path, ["커피"], "", "top", clean, KO, "clip0.mp4")
+    assert ",2,80,80,1390," in (tmp_path / "thumb.ass").read_text()   # 썸네일은 band 제목 자리
+
+    def top(name):
+        return max(subprocess.run([config.FFMPEG, "-v", "error", "-i", tmp_path / name, "-vf", "crop=1080:100:0:0",
+                                   "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                                  capture_output=True).stdout)
+    assert top("final.mp4") > 64 and top("thumbnail.jpg") < 16   # 영상은 띠 없이, 썸네일은 위 검은 띠
+
+
 def test_thumbnail_from_clip_shorter_than_seek(tmp_path, ch):
     (tmp_path / "clips").mkdir()
     ffmpeg.run(["-f", "lavfi", "-i", "testsrc=s=640x360:d=0.3:r=30", "-pix_fmt", "yuv420p", tmp_path / "clips" / "clip0.mp4"])
@@ -190,3 +209,17 @@ def test_render_old_stock_jobs_loop_clips(tmp_path, ch):
     clips = make_clips(tmp_path, 2)
     dur = render.render(tmp_path, clips, timing[-1]["end"], ch, KO, None, [t["start"] for t in timing])
     assert abs(duration(tmp_path / "final.mp4") - dur) < 0.1
+
+
+def test_render_mixes_scene_clip_sound(tmp_path, ch):
+    _, timing = voice.synth(Fake(fake_speak), ch, ["하나"], "elevenlabs", tmp_path, lambda m: None)
+    subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)
+    (tmp_path / "clips").mkdir()
+    ffmpeg.run(["-f", "lavfi", "-i", "testsrc=s=640x360:d=2:r=30", "-f", "lavfi", "-i", "sine=frequency=3000:d=2",
+                "-pix_fmt", "yuv420p", "-shortest", tmp_path / "clips" / "clip0.mp4"])
+    dur = render.render(tmp_path, ["clip0.mp4"], timing[-1]["end"], ch, KO, None, [t["start"] for t in timing])
+
+    # 목소리가 끝난 꼬리(TAIL)에는 클립 소리만 남는다
+    r = subprocess.run([config.FFMPEG, "-hide_banner", "-ss", str(dur - 0.3), "-i", tmp_path / "final.mp4", "-af",
+                        "volumedetect", "-f", "null", "-"], capture_output=True, text=True)
+    assert float(re.search(r"mean_volume: (-?[\d.]+|-inf)", r.stderr).group(1)) > -40

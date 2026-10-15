@@ -310,11 +310,15 @@ document.addEventListener('click', async e => {
   }
   const retry = e.target.closest('[data-retry]');
   if (!retry) return;
+  if (retry.dataset.retry === 'confirm' && document.querySelector('.changed')) {
+    toast('저장하지 않은 수정이 있어요. 먼저 저장하거나 되돌려 주세요', true);
+    return;
+  }
   retry.disabled = true;
   try {
     const r = await fetch(`${api}/${retry.dataset.retry || 'retry'}`, { method: 'POST' });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || '다시 시도하지 못했어요');
-    toast('이어서 다시 시작했어요');
+    toast(retry.dataset.done || '이어서 다시 시작했어요');
     await tick(true);
     if (!retry.isConnected) ($('#retry') ?? $('#stepper')).focus();   // 버튼이 바뀌면 새 버튼, 없으면 진행 단계로
   } catch (err) {

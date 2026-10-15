@@ -25,7 +25,7 @@ class LLM:
 def test_system_has_channel_rules_without_front_matter_plus_limits():
     r = thumbnail.system(CH)
     assert not r.startswith("---") and "name:" not in r.splitlines()[0] and "한눈에" in r
-    assert "문구는 한국어로 1~2줄, 줄마다 9자 이내, 합쳐 16자 이내." in r   # channel.toml [thumbnail]
+    assert "문구는 한국어로 1~2줄, 줄마다 12자 이내, 합쳐 22자 이내." in r   # channel.toml [thumbnail]
 
 
 def test_make_plans_text_only():

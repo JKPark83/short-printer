@@ -177,7 +177,19 @@ select { cursor: pointer; }
 .n-sub, .n-engine { color: var(--muted-fg); font: 12px var(--mono); overflow-wrap: anywhere; }
 .n-running .n-sub { color: var(--ok); }
 .n-failed .n-sub { color: var(--bad); }
+.n-wait .dot { border-color: var(--warn); color: var(--warn); }
+.n-wait .n-sub { color: var(--warn); }
+/* 묶음(대본 → 영상 → 썸네일 → 완성). 칸 너비는 안의 단계 수(--n)만큼 */
+.phases { list-style: none; margin: var(--s6) 0; padding: 0; display: flex; gap: var(--s3); }
+.phase { flex: var(--n) 1 0; min-width: 0; padding: var(--s3) var(--s2) var(--s4); border: 1px solid var(--border); border-radius: var(--r); }
+.phase .stepper { margin: 0; }
+.ph-head { margin: 0 0 var(--s3) var(--s2); font-size: 13px; font-weight: 600; }
+.ph-done { border-color: var(--accent); }
+.ph-locked { opacity: .55; }
+.phase-title { margin: var(--s4) 0 0; font-weight: 600; }
+.ie-prompt { margin-top: 2px; color: var(--muted-fg); font: 12px/1.5 var(--mono); }
 @media (max-width: 600px) {
+  .phases { flex-direction: column; }
   .stepper { grid-auto-flow: row; grid-template-columns: 1fr; gap: var(--s3); }
   .node { grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: var(--s4); justify-items: start; align-items: center; text-align: left; }
   .node::before { display: none; }

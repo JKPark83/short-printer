@@ -13,6 +13,7 @@ from .adapters.splitters.ja import Japanese
 from .adapters.splitters.ko import Korean
 from .adapters.splitters.whitespace import Whitespace
 from .adapters.telegram import Telegram
+from .adapters.typecast import Typecast
 from .adapters.youtube import YouTube
 from .core import channel
 from .core.channel import Channel
@@ -29,7 +30,7 @@ from .ports.tts import TTS
 from .ports.video import VideoProvider
 
 LLMS: dict[str, LLM] = {"claude": Claude()}
-TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs()}
+TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto()}
 FALLBACK_VIDEO = "flow"   # 고른 공급자를 쓸 수 없을 때(사람이 올린다)
 SPLITTERS: dict[str, Splitter] = {"ko": Korean(), "ja": Japanese(), "en": Whitespace()}

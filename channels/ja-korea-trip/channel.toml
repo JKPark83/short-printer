@@ -1,9 +1,13 @@
 # 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
-name = "韓国旅行のツボ"
+name = "ミニチュア韓国旅行"
 description = """
-韓国旅行・ソウル旅行の前に見ておきたい40秒ショート。景福宮や明洞の「名前の由来」をミニチュア3Dで再現し、
-聖水のカフェ、明洞グルメ、オリーブヤングの買い物テク、地下鉄の乗り方まで、行ってすぐ使える情報をお届けします。
-毎日2本更新。次の韓国旅行がもっと楽しくなるヒントを、ぜひチェックしてください。
+韓国旅行・ソウル旅行の前に見たい、40秒のミニチュアガイド。
+景福宮が北にある理由や市場グルメの始まりを、手のひらサイズのソウルで再現。
+聖水・漢南洞のカフェ、明洞グルメ、オリーブヤングと韓国美容、地下鉄の乗り方まで、行ってすぐ使える情報をお届けします。
+
+ソウル在住の韓国人が調べて作り、ナレーションはAI音声です。
+毎日2本更新。次の韓国旅行の前に、ぜひチェックしてください。
+
 ※映像はAIで再現したイメージです。"""
 concept = "일본인 한국 여행자를 위한 서울 장소의 유래·역사(3D 재현)와 맛집·쇼핑·교통 여행 꿀팁"
 language = "ja"
@@ -13,24 +17,24 @@ llm = "claude"
 
 [script]
 scenes = 7
-sentence = [34, 42]
+sentence = [26, 31]   # 쿈 기준 초당 약 3.9자(3.4~4.5): 한 문장이 클립 8초를 거의 다 채운다
 unit = "chars"
-duration = "40~50초"
+duration = "50~56초"
 
 [tts]
 provider = "elevenlabs"
-default = ""
+default = "B8gJV1IhpuegLxdpXFOE"
 sample = "こんにちは。韓国旅行の前に知っておきたいことを、40秒でお伝えします。"
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
-elevenlabs = "기본 목소리(일본어로 바꿀 것)"
+B8gJV1IhpuegLxdpXFOE = "쿈"
 
 [video]
 provider = "flow-auto"
-style = "Stylized 3D animated diorama, soft clay-like matte materials, warm muted palette, gentle daylight, miniature tilt-shift look, same art style in every shot."
+style = "Stylized 3D animated miniature diorama explainer: a tabletop scale model of Seoul with tilt-shift depth of field, soft clay-like matte materials, clean CGI visualization like an architecture documentary, soft even daylight, warm muted colors, same art style in every shot."
 
 [style]
-layout = "full"   # 9:16 전체 화면 + 텔롭. 기본 "band"는 위아래 검은 띠
+layout = "clean"   # 영상은 띠·제목 없이 9:16 전체 + 자막, 썸네일만 위아래 띠 + 제목
 accent = "#FFE14D"
 background = ["#0f172a", "#7f1d1d"]
 

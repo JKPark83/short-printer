@@ -86,6 +86,18 @@ def scene_job(*done, ch=CH):
     return job
 
 
+def test_review_job_waits_for_confirmed_script():
+    job = Job.create(CH, "주제", "ko-KR-SunHiNeural", review=True)
+    job.step("script", status="done")
+    with pytest.raises(pipeline.Wait):   # 확정 전엔 음성(크레딧)부터 멈춘다
+        pipeline.step_voice(job, services())
+    job.update(status="waiting")
+    assert pipeline.in_review(job.data)
+    job.update(confirmed=True)
+    assert not pipeline.in_review(job.data)
+    assert not pipeline.in_review(Job.create(CH, "주제", "v").data | {"status": "waiting"})   # 스케줄·CLI는 안 멈춘다
+
+
 def footage_only(monkeypatch):
     ran = stub_steps(monkeypatch)
     monkeypatch.setitem(pipeline.RUN, "footage", pipeline.step_footage)
@@ -239,7 +251,7 @@ def test_script_step_revises_when_note(monkeypatch):
     job = scene_job(*STEPS)
     job.update(script_note="더 짧게", usage={"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01})
     monkeypatch.setattr(pipeline.script, "write", lambda *a: pytest.fail("새로 쓰면 장면이 바뀐다"))
-    monkeypatch.setattr(pipeline.script, "revise", lambda llm, ch, s, note: (
+    monkeypatch.setattr(pipeline.script, "revise", lambda llm, ch, s, note, **kw: (
         s | {"sentences": ["짧게", "둘"]}, {"model": "m", "input_tokens": 2, "output_tokens": 2, "cost_usd": 0.02}))
     assert pipeline.step_script(job, services()) == "m"
     assert job.doc("script.json")["prompts"] == ["p1", "p2"] and job.data["usage"]["cost_usd"] == 0.03

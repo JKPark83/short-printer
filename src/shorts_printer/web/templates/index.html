@@ -42,7 +42,7 @@
         <div class="card-head">
           <h2 id="h-rec">{{ icon('sparkles', 16, 'h-icon') }}지금 만들 만한 주제</h2>
           {% if rec and not ch %}<span class="badge b-ch">{{ channels[rec.trend.channel].name }}</span>{% endif %}
-          {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">근거 보기 · {{ rec.trend.created_at|hm }} 분석{{ icon('chevron', 14) }}</a>{% endif %}
+          {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">{{ '아이디어 보기 · ' ~ (rec.trend.created_at|hm) if rec.trend.mode == 'idea' else '근거 보기 · ' ~ (rec.trend.created_at|hm) ~ ' 분석' }}{{ icon('chevron', 14) }}</a>{% endif %}
         </div>
         {% if rec %}
         <ol class="rec-list">
@@ -90,7 +90,7 @@
             {% if j.status == 'done' and ups == 'done' %}<span class="badge b-up">{{ icon('check', 14) }}업로드됨{% if j.duration %} {{ j.duration|mmss }}{% endif %}</span>
             {% elif j.status == 'done' and ups in ACTIVE %}<span class="badge b-running">{{ icon('loader', 14, 'spin') }}올리는 중</span>
             {% elif j.status == 'done' %}<span class="badge b-notup">{{ '업로드 실패' if ups == 'failed' else '고친 뒤 미업로드' if j.uploaded_before else '미업로드' }}{% if j.duration %} {{ j.duration|mmss }}{% endif %}</span>
-            {% else %}<span class="badge b-{{ j.status }}">{{ STATUS[j.status] }}</span>{% endif %}
+            {% else %}<span class="badge b-{{ j.status }}">{{ status_label(j) }}</span>{% endif %}
             {{ icon('chevron', 16, 'jr-go') }}
           </a>
           {% if j.status not in ACTIVE and (j.upload or {}).status not in ACTIVE %}

@@ -1,8 +1,9 @@
 """4단계 자막: 문장 시각을 한 줄 덩어리로 나눠 ASS로 쓴다. 끊는 자리는 언어별 Splitter가 고른다.
 낱말 시각(words)이 있으면 덩어리 첫 글자의 시각에 넘기고, 없으면 글자 수에 비례해 나눈다.
 자막 윗줄 자리(위 정렬 8, MarginV)는 화면 배치(render.LAYOUTS)가 정해 넘긴다.
-band: 영상 칸(560~1440) 아래 검은 띠 맨 위(1465). full: 전체 화면 위, 아래 UI 250px과 제목·채널 이름 칸 위(1385).
+band: 영상 칸(560~1440) 아래 검은 띠 맨 위(1465). full: 전체 화면 위, 아래 UI 250px과 제목·채널 이름 칸 위(1385). clean은 band보다 조금 아래(1510).
 그 아래쪽은 쇼츠·틱톡의 제목·채널 이름이 덮는다."""
+import re
 from bisect import bisect_right
 from itertools import accumulate
 from pathlib import Path
@@ -42,10 +43,14 @@ def _word_starts(parts: list[str], words: list[dict], end: float) -> list[float]
     return out
 
 
+# 문장 끝(마침표·물음표 뒤 띄어쓰기, 일본어는 바로 뒤). 마무리 멘트 같은 짧은 문장이 앞 문장 꼬리와 한 덩어리로 묶이지 않게 한다
+SENTENCE_END = re.compile(r"(?<=[.?!])\s+|(?<=[。？！])\s*")
+
+
 def cues(timing: list[dict], splitter: Splitter, limit: int) -> list[dict]:
     out = []
     for s in timing:
-        parts = splitter.chunks(s["text"], limit)
+        parts = [p for t in SENTENCE_END.split(s["text"]) if t.strip() for p in splitter.chunks(t, limit)]
         if not parts:
             continue
         if words := s.get("words"):

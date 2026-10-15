@@ -52,9 +52,11 @@ def test_write_without_style_keeps_prompt(tmp_path):
 
 def test_ko_system_keeps_every_old_rule(ko):
     sys = script.system(ko)
-    for rule in ["40~50초", "정확히 7개", "48~55자", "55자를 넘지", "이모지·해시태그·괄호", "60~90단어", "photoreal",
+    for rule in ["52~56초", "정확히 7개", "62~68자", "68자를 넘지", "이모지·해시태그·괄호", "60~90단어", "photoreal",
                  "주인공·장소·시대·옷차림", "앞 5초", "No on-screen text, no numbers, no logos.", "실존 인물의 얼굴",
-                 "훅", "존댓말", "널리 확인된", "반복 재생", "질문형", "3D 애니메이션", "단면도", "한국어"]:
+                 "No dialogue, no voices, no music.",
+                 "훅", "존댓말", "널리 확인된", "여기까진 다들 아시죠?", "오늘도 상식 하나 챙기셨네요?", "질문형",
+                 "3D 애니메이션", "단면도", "한국어"]:
         assert rule in sys, rule
 
 
@@ -90,6 +92,17 @@ def test_revise_keeps_scene_count_and_prompts(ko):
     with pytest.raises(RuntimeError, match="장면 수"):
         script.revise(FakeLLM(script.Revision(title="t", description="d", tags=[], sentences=["하나"])),
                       ko, s, "줄여 줘")
+
+
+def test_draft_revise_rewrites_prompts_too(ko):
+    s = OK.flat()
+    out = script.Draft(title="t", description="d", tags=[], sentences=["하나", "셋"], prompts=[" p1 ", "p3"])
+    llm = FakeLLM(out)
+    new, _ = script.revise(llm, ko, s, "둘을 셋으로", draft=True)
+    assert new["sentences"] == ["하나", "셋"] and new["prompts"] == ["p1", "p3"]
+    assert llm.calls[0]["system"].endswith(prompts.render("script_revise_draft"))
+    with pytest.raises(RuntimeError, match="장면 수"):
+        script.revise(FakeLLM(out.model_copy(update={"prompts": ["p1"]})), ko, s, "줄여 줘", draft=True)
 
 
 # Claude 어댑터
