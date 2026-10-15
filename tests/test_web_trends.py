@@ -8,7 +8,6 @@ from shorts_printer.adapters.youtube import YouTube
 from shorts_printer.core import trends
 from shorts_printer.core.pipeline import Job
 from shorts_printer.core.trends import Trend
-from shorts_printer.infra.store import atomic_write_json
 from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")
@@ -45,14 +44,14 @@ CLAUDE = {"topic": "편의점 신상 리뷰", "format": "음식", "hook": "첫 �
 
 def done_trend(keyword="자취"):
     t = Trend.create(CH, keyword, "3d")
-    atomic_write_json(t.dir / "videos.json", [video(1), video(2), video(3)])
-    atomic_write_json(t.dir / "analyses.json", {
+    t.put("videos.json", [video(1), video(2), video(3)])
+    t.put("analyses.json", {
         "vid1": {"status": "ok", "error": None, "shot_count": 9, "avg_shot_sec": 3.8, "has_transcript": True,
                  "frames": [{"file": "frames/vid1_0.jpg", "t": 1.5}], "claude": CLAUDE},
         "vid2": {"status": "meta_only", "error": "영상을 못 받아", "shot_count": None, "avg_shot_sec": None,
                  "has_transcript": False, "frames": [], "claude": CLAUDE},
         "vid3": {"status": "failed", "error": "Claude 오류", "frames": [], "claude": None}})
-    atomic_write_json(t.dir / "picks.json", {"summary": "음식 리뷰가 뜬다",
+    t.put("picks.json", {"summary": "음식 리뷰가 뜬다",
                                              "excluded": [{"video_id": "vid3", "reason": "방송 클립"}],
                                              "picks": [{"topic": "라면 끓이는 과학", "angle": "물 양부터 의심하게",
                                                         "format": "꿀팁·하우투", "why_now": "라면 쇼츠가 빨리 오른다",
@@ -123,7 +122,7 @@ def test_trend_page_before_results():
     t.update(status="running", progress={"done": 3, "total": 8},
              steps=t.data["steps"] | {"collect": {"status": "done", "engine": "x", "sec": 2.0},
                                       "analyze": {"status": "running", "engine": None, "sec": None}})
-    atomic_write_json(t.dir / "videos.json", [video(1)])
+    t.put("videos.json", [video(1)])
     html = client.get(f"/trends/{t.id}").text
     assert 'aria-valuenow="3"' in html and "분석 중·대기" in html and "분석이 끝나면 Claude가" in html
 
@@ -199,3 +198,54 @@ def test_recover_interrupts_running_trend():
     t.update(status="running")
     web.recover()
     assert t.data["status"] == "interrupted"
+
+
+def test_create_idea_trend_without_youtube_key(monkeypatch):
+    queued = []
+    monkeypatch.setattr(web.q, "enqueue_trend", queued.append)
+    monkeypatch.setattr(trends, "ready", lambda: False)
+    html = client.get("/trends").text
+    assert '<option value="idea" selected>' in html and '<option value="trend" disabled>' in html
+    assert client.post("/trends", data={"mode": "nope", "channel": CH}).status_code == 400
+    r = client.post("/trends", data={"mode": "idea", "keyword": "겨울", "channel": CH}, follow_redirects=False)
+    assert r.status_code == 303
+    d = Trend.load(queued[0]).data
+    assert (d["mode"], d["keyword"]) == ("idea", "겨울")
+    assert "아이디어 · 겨울" in client.get("/trends").text
+
+
+def test_idea_trend_page_and_make_job(monkeypatch):
+    t = Trend.create(CH, "겨울", mode="idea")
+    t.put("picks.json", {"summary": "겨울 궁금증", "excluded": [], "picks": [
+        {"topic": f"정전기 {i}", "angle": "문고리부터", "content": "건조해서 전하가 쌓인다", "format": "잡학·상식",
+         "why_now": "겨울이라", "total": 90 - i, "refs": [], "scores": {"fit": 5, "fresh": 4, "safe": 5},
+         "search_terms": ["static spark"]} for i in range(10)]})
+    t.update(status="done", steps={s: {"status": "done", "engine": "건너뜀", "sec": 0.0} for s in trends.STEPS})
+    html = client.get(f"/trends/{t.id}").text
+    assert "“겨울” 아이디어 추천" in html and "이번 방향" in html and "건조해서 전하가 쌓인다" in html
+    assert 'id="c-videos"' not in html and 'id="c-analyses"' not in html and "참고 쇼츠" not in html
+    assert html.count('class="pick"') == 10 and "시간당 조회수로 계산" not in html
+    assert '<span class="mono">54</span>' in html and '<span class="mono">23</span>' in html  # 35·15·15 → 합 100
+    assert "아이디어 보기 · " in client.get("/").text
+    queued = []
+    monkeypatch.setattr(web.q, "enqueue", queued.append)
+    r = client.post("/jobs", data={"trend": t.id, "pick": "9", "voice": VOICE}, follow_redirects=False)
+    assert r.status_code == 303
+    d = Job.load(queued[0]).data
+    assert d["topic"] == "정전기 9" and "내용: 건조해서 전하가 쌓인다" in d["brief"]
+
+
+def test_idea_again_button(monkeypatch):
+    t = Trend.create(CH, "겨울", mode="idea")
+    t.put("picks.json", {"summary": "", "excluded": [], "picks": [
+        {"topic": "정전기", "angle": "a", "content": "c", "format": "잡학·상식", "why_now": "w", "total": 90,
+         "refs": [], "scores": {"fit": 5, "fresh": 4, "safe": 5}, "search_terms": ["x"]}]})
+    assert "다시 뽑기" not in client.get(f"/trends/{t.id}").text   # 아직 안 끝났다
+    assert client.post(f"/trends/{t.id}/again").status_code == 409
+    t.update(status="done")
+    assert f'action="/trends/{t.id}/again"' in client.get(f"/trends/{t.id}").text
+    queued = []
+    monkeypatch.setattr(web.q, "enqueue_trend", queued.append)
+    r = client.post(f"/trends/{t.id}/again", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/trends/{queued[0]}"
+    assert Trend.load(queued[0]).data["avoid"] == ["정전기"]

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from .. import config
 from ..infra import ffmpeg
-from ..infra.store import atomic_write_json
 from ..ports.tts import TTS
 from .channel import Channel
 
@@ -13,7 +12,8 @@ RATE = 24000
 GAP = 0.2   # 문장 사이 쉼(초)
 
 
-def _read_all(sentences: list[str], job_dir: Path, log, speak) -> float:
+def _read_all(sentences: list[str], job_dir: Path, log, speak) -> list[dict]:
+    """voice.wav와 문장 시각(timing)."""
     out = job_dir / "voice"
     out.mkdir(exist_ok=True)
     timing, t = [], 0.0
@@ -34,8 +34,7 @@ def _read_all(sentences: list[str], job_dir: Path, log, speak) -> float:
                           | ({"words": [{"text": x["text"], "start": round(t + x["start"], 3)} for x in ws]} if ws else {}))
             t += dur + GAP
             log(f"음성 {i + 1}/{len(sentences)}: {dur:.1f}s")
-    atomic_write_json(job_dir / "timing.json", timing)
-    return t
+    return timing
 
 
 def _check(tts: TTS) -> None:
@@ -54,10 +53,9 @@ def sample(tts: TTS, ch: Channel, voice: str) -> Path:
     return path
 
 
-def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path, log) -> str:
-    """읽은 엔진 이름."""
+def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path, log) -> tuple[str, list[dict]]:
+    """(읽은 엔진 이름, 문장 시각). voice.wav는 job_dir에, 시각은 부른 쪽이 저장한다."""
     if voice not in ch.tts.voices:   # 예전 작업의 edge-tts·macOS say 목소리, 다른 채널 목소리
         raise RuntimeError(f"더는 쓰지 않는 목소리({voice})예요. 작업 화면에서 다른 목소리를 골라 주세요")
     _check(tts)
-    _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))
-    return tts.label
+    return tts.label, _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))

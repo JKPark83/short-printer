@@ -50,7 +50,11 @@ class StyleCfg(BaseModel):
     accent: str = Field("#FFE500", pattern=HEX)
     background: tuple[str, str] = ("#0f172a", "#14532d")
     subtitle_limit: int = Field(0, ge=0)   # 0이면 언어 기본(Splitter.limit)
-    layout: Literal["band", "full"] = "band"   # band: 위아래 검은 띠 + 가운데 영상, full: 9:16 전체 + 텔롭
+    # band: 위아래 검은 띠 + 가운데 영상, full: 9:16 전체 + 텔롭, clean: 영상은 9:16 전체에 자막만·썸네일은 band
+    layout: Literal["band", "full", "clean"] = "band"
+    # 소리 크기(LUFS). 목소리는 공급자·목소리마다 -21~-33으로 달라 작은 목소리 채널만 맞춘다. 0이면 원본 그대로
+    voice_lufs: float = Field(0, ge=-40, le=0)
+    sfx_lufs: float = Field(-21, ge=-40, lt=0)   # 장면 클립 효과음을 클립마다 이 크기로 맞춘 뒤 70%로 깐다
 
 
 class ThumbCfg(BaseModel):

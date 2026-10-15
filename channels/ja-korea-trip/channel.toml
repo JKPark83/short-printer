@@ -1,11 +1,15 @@
 # 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
-name = "韓国旅行のツボ"
+name = "ミニチュア韓国旅行"
 description = """
-韓国旅行・ソウル旅行の前に見ておきたい40秒ショート。景福宮や明洞の「名前の由来」をミニチュア3Dで再現し、
-聖水のカフェ、明洞グルメ、オリーブヤングの買い物テク、地下鉄の乗り方まで、行ってすぐ使える情報をお届けします。
-毎日2本更新。次の韓国旅行がもっと楽しくなるヒントを、ぜひチェックしてください。
+韓国旅行・ソウル旅行の前に見たい、1分のミニチュアガイド。
+聖水・漢南洞のカフェ街や明洞の屋台通りを、手のひらサイズのソウルで再現。
+オリーブヤングと韓国美容、地下鉄の乗り方、両替のコツまで、行ってすぐ使える情報をお届けします。
+
+ソウル在住の韓国人が調べて作り、ナレーションはAI音声です。
+毎日2本更新。次の韓国旅行の前に、ぜひチェックしてください。
+
 ※映像はAIで再現したイメージです。"""
-concept = "일본인 한국 여행자를 위한 서울 장소의 유래·역사(3D 재현)와 맛집·쇼핑·교통 여행 꿀팁"
+concept = "일본인 2030 여성 여행자를 위한 서울 동네·장소 미니어처 소개와 맛집·카페·쇼핑·뷰티·교통 여행 꿀팁"
 language = "ja"
 daily_goal = 2
 sensitive_gate = true
@@ -13,26 +17,28 @@ llm = "claude"
 
 [script]
 scenes = 7
-sentence = [34, 42]
+sentence = [50, 56]   # 미나미 기준 초당 약 7.2자: 한 문장이 클립 8초를 거의 다 채운다
 unit = "chars"
-duration = "40~50초"
+duration = "50~56초"
 
 [tts]
 provider = "elevenlabs"
-default = ""
-sample = "こんにちは。韓国旅行の前に知っておきたいことを、40秒でお伝えします。"
+default = "lhTvHflPVOqgSWyuWQry"
+sample = "こんにちは。韓国旅行の前に知っておきたいことを、1分でお伝えします。"
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
-elevenlabs = "기본 목소리(일본어로 바꿀 것)"
+lhTvHflPVOqgSWyuWQry = "미나미"
 
 [video]
 provider = "flow-auto"
-style = "Stylized 3D animated diorama, soft clay-like matte materials, warm muted palette, gentle daylight, miniature tilt-shift look, same art style in every shot."
+style = "Stylized 3D animated miniature diorama explainer: a tabletop scale model of Seoul with tilt-shift depth of field, soft clay-like matte materials, clean CGI visualization like an architecture documentary, soft even daylight, warm muted colors, same art style in every shot."
 
 [style]
-layout = "full"   # 9:16 전체 화면 + 텔롭. 기본 "band"는 위아래 검은 띠
+layout = "clean"   # 영상은 띠·제목 없이 9:16 전체 + 자막, 썸네일만 위아래 띠 + 제목
 accent = "#FFE14D"
 background = ["#0f172a", "#7f1d1d"]
+voice_lufs = -16   # 미나미 원본이 -33 LUFS로 작다
+sfx_lufs = -23     # 70%로 깔려 약 -26: 목소리보다 10dB 작게
 
 [thumbnail]
 max_line = 10
@@ -42,11 +48,12 @@ max_total = 18
 provider = "youtube"
 category = "19"
 footer = "※映像はAIで再現したイメージです。"
-channel_id = ""
+channel_id = "UCRYIJCDhM7pS3S7JB2aHTKw"
 
 [trends]
 region = "JP"
 language = "ja"
-keywords = ["韓国旅行", "ソウル旅行", "韓国グルメ", "韓国カフェ", "明洞", "聖水", "オリーブヤング", "景福宮"]
-production = "Claude가 쓴 일본어 대본을 일본어 TTS가 읽고 일본어 번인 자막이 뜬다. 40~50초. 화면은 9:16 전체를 장면 클립으로 채우고 위쪽에 큰 텔롭(제목 문구)이 뜬다. 장면은 모두 AI로 만든 디오라마·클레이 미니어처풍 3D 애니메이션 클립이다(조선 시대 재현도 지금의 서울 거리도 같은 화풍). 직접 촬영·실사 영상, 남의 사진·영상, 실존 인물·연예인, 가게 간판·브랜드 로고·상품 화면은 못 쓴다."
+keywords = ["韓国旅行", "ソウル旅行", "韓国グルメ", "韓国カフェ", "明洞", "聖水", "漢南洞", "東大門", "オリーブヤング",
+            "韓国美容", "韓国皮膚科", "景福宮"]
+production = "Claude가 쓴 일본어 대본을 일본어 TTS가 읽고 일본어 번인 자막이 뜬다. 50~56초. 화면은 9:16 전체를 장면 클립으로 채우고 자막만 뜬다(제목은 썸네일에만). 장면은 모두 AI로 만든 미니어처 디오라마 3D 해설 클립이다: 지금의 서울 동네를 탁자 위 모형처럼 내려다보고 길·동선은 화살표로 보여 준다. 직접 촬영·실사 영상, 남의 사진·영상, 실존 인물·연예인, 가게 간판·브랜드 로고·상품 화면은 못 쓴다."
 weights = { trend = 30, fit = 35, fresh = 15, safe = 20 }

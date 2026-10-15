@@ -1,4 +1,5 @@
 from shorts_printer.adapters.elevenlabs import words
+from shorts_printer.adapters.splitters.ja import Japanese
 from shorts_printer.adapters.splitters.ko import Korean
 from shorts_printer.core.subtitles import cues, escape, header, ts, write_ass
 
@@ -12,6 +13,12 @@ def test_cues_split_sentence_time_by_length_and_stay_inside():
     assert out[0]["end"] == out[1]["start"] == round(1.0 + 3.0 * 3 / 11, 2)
 
 
+def test_cues_always_break_at_sentence_end():
+    out = cues([{"text": "고개를 든 겁니다. 오늘도 상식 하나 챙기셨네요?", "start": 0, "end": 4.0}], KO, 16)
+    assert out[-1]["text"] == "오늘도 상식 하나 챙기셨네요?" and out[0]["start"] == 0 and out[-1]["end"] == 4.0
+    assert [c["text"] for c in cues([{"text": "3.5배 커요", "start": 0, "end": 1}], KO, 16)] == ["3.5배 커요"]
+
+
 def test_ts_and_escape():
     assert ts(61.25) == "0:01:01.25"
     assert ts(3725.5) == "1:02:05.50"
@@ -23,6 +30,15 @@ def test_words_group_chars_and_cues_follow_word_times():
     assert ws == [{"text": "가나다", "start": 1.0}, {"text": "라마바사아자차카", "start": 2.5}]
     out = cues([{"text": "가나다 라마바사아자차카", "start": 1.0, "end": 4.0, "words": ws}], KO, 5)
     assert [(c["text"], c["start"], c["end"]) for c in out] == [("가나다", 1.0, 2.5), ("라마바사아자차카", 2.5, 4.0)]
+
+
+def test_japanese_words_keep_char_times_so_cues_follow_pause():
+    text = "両替は空港より、ミョンドンがお得です。"
+    starts = [0.1 * i for i in range(8)] + [1.5 + 0.1 * i for i in range(len(text) - 8)]   # 、 뒤 0.8초 쉼
+    ws = words(list(text), starts)
+    assert len(ws) == len(text)
+    out = cues([{"text": text, "start": 0, "end": 3.0, "words": ws}], Japanese(), 10)
+    assert [(c["text"], c["start"]) for c in out][:2] == [("両替は空港より、", 0), ("ミョンドンが", 1.5)]
 
 
 def test_header_and_ass_use_channel_font(tmp_path):

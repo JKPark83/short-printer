@@ -26,7 +26,8 @@
 ## 의존성과 저장
 
 - 표준 라이브러리를 먼저 쓴다. 새 의존성은 더하지 않는다(꼭 필요하면 사용자에게 먼저 묻는다).
-- 파일은 원자적으로 쓴다: `infra.store.atomic_write_text`·`atomic_write_json`, 바이너리는 tmp에 쓴 뒤 `os.replace`.
+- 상태·결과물 json·로그는 파일이 아니라 저장소(`shorts.db`)에 쓴다: `Record`의 `update`·`step`(상태), `doc`·`put`·`edit`(결과물), `log`(로그). `docs/plan/storage.md` 참고.
+- 폴더에는 ffmpeg·브라우저가 파일로 읽는 것만 남기고 원자적으로 쓴다: 글(`.ass` 등)은 `infra.store.atomic_write_text`, 바이너리는 tmp에 쓴 뒤 `os.replace`. `atomic_write_json`은 `.secrets` 토큰·설정에만 쓴다.
 - 로그·오류에 비밀을 남기지 않는다: `infra.store.redact()`를 거친다. 키는 `config.secret(name)`으로 읽고 값을 출력하지 않는다.
 - `.env` 값, `.secrets/` 아래 파일, `client_secret_*.json`, `AuthKey_*.p8`는 읽거나 출력하지 않는다. 설정 여부만 `grep -c '^KEY=..*' .env`로 본다.
 

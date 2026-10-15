@@ -1,10 +1,9 @@
 """여섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
-빠진 장면 클립이 있으면 waiting으로 멈춘다."""
+화면에서 만든 작업은 대본 뒤에, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
-from pathlib import Path
 from typing import ClassVar
 
-from ..infra.store import Record, atomic_write_json, now, read_json, redact, upload_state
+from ..infra.store import Record, now, redact, upload_state
 from ..ports.llm import add_usage
 from . import render, scenes, script, subtitles, thumbnail, voice
 from .services import Services
@@ -17,9 +16,8 @@ LABELS = {"script": "대본", "footage": "영상 소스", "voice": "음성", "su
 class Job(Record):
     EXTRA: ClassVar[dict] = {"upload": None, "duration": None}
 
-    @property
-    def data(self) -> dict:
-        d = super().data
+    @staticmethod
+    def _fix(d: dict) -> dict:
         # 썸네일 단계가 생기기 전 job.json: 렌더까지 끝났으면 옛 방식 썸네일이 있으니 done으로 본다
         d["steps"].setdefault("thumbnail", {"status": "done" if d["steps"]["render"]["status"] == "done" else "pending",
                                             "engine": None, "sec": None})
@@ -27,34 +25,41 @@ class Job(Record):
 
     @classmethod
     def create(cls, channel: str, topic: str, voice: str, brief: str | None = None,
-               source: dict | None = None) -> "Job":
-        """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}."""
-        return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source)
+               source: dict | None = None, review: bool = False) -> "Job":
+        """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}.
+        review: 사람이 대본을 확정(confirmed)해야 음성부터 만든다(화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다)."""
+        return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source, review=review)
 
 
 class Wait(Exception):
     """사람 손이 필요해 멈춘다(클립 올리기). 실패가 아니다."""
 
 
-def missing_clips(job_dir: Path) -> list[int]:
+def in_review(data: dict) -> bool:
+    """대본을 사람이 확정하기를 기다리는 중."""
+    return data["status"] == "waiting" and bool(data.get("review")) and not data.get("confirmed")
+
+
+def missing_clips(job: Job) -> list[int]:
     """아직 안 올라온 장면 번호(0부터). 장면 = 대본 문장."""
-    n = len(read_json(job_dir / "script.json")["sentences"])
-    return [i for i in range(n) if not (job_dir / "clips" / f"clip{i}.mp4").exists()]
+    n = len(job.doc("script.json")["sentences"])
+    return [i for i in range(n) if not (job.dir / "clips" / f"clip{i}.mp4").exists()]
 
 
 def step_script(job: Job, sv: Services) -> str:
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
-        s, usage = script.revise(sv.llm, sv.channel, read_json(job.dir / "script.json"), note)
-        atomic_write_json(job.dir / "script.json", s)
+        draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
+        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft))
+        job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
         return usage["model"]
     # 최근 제목은 같은 채널 안에서만 피한다
     recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
-              and (t := (read_json(j.dir / "script.json") or {}).get("title"))][-15:]
+              and (t := (j.doc("script.json") or {}).get("title"))][-15:]
     # 예전 job.json엔 brief가 없다
     s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent)
-    atomic_write_json(job.dir / "script.json", s.flat())
+    job.put("script.json", s.flat())
     job.update(usage=usage)
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
     if s.sensitive and sv.channel.sensitive_gate:
@@ -65,33 +70,36 @@ def step_script(job: Job, sv: Services) -> str:
 def step_footage(job: Job, sv: Services) -> str:
     """장면마다 클립 하나. 공급자가 만들 수 있는 건 만들고, 빠진 장면은 사람이 올릴 때까지 waiting.
     채널이 sensitive_gate를 켰으면 민감 분야 대본은 사람이 확인(confirmed)하기 전엔 크레딧을 쓰지 않고 멈춘다."""
-    area = read_json(job.dir / "script.json").get("sensitive")
+    area = job.doc("script.json").get("sensitive")
     if sv.channel.sensitive_gate and area and not job.data.get("confirmed"):
         raise Wait(f"민감 분야({area}) 대본 확인")
     p = sv.video
     d = job.dir / "clips"
     d.mkdir(exist_ok=True)
-    todo = scenes.scenes(read_json(job.dir / "script.json"), read_json(job.dir / "timing.json"))
+    todo = scenes.scenes(job.doc("script.json"), job.doc("timing.json"))
     for c in p.make([s for s in todo if not (d / s["file"]).exists()], d, job.log):
-        scenes.set_clip(job.dir, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
-    if miss := missing_clips(job.dir):
+        scenes.set_clip(job, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
+    if miss := missing_clips(job):
         raise Wait(f"장면 클립 {len(todo) - len(miss)}/{len(todo)}개")
-    got = {c["file"]: c for c in read_json(job.dir / "clips.json", [])}
+    got = {c["file"]: c for c in job.doc("clips.json", [])}
     # 장면 순서로 다시 쓴다. 기록 없이 파일만 있는 장면(손으로 넣은 파일)은 직접 올림으로
-    atomic_write_json(job.dir / "clips.json",
-                      [got.get(s["file"], {"file": s["file"], "source": "직접 올림"}) for s in todo])
+    job.put("clips.json", [got.get(s["file"], {"file": s["file"], "source": "직접 올림"}) for s in todo])
     return f"{p.label} {len(todo)}개"
 
 
 def step_voice(job: Job, sv: Services) -> str:
-    return voice.synth(sv.tts, sv.channel, read_json(job.dir / "script.json")["sentences"], job.data["voice"],
-                       job.dir, job.log)
+    if job.data.get("review") and not job.data.get("confirmed"):   # 음성부터 돈(크레딧)이 들어 대본을 먼저 확정한다
+        raise Wait("대본 확정")
+    engine, timing = voice.synth(sv.tts, sv.channel, job.doc("script.json")["sentences"], job.data["voice"],
+                                 job.dir, job.log)
+    job.put("timing.json", timing)
+    return engine
 
 
 def step_subtitles(job: Job, sv: Services) -> str:
-    cues = subtitles.cues(read_json(job.dir / "timing.json"), sv.splitter,
+    cues = subtitles.cues(job.doc("timing.json"), sv.splitter,
                           sv.channel.style.subtitle_limit or sv.splitter.limit)
-    atomic_write_json(job.dir / "cues.json", cues)   # subs.ass는 렌더가 쓴다(상세 화면에서 고친 자막도 들어가게)
+    job.put("cues.json", cues)   # subs.ass는 렌더가 쓴다(상세 화면에서 고친 자막도 들어가게)
     return f"ASS {len(cues)}줄"
 
 
@@ -99,28 +107,28 @@ def step_thumbnail(job: Job, sv: Services) -> str:
     """채널 thumbnail.md대로 문구를 정해 thumbnail.jpg를 만든다. 배경은 첫 장면 클립.
     문구는 렌더가 위 띠 제목으로도 쓴다.
     상세 화면에서 문구를 손으로 고쳤으면(thumb_hand) LLM 없이 그 문구로 만든다."""
-    clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
+    clips = [c["file"] for c in job.doc("clips.json", [])]
+    old = job.doc("thumb.json") or {}
     if hand := job.data.get("thumb_hand"):
-        old = read_json(job.dir / "thumb.json") or {}
         t = old | hand | {"position": old.get("position", "top"), "usage": old.get("usage"), "note": "",
                           "texts": old.get("texts", []) + [" / ".join(hand["lines"])]}
         job.log(f"썸네일 문구(직접 고침): {' / '.join(hand['lines'])}")
     else:
-        t = thumbnail.make(sv.llm, sv.channel, job.dir, read_json(job.dir / "script.json"), job.data["topic"],
+        t = thumbnail.make(sv.llm, sv.channel, old.get("texts", []), job.doc("script.json"), job.data["topic"],
                            job.log, job.data.get("thumb_note") or "")
     t["background"] = render.thumbnail(job.dir, t["lines"], t["accent"], t["position"], sv.channel, sv.splitter,
                                        clips[0] if clips else None)
-    atomic_write_json(job.dir / "thumb.json", t)
+    job.put("thumb.json", t)
     job.update(thumb_usage=t["usage"], thumb_hand=None)
     return t["background"]
 
 
 def step_render(job: Job, sv: Services) -> str:
-    clips = [c["file"] for c in read_json(job.dir / "clips.json", [])]
-    timing = read_json(job.dir / "timing.json")
-    t = read_json(job.dir / "thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
-    title = (t["lines"], t["accent"]) if t else ([read_json(job.dir / "script.json")["title"]], "")
-    if cues := read_json(job.dir / "cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
+    clips = [c["file"] for c in job.doc("clips.json", [])]
+    timing = job.doc("timing.json")
+    t = job.doc("thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
+    title = (t["lines"], t["accent"]) if t else ([job.doc("script.json")["title"]], "")
+    if cues := job.doc("cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
         subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub)
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], sv.channel, sv.splitter, title,
                                       [t["start"] for t in timing]))
@@ -171,7 +179,7 @@ def publish(job: Job, sv: Services) -> None:
     p = sv.publisher
     job.update(upload=upload_state("running"))
     job.log(f"{p.label} 업로드 시작")
-    s = read_json(job.dir / "script.json")
+    s = job.doc("script.json")
     meta = {k: s[k] for k in ("title", "description", "tags")}
     if foot := sv.channel.publish.footer:   # 스튜디오 대체 업로드도 같은 meta를 쓴다
         meta["description"] = f"{meta['description'].rstrip()}\n\n{foot}"

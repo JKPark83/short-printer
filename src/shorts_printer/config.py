@@ -21,6 +21,8 @@ FFMPEG = os.environ.get("SP_FFMPEG") or "/opt/homebrew/opt/ffmpeg-full/bin/ffmpe
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL") or "claude-opus-5-5"
 JOBS_DIR = ROOT / "jobs"
 TRENDS_DIR = ROOT / "trends"   # 주제 찾기(인기 쇼츠 분석) 결과
+SCHEDULES_DIR = ROOT / "schedules"   # 정해진 시각에 만들어 올리는 스케줄
+DB = ROOT / "shorts.db"   # 상태·로그·JSON 결과물(SQLite). 미디어는 위 폴더에 남는다
 CHANNELS_DIR = ROOT / "channels"   # 채널 설정. 폴더 하나 = 채널 하나
 PROMPTS_DIR = ROOT / "prompts"   # 모든 채널 공통 LLM 지시문
 SECRETS_DIR = ROOT / ".secrets"   # 로그인 토큰·전용 Chrome 프로필. 내용을 출력하지 않는다
@@ -28,6 +30,8 @@ SECRETS_DIR = ROOT / ".secrets"   # 로그인 토큰·전용 Chrome 프로필. �
 # 토큰은 채널마다 .secrets/channels/<id>/youtube_token.json
 YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET") or None
 # 웹 화면이 받는 호스트 이름. tailscale serve로 열 때는 .env의 SP_HOSTS에 machine.tailnet.ts.net을 쉼표로 더한다
+# 알림에 넣는 이 화면 주소. tailscale serve로 열면 .env SP_URL에 https://machine.tailnet.ts.net
+URL = (os.environ.get("SP_URL") or "http://127.0.0.1:8765").rstrip("/")
 HOSTS = ["127.0.0.1", "localhost", *filter(None, map(str.strip, os.environ.get("SP_HOSTS", "").split(",")))]
 
 
@@ -38,3 +42,5 @@ def secret(name: str) -> str | None:
 # ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"
+# Typecast(유료): 목소리는 channel.toml [tts.voices]의 tc_… ID
+TYPECAST_MODEL = os.environ.get("TYPECAST_MODEL") or "ssfm-v30"

@@ -26,14 +26,22 @@ THUMB_BOTTOM = (2, 560)
 class Layout(NamedTuple):
     y: int                   # 영상칸 위 끝
     h: int                   # 영상칸 높이
-    title: tuple[int, int]   # 제목 (Alignment, MarginV)
+    title: tuple[int, int] | None   # 제목 (Alignment, MarginV). None이면 영상에 제목을 띄우지 않는다
     sub: int                 # 자막 윗줄(위 정렬 MarginV)
 
 
 # 화면 배치(channel.toml style.layout). full은 9:16 전체에 텔롭: 위아래 약 250px은 쇼츠 UI가 덮으므로
 # 제목은 위 UI 바로 아래에 위 정렬(가운데보다 위), 자막은 아래 제목·채널 이름 칸 위(1385~ 한 줄)
-LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920, (8, 280), 1385)}
+# clean은 영상만 full에서 제목을 뺀 것: 세로 화면에서 영상이 덜 잘리게 하고, 훅 제목은 band 썸네일에만 둔다.
+# 자막은 band(1465)보다 조금 아래. 더 내리면 쇼츠 아래 제목·채널 이름과 겹친다
+LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920, (8, 280), 1385),
+           "clean": Layout(0, 1920, None, 1510)}
+THUMB_LAYOUT = {"clean": "band"}   # 썸네일 배치가 영상과 다른 것
 GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
+# 목소리·장면 클립 소리(Flow가 만든 효과음) 크기는 채널 style.voice_lufs·sfx_lufs
+VOICE = "loudnorm=I={}:TP=-1.5,aresample=48000,"
+SFX = "loudnorm=I={}:TP=-2,aresample=48000,aformat=channel_layouts=stereo,volume=0.7,"
+SILENCE = "anullsrc=r=48000:cl=stereo,"
 
 
 def ass_color(hex_rgb: str) -> str:
@@ -55,14 +63,22 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 영상 내내 띄운다. starts는 문장 시작 시각(장면 경계)."""
     dur = round(voice_sec + TAIL, 2)
     lay = LAYOUTS[ch.style.layout]
-    args, chains = [], []
+    title = title if lay.title else None
+    args, chains, fx = [], [], []
     if clips:
         same = bool(starts) and len(clips) == len(starts)   # 장면 클립: 짧으면 마지막 화면에서 멈춤
         for i, (c, k) in enumerate(zip(clips, frames(starts or [0], dur, len(clips)), strict=True)):
             args += ([] if same else ["-stream_loop", "-1"]) + ["-i", f"clips/{c}"]   # 예전 스톡 작업은 반복
             pad = f"tpad=stop_mode=clone:stop_duration={k / 30 + 0.1:.2f}," if same else ""
             chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
+            if same:   # 효과음은 장면 클립만(스톡은 배경 음악일 수 있다). 소리 없는 클립 자리는 무음
+                src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
+                fx.append(f"{src}apad,atrim=end={k / 30:.3f},asetpts=PTS-STARTPTS[s{i}]")
         chains.append("".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[bg]")
+        if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 목소리만
+            chains += fx + ["".join(f"[s{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[fx]"]
+        else:
+            fx = []
     else:
         args += ["-f", "lavfi", "-i", GRADIENT.format(*(c[1:] for c in ch.style.background), dur=dur)]
         chains.append(f"[0:v]crop=1080:{lay.h},format=yuv420p[bg]")
@@ -70,7 +86,11 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     if title:
         caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
     # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
-    chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", f"[{n}:a]apad[a]"]
+    # 효과음을 더하면 겹치는 곳이 넘칠 수 있어 리미터로 막는다
+    voice = VOICE.format(ch.style.voice_lufs) if ch.style.voice_lufs else ""
+    voice_a = f"[{n}:a]{voice}apad" + ("[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
+                                       if fx else "[a]")
+    chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", voice_a]
     ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
@@ -95,8 +115,8 @@ def caption_ass(path: Path, lines: list[str], accent: str, max_size: int, pos: t
 
 def thumbnail(job_dir: Path, lines: list[str], accent: str, position: str, ch: Channel, splitter: Splitter,
               clip: str | None = None) -> str:
-    """thumbnail.jpg(1080x1920). 배경은 첫 클립 장면, 없으면 단색. 영상과 같은 배치(band면 위아래 검은 띠). 쓴 배경 종류를 돌려준다."""
-    lay = LAYOUTS[ch.style.layout]
+    """thumbnail.jpg(1080x1920). 배경은 첫 클립 장면, 없으면 단색. 영상과 같은 배치(band면 위아래 검은 띠, clean은 band). 쓴 배경 종류를 돌려준다."""
+    lay = LAYOUTS[THUMB_LAYOUT.get(ch.style.layout, ch.style.layout)]
     caption_ass(job_dir / "thumb.ass", lines, accent, 150, lay.title if position == "top" else THUMB_BOTTOM, ch, splitter)
     if clip:
         # 0.5초 장면. 입력 seek는 0.5초보다 짧은 클립에서 프레임이 없어 실패하니 마지막 프레임을 늘려 둔다

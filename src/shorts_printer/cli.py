@@ -1,5 +1,6 @@
-"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends [키워드]: 주제 찾기 /
-sp youtube-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기 / sp channels: 채널 목록."""
+"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends [키워드] [--idea]: 주제 찾기 /
+sp youtube-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기 / sp channels: 채널 목록 /
+sp migrate: 예전 폴더(json·log.txt)를 DB로."""
 import argparse
 import sys
 
@@ -8,7 +9,7 @@ from .adapters import chrome  # 로그인·Chrome 명령만 adapters를 직접 �
 from .core import channel, pipeline, trends
 from .core.channel import Channel
 from .core.pipeline import Job
-from .infra.store import read_json
+from .infra.store import migrate
 
 
 def _channel(cid: str | None) -> Channel:
@@ -35,11 +36,13 @@ def main() -> None:
     tr = sub.add_parser("trends", help="인기 쇼츠를 분석해 주제를 추천한다")
     tr.add_argument("keyword", nargs="?", default="")
     tr.add_argument("--period", default=trends.DEFAULT_PERIOD, choices=trends.PERIODS)
+    tr.add_argument("--idea", action="store_true", help="영상 분석 없이 채널 기준(ideas.md)으로 주제와 내용을 받는다")
     login = sub.add_parser("youtube-login", help="채널 업로드 권한을 받는다")
     for sp in (run, tr, login):
         sp.add_argument("--channel", help="채널 id(channels/ 폴더 이름). 채널이 하나뿐이면 빼도 된다")
     sub.add_parser("chrome", help="Flow 자동(video.provider = flow-auto)용 Chrome을 띄운다. 처음 한 번 Google 로그인")
     sub.add_parser("channels", help="채널 목록을 보여 준다")
+    sub.add_parser("migrate", help="예전 폴더의 json·log.txt를 DB로 옮긴다(이미 옮긴 것은 건너뛴다, 원본은 남는다)")
     a = p.parse_args()
 
     if a.cmd == "channels":
@@ -48,18 +51,26 @@ def main() -> None:
                   f"video={ch.video.provider} publish={ch.publish.provider}")
         return
 
+    if a.cmd == "migrate":
+        n = migrate()
+        print(f"DB({registry.STORE.path})로 옮김: 작업 {n['job']}개, 주제 찾기 {n['trend']}개, "
+              f"스케줄 {n['schedule']}개")
+        return
+
     if a.cmd == "trends":
         ch = _channel(a.channel)
         sv = registry.services(ch.id)
-        t = trends.Trend.create(ch.id, a.keyword, a.period)
+        t = trends.Trend.create(ch.id, a.keyword, a.period, "idea" if a.idea else "trend")
         print(f"분석 폴더: {t.dir}")
         try:
             trends.run(t, sv)
         except Exception:  # noqa: BLE001 — 키를 가린 오류만 보여 준다
             err = t.data["error"]
             sys.exit(f"실패({err['step']}): {err['message']}")
-        for i, pk in enumerate(read_json(t.dir / "picks.json")["picks"], 1):
+        for i, pk in enumerate(t.doc("picks.json")["picks"], 1):
             print(f"{i}. [{pk['total']}점] {pk['topic']}\n   {pk['angle']}")
+            if pk.get("content"):
+                print(f"   {pk['content']}")
         return
 
     if a.cmd == "youtube-login":

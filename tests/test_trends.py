@@ -1,5 +1,6 @@
 import io
 import json
+import shutil
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -9,7 +10,7 @@ from urllib.error import HTTPError
 import pytest
 
 from shorts_printer.core import channel, pipeline, trends
-from shorts_printer.infra.store import read_json
+from shorts_printer.infra.store import store
 from shorts_printer.ports.llm import add_usage
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
@@ -152,7 +153,7 @@ def test_collect_counts_quota_skips_normal_videos_and_ranks(monkeypatch):
     q = calls[0][1]
     assert q["q"] == "커피" and q["videoDuration"] == "short" and calls[1][1]["id"] == "a,b,c,d"
     assert q["regionCode"] == "KR" and q["relevanceLanguage"] == "ko"
-    vids = read_json(t.dir / "videos.json")
+    vids = t.doc("videos.json")
     assert [(v["id"], v["rank"]) for v in vids] == [("b", 1), ("d", 2), ("a", 3)]
     assert t.data["quota"] == 101
 
@@ -237,8 +238,8 @@ def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
     pipeline.Job.create(CH, "우리 채널 주제", "v")
     pipeline.Job.create("en-space-facts", "다른 채널 주제", "v")
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [])
-    trends.atomic_write_json(t.dir / "analyses.json", {})
+    t.put("videos.json", [])
+    t.put("analyses.json", {})
 
     def stop(*a):
         raise StopIteration
@@ -288,8 +289,8 @@ def video(vid, rank):
 
 def test_analyze_meta_only_when_download_blocked_and_skips_done(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcd", 1)])
-    trends.atomic_write_json(t.dir / "analyses.json", {"a": {"status": "ok", "claude": {}}})
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abcd", 1)])
+    t.put("analyses.json", {"a": {"status": "ok", "claude": {}}})
 
     def blocked(_dir, v, lang):
         assert lang == "ko"
@@ -300,7 +301,7 @@ def test_analyze_meta_only_when_download_blocked_and_skips_done(monkeypatch):
     llm = FakeLLM(lambda *a: (analysis(replicable=0), USAGE))
     monkeypatch.setattr(trends, "media", blocked)
     assert trends.step_analyze(t, sv(llm)) == "영상 1개 · 썸네일만 3개"
-    found = read_json(t.dir / "analyses.json")
+    found = t.doc("analyses.json")
     b = found["b"]
     assert b["status"] == "meta_only" and "bot" in b["error"] and b["claude"]["replicable"] == 1
     assert len(llm.calls) == 3 and all(len(c["images"]) == 1 and c["images"][0].startswith("https://")
@@ -326,7 +327,7 @@ def test_analyze_sends_frames_as_jpeg_bytes(monkeypatch):
 
 def test_analyze_fails_under_three(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
     monkeypatch.setattr(trends, "media", lambda d, v, lang: (_ for _ in ()).throw(RuntimeError("x")))
 
     def answer(system, text, images):
@@ -335,7 +336,7 @@ def test_analyze_fails_under_three(monkeypatch):
         return analysis(), None
     with pytest.raises(RuntimeError, match="1개뿐"):
         trends.step_analyze(t, sv(FakeLLM(answer)))
-    assert read_json(t.dir / "analyses.json")["b"]["status"] == "failed"
+    assert t.doc("analyses.json")["b"]["status"] == "failed"
 
 
 def test_add_usage():
@@ -346,7 +347,7 @@ def test_add_usage():
 
 def test_analyze_interrupt_cancels_waiting_videos(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcdefgh", 1)])
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abcdefgh", 1)])
     started, go = [], threading.Event()
 
     def fake(_dir, v, _sv):
@@ -370,5 +371,71 @@ def test_live_collect():
         pytest.skip("YOUTUBE_API_KEY 없음")
     t = new()
     trends.step_collect(t, sv())
-    vids = read_json(t.dir / "videos.json")
+    vids = t.doc("videos.json")
     assert vids and all(v["duration"] <= trends.MAX_SEC for v in vids)
+
+
+def idea(topic, fit=3, fresh=3, safe=3, content="핵심 답"):
+    return trends.IdeaOut(topic=topic, angle="a", content=content, format="잡학·상식", why_now="w",
+                          scores=trends.Scores(fit=fit, fresh=fresh, safe=safe), search_terms=["x"])
+
+
+def test_create_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="방식"):
+        trends.Trend.create(CH, mode="nope")
+    t = new()
+    assert t.data["mode"] == "trend" and not t.idea
+    store().edit("trend", t.id, lambda d: {k: v for k, v in d.items() if k != "mode"})   # 예전 기록
+    assert "mode" not in t.data and not t.idea
+
+
+def test_finish_ideas_total_without_trend_and_top_10():
+    out = trends.IdeasOut(summary="방향", picks=[idea(f"주제{i}", fit=1 + i % 5) for i in range(12)])
+    r = trends.finish_ideas(out, {"trend": 35, "fit": 35, "fresh": 15, "safe": 15})
+    assert len(r["picks"]) == 10 and r["excluded"] == [] and r["summary"] == "방향"
+    top = r["picks"][0]
+    assert top["scores"] == {"fit": 5, "fresh": 3, "safe": 3} and top["refs"] == [] and top["content"] == "핵심 답"
+    assert top["total"] == round(100 * (35 + 15 * 0.5 + 15 * 0.5) / 65)   # 화제성 35를 빼고 65로 나눈다
+    r = trends.finish_ideas(trends.IdeasOut(summary="s", picks=[idea("x", fit=5, fresh=1, safe=1)]),
+                            {"trend": 100, "fit": 0, "fresh": 0, "safe": 0})
+    assert r["picks"][0]["total"] == 33   # 가중치가 모두 화제성이면 셋을 똑같이
+
+
+def test_idea_run_skips_youtube_and_fills_picks(monkeypatch):
+    monkeypatch.setattr(trends, "ready", lambda: False)
+    monkeypatch.setattr(trends, "_api", lambda *a, **k: pytest.fail("아이디어 모드는 YouTube를 부르지 않는다"))
+    pipeline.Job.create(CH, "우리 채널 주제", "v")
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="궁금증", picks=[idea("손가락 꺾는 소리", content="관절 기포가 터지는 소리")]),
+                              USAGE))
+    t = trends.Trend.create(CH, "겨울", mode="idea")
+    trends.run(t, sv(llm))
+    d = t.data
+    assert d["status"] == "done" and d["steps"]["collect"]["engine"] == "건너뜀" and not d.get("quota")
+    call = llm.calls[0]
+    assert call["system"] == trends.system_idea(channel.load(CH)) and call["images"] == []
+    assert "좁힐 주제: 겨울" in call["text"] and "- 우리 채널 주제" in call["text"] and "화제성" not in call["text"]
+    p = t.doc("picks.json")["picks"][0]
+    assert p["topic"] == "손가락 꺾는 소리" and p["refs"] == [] and t.doc("videos.json") is None
+    b = trends.brief(t, p)
+    assert b.startswith("방향: a\n내용: 관절 기포가 터지는 소리\n포맷: 잡학·상식")
+
+
+def test_system_idea_uses_ideas_md_or_concept_only(tmp_path):
+    ch = channel.load(CH)
+    s = trends.system_idea(ch)
+    assert "알아보기 귀찮았던" in s and ch.concept in s and "난방비" in s and "${" not in s
+    shutil.copytree(ch.dir, tmp_path / CH)
+    (tmp_path / CH / "ideas.md").unlink()
+    s = trends.system_idea(ch.model_copy(update={"dir": tmp_path / CH}))
+    assert "알아보기 귀찮았던" not in s and "비어 있으면 채널 분야 안에서" in s
+
+
+def test_idea_again_avoids_shown_topics():
+    t = trends.Trend.create(CH, "겨울", mode="idea")
+    t.update(avoid=["예전 주제"])
+    t.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "정전기"}, {"topic": "입김"}]})
+    n = t.again()
+    assert (n.data["mode"], n.data["keyword"], n.data["avoid"]) == ("idea", "겨울", ["예전 주제", "정전기", "입김"])
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))
+    trends.run(n, sv(llm))
+    assert "앞서 추천했지만 고르지 않은 주제:\n- 예전 주제\n- 정전기\n- 입김" in llm.calls[0]["text"]

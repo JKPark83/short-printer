@@ -141,12 +141,12 @@ def pipeline():
 def test_publish_records_done_then_failed(yt, pipeline, monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-SECRET")
     job = pipeline.Job.create("ko-40sec-facts", "커피", "ko-KR-SunHiNeural")
-    (job.dir / "script.json").write_text(json.dumps(SCRIPT))
+    job.put("script.json", SCRIPT)
     monkeypatch.setattr(yt, "upload", lambda path, meta, log: "VID" if meta["title"] == "커피 상식" else None)
     pipeline.publish(job, sv(yt))
     up = job.data["upload"]
     assert up["status"] == "done" and up["video_id"] == "VID" and up["at"]
-    assert "업로드 완료: VID (비공개)" in (job.dir / "log.txt").read_text()
+    assert "업로드 완료: VID (비공개)" in "\n".join(job.tail())
 
     def boom(*_):
         raise RuntimeError("quotaExceeded sk-ant-SECRET")
@@ -160,7 +160,7 @@ def test_publish_records_done_then_failed(yt, pipeline, monkeypatch):
 
 def test_thumbnail_is_set_after_upload_and_failure_keeps_upload_done(yt, pipeline, monkeypatch):
     job = pipeline.Job.create("ko-40sec-facts", "커피", "ko-KR-SunHiNeural")
-    (job.dir / "script.json").write_text(json.dumps(SCRIPT))
+    job.put("script.json", SCRIPT)
     (job.dir / "thumbnail.jpg").write_bytes(b"JPG")
     monkeypatch.setattr(yt, "upload", lambda path, meta, log: "VID")
     sent = fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'), Resp(b"{}"))

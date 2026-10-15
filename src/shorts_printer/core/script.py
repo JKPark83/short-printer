@@ -47,8 +47,13 @@ class Revision(BaseModel):
     sentences: list[str] = Field(description="장면마다 내레이션 한 문장. 받은 장면과 같은 개수, 같은 순서")
 
 
-def revise(llm: LLM, ch: Channel, s: dict, note: str) -> tuple[dict, dict]:
-    """완성된 대본(script.json)을 요청대로 고친다. 장면 수와 영상 프롬프트는 그대로."""
+class Draft(Revision):
+    prompts: list[str] = Field(description="장면마다 영어 영상 생성 프롬프트, 스타일 머리말 없이. 받은 장면과 같은 개수")
+
+
+def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False) -> tuple[dict, dict]:
+    """대본(script.json)을 요청대로 고친다. 장면 수는 그대로.
+    draft: 확정 전(장면 영상이 아직 없다)이라 영상 프롬프트도 문장에 맞춰 고친다. 아니면 프롬프트는 그대로."""
     n = len(s["sentences"])
     shots = s.get("prompts") if len(s.get("prompts") or []) == n else [""] * n   # 예전 대본엔 없다
     scenes = "\n".join(f"{i}. {t}" + (f"\n   (화면: {p})" if p else "")
@@ -56,12 +61,48 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str) -> tuple[dict, dict]:
     text = (f"제목: {s['title']}\n설명: {s['description']}\n태그: {', '.join(s['tags'])}\n장면 {n}개:\n{scenes}"
             f"\n\n사용자 수정 요청: {note}")
     refusal = f"{llm.label}가 이 요청으로는 대본을 고치지 않았어요. 요청을 바꿔 보세요."
-    out, usage = llm.ask(system(ch) + "\n\n" + prompts.render("script_revise"), text, Revision,
-                         refusal=refusal, what="고친 대본")
-    sentences = [x.strip() for x in out.sentences]
-    if len(sentences) != n or not all(sentences):
-        raise RuntimeError(f"고친 대본의 장면 수가 맞지 않아요({len(sentences)}/{n}개). 다시 시도하세요.")
-    return s | out.model_dump() | {"sentences": sentences}, usage
+    out, usage = llm.ask(system(ch) + "\n\n" + prompts.render("script_revise_draft" if draft else "script_revise"),
+                         text, Draft if draft else Revision, refusal=refusal, what="고친 대본")
+    new = out.model_dump()
+    for key in ("sentences", "prompts") if draft else ("sentences",):
+        new[key] = [x.strip() for x in new[key]]
+        if len(new[key]) != n or not all(new[key]):
+            raise RuntimeError(f"고친 대본의 장면 수가 맞지 않아요({len(new[key])}/{n}개). 다시 시도하세요.")
+    return s | new, usage
+
+
+class Translation(BaseModel):
+    title: str = Field(description="제목 한국어")
+    description: str = Field(description="설명 한국어")
+    tags: list[str] = Field(description="태그 한국어. 받은 것과 같은 개수, 같은 순서")
+    sentences: list[str] = Field(description="문장 한국어. 받은 것과 같은 개수, 같은 순서")
+    thumb: list[str] = Field(description="썸네일 문구 줄 한국어. 받은 것과 같은 개수")
+    cues: list[str] = Field(description="자막 줄 한국어. 받은 것과 같은 개수, 같은 순서. 받지 않았으면 빈 목록")
+    notes: list[str] = Field(description="원문에서 어색하거나 틀렸거나 오해를 살 만한 곳. 없으면 빈 목록")
+
+
+def ko_source(s: dict, thumb: dict | None) -> dict:
+    """옮길 원문. 웹이 저장된 번역과 견줘 대본·썸네일 문구를 고친 뒤인지 본다."""
+    return {k: s[k] for k in ("title", "description", "tags", "sentences")} | {
+        "thumb": (thumb or {}).get("lines", [])}
+
+
+def translate(llm: LLM, ch: Channel, s: dict, thumb: dict | None,
+              cues: Sequence[str] = ()) -> tuple[dict, dict]:
+    """한국어가 아닌 채널의 대본·썸네일 문구·자막 줄을 운영자가 확인하도록 한국어로 옮긴다.
+    {"src": 원문, "cues": 자막 원문, "ko": 번역}. 자막은 음성 단계 뒤에 생겨 src와 따로 견준다."""
+    src = ko_source(s, thumb)
+    text = "\n".join([f"제목: {src['title']}", f"설명: {src['description']}", f"태그: {', '.join(src['tags'])}",
+                      f"문장 {len(src['sentences'])}개:", *(f"{i}. {t}" for i, t in enumerate(src["sentences"], 1)),
+                      f"썸네일 문구 {len(src['thumb'])}줄:", *src["thumb"],
+                      f"자막 {len(cues)}줄:", *(f"{i}. {t}" for i, t in enumerate(cues, 1))])
+    out, usage = llm.ask(prompts.render("translate", lang=ch.lang_name), text, Translation,
+                         refusal=f"{llm.label}가 이 대본을 옮기지 않았어요.", what="번역")
+    if len(out.sentences) != len(src["sentences"]):
+        raise RuntimeError(f"번역의 문장 수가 맞지 않아요({len(out.sentences)}/{len(src['sentences'])}개). 다시 시도하세요.")
+    if len(out.cues) != len(cues):
+        raise RuntimeError(f"번역의 자막 줄 수가 맞지 않아요({len(out.cues)}/{len(cues)}줄). 다시 시도하세요.")
+    return {"src": src, "cues": list(cues), "ko": out.model_dump()}, usage
 
 
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None,

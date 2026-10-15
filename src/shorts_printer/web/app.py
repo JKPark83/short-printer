@@ -1,10 +1,10 @@
-"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 여섯 단계 진행 보기(장면 클립 올리기) → 완성 영상."""
+"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 대본 확정 → 영상·썸네일 진행 보기(장면 클립 올리기)
+→ 완성 영상."""
 import asyncio
 import logging
 import os
 import re
 import secrets
-import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -18,12 +18,13 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import config, registry
-from ..core import channel, pipeline, scenes, script, trends, voice
+from ..core import channel, pipeline, scenes, schedule, script, trends, voice
 from ..core.channel import Channel
-from ..core.pipeline import LABELS, STEPS, Job
+from ..core.pipeline import LABELS, STEPS, Job, in_review
+from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
-from ..infra.store import read_json, upload_state
+from ..infra.store import migrate, upload_state
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +41,11 @@ STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "d
           "failed": "실패", "interrupted": "중단", "waiting": "클립 대기"}
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
+# 상세 화면 단계 묶음: 대본을 확정해야 영상으로 넘어간다
+PHASES = (("대본", ("script",)), ("영상", ("voice", "subtitles", "footage")), ("썸네일", ("thumbnail",)),
+          ("완성", ("render",)))
+# 스케줄 회차 배지(글, 색)
+RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
 # Lucide 아이콘 경로(ISC 라이선스). 이모지 대신 쓴다.
 ICONS = {
     "check": '<path d="M20 6 9 17l-5-5"/>',
@@ -78,6 +84,22 @@ ICONS = {
     "film": (
         '<rect width="18" height="18" x="3" y="3" rx="2"/>'
         '<path d="M7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4"/>'),
+    "clock": '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    "plus": '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    "list": ('<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/>'
+             '<path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>'),
+    "pencil": (
+        '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622'
+        'l4.353-1.32a2 2 0 0 0 .83-.497z"/>'
+        '<path d="m15 5 4 4"/>'),
+    "bell": (
+        '<path d="M10.268 21a2 2 0 0 0 3.464 0"/>'
+        '<path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8'
+        'c0 4.499-1.411 5.956-2.738 7.326"/>'),
+    "send": (
+        '<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937'
+        'l7.93 3.18a2 2 0 0 1 1.112 1.11z"/>'
+        '<path d="m21.854 2.147-10.94 10.939"/>'),
 }
 q = registry.queue()   # 작업 큐 하나(registry가 cache)
 NODE_ICON = {"pending": "circle", "running": "loader", "done": "check", "failed": "x"}
@@ -96,6 +118,10 @@ def sig(data: dict) -> str:
             f':{(data.get("upload") or {}).get("status", "-")}')
 
 
+def status_label(data: dict) -> str:
+    return "대본 확인" if in_review(data) else STATUS[data["status"]]
+
+
 def say(data: dict) -> str:
     """화면 읽기 프로그램에 알릴 한 줄."""
     running = [LABELS[s] for s in STEPS if data["steps"][s]["status"] == "running"]
@@ -108,7 +134,7 @@ def say(data: dict) -> str:
         return "YouTube 업로드 실패"
     if data["status"] == "failed":
         return f'실패: {LABELS[data["error"]["step"]]}'
-    return STATUS[data["status"]]
+    return status_label(data)
 
 
 def tsig(data: dict) -> str:
@@ -149,6 +175,24 @@ def ago(hours: float | None) -> str:
     return f"{round(hours)}시간 전" if hours < 24 else f"{round(hours / 24)}일 전"
 
 
+def at(v: datetime | str | None) -> str:
+    """스케줄 시각: 10/16(목) 09:00."""
+    if not v:
+        return ""
+    dt = (datetime.fromisoformat(v) if isinstance(v, str) else v).astimezone()
+    return f"{dt:%m/%d}({schedule.DAYS[dt.weekday()]}) {dt:%H:%M}"
+
+
+def until(dt: datetime) -> str:
+    """다음 실행까지: 곧, 12분 뒤, 3시간 20분 뒤, 2일 뒤."""
+    m = max(0, round((dt - datetime.now().astimezone()).total_seconds() / 60))
+    if m >= 1440:
+        return f"{round(m / 1440)}일 뒤"
+    if m >= 60:
+        return f"{m // 60}시간{f' {m % 60}분' if m % 60 else ''} 뒤"
+    return f"{m}분 뒤" if m else "곧"
+
+
 def mmss(sec: float | None) -> str:
     if sec is None:
         return ""
@@ -161,8 +205,9 @@ def cue_ts(sec: float) -> str:
 
 
 def job_cost(j: dict) -> float | None:
-    """대본 + 썸네일 Claude 비용. 둘 다 모르면 None."""
-    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage")) if u and u["cost_usd"] is not None]
+    """대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
+    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
+             if u and u["cost_usd"] is not None]
     return round(sum(costs), 4) if costs else None
 
 
@@ -172,14 +217,20 @@ def recover() -> None:
     # 둘을 같이 쓰려면 상태 json에 pid를 남겨 살아 있는지 볼 것
     for root in (config.JOBS_DIR, config.TRENDS_DIR):
         root.mkdir(parents=True, exist_ok=True)
+    # 스케줄 것이면 실패 알림을 보낸다(after_*는 손으로 만든 것엔 아무것도 하지 않는다)
     for t in Trend.all():
-        t.interrupt()
+        if t.data["status"] in ACTIVE:
+            t.interrupt()
+            schedule.after_trend(t, q, q.notify)
     for job in Job.all():
-        job.interrupt()
+        if job.data["status"] in ACTIVE:
+            job.interrupt()
+            schedule.after_job(job, "run", q, q.notify)
         # PUT이 끝났을 수도 있어 다시 올리기 전에 확인하게 한다(같은 영상 두 번 올리기 방지)
         if (job.data.get("upload") or {}).get("status") in ACTIVE:
             job.update(upload=upload_state(
                 "failed", error="서버가 꺼져 멈췄어요. 올라갔는지 YouTube 스튜디오에서 먼저 확인하세요."))
+            schedule.after_job(job, "upload", q, q.notify)
     for root in (config.JOBS_DIR, config.TRENDS_DIR):
         for pattern in ("*.tmp", "*.tmp.mp4"):
             for p in root.rglob(pattern):
@@ -188,6 +239,9 @@ def recover() -> None:
 
 @asynccontextmanager
 async def lifespan(_app):
+    # 예전 폴더(json·log.txt)를 DB로. 이미 옮긴 id는 건너뛴다
+    if moved := {k: n for k, n in migrate().items() if n}:
+        log.warning("DB로 옮김: %s", moved)
     recover()
     q.start()
     yield
@@ -228,8 +282,9 @@ templates.env.globals |= {
     "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "LABELS": LABELS, "STATUS": STATUS, "STATE": STATE,
     "ACTIVE": ACTIVE, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS, "ALL": ALL, "LANGS": channel.LANGS,
     "QUOTA_PER_RUN": QUOTA_PER_RUN, "QUOTA_DAY": QUOTA_DAY, "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON,
+    "schedule": schedule, "PHASES": PHASES, "status_label": status_label, "in_review": in_review,
 }
-templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "kn": kn, "ago": ago}
+templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "kn": kn, "ago": ago, "at": at, "until": until}
 
 
 def _load(cls, rec_id: str):
@@ -278,12 +333,11 @@ def _page(request: Request, name: str, ctx: dict):
 
 
 def _picks(trend: Trend) -> list[dict]:
-    return (read_json(trend.dir / "picks.json") or {}).get("picks", [])
+    return (trend.doc("picks.json") or {}).get("picks", [])
 
 
 def _tail(job: Job | Trend, n: int = 200) -> list[str]:
-    p = job.dir / "log.txt"
-    return p.read_text(encoding="utf-8").splitlines()[-n:] if p.exists() else []
+    return job.tail(n)
 
 
 def _stats(jobs: list[dict], goal: int) -> dict:
@@ -313,11 +367,15 @@ def _checks(cid: str) -> list[tuple[str, str, str]]:
     checks += [("ok" if p.ready() else "warn", f"영상 · {p.label}" + (" (이 채널)" if k == mine else ""), p.hint)
                for k, p in registry.VIDEOS.items()]
     pub = sv.publisher
+    on = [n.label for n in registry.NOTIFIERS.values() if n.ready()]
     return checks + [
         ("ok" if sv.tts.ready() else "bad", f"음성 · {sv.tts.label}", sv.tts.hint),
         ("ok" if pub.ready() else "warn", f"{pub.label} 업로드", pub.hint),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
         else ("warn", "YouTube Data API 키", "선택 · 주제 찾기용 · .env에 YOUTUBE_API_KEY"),
+        ("ok", f"알림 · {'·'.join(on)}", "스케줄 작업의 업로드 완료·실패·확인 필요를 보내요") if on
+        else ("warn", "알림",
+              "선택 · 스케줄 결과 받기 · " + " 또는 ".join(n.hint for n in registry.NOTIFIERS.values())),
     ]
 
 
@@ -331,19 +389,21 @@ def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
 
 
 def _can_upload(data: dict) -> bool:
-    """클립을 올리거나 바꿀 수 있나: 만들거나 YouTube에 올리는 중이 아닐 때(올린 뒤에 바꾸면 새로 올린다)."""
-    return data["status"] not in ACTIVE and (data.get("upload") or {}).get("status") not in ACTIVE
+    """클립을 올리거나 바꿀 수 있나: 대본을 확정했고, 만들거나 YouTube에 올리는 중이 아닐 때
+    (올린 뒤에 바꾸면 새로 올린다)."""
+    return (data["status"] not in ACTIVE and not in_review(data)
+            and (data.get("upload") or {}).get("status") not in ACTIVE)
 
 
 def _scenes(job: Job) -> list[dict]:
     """장면 카드용. 끝난 예전 작업(클립 수 ≠ 문장 수)은 []를 돌려 예전 화면으로 보인다."""
-    s = read_json(job.dir / "script.json")
+    s = job.doc("script.json")
     if not s:
         return []
-    clips = {c["file"]: c for c in read_json(job.dir / "clips.json", [])}
+    clips = {c["file"]: c for c in job.doc("clips.json", [])}
     if job.data["steps"]["footage"]["status"] == "done" and len(clips) != len(s["sentences"]):
         return []
-    out = scenes.scenes(s, read_json(job.dir / "timing.json"))
+    out = scenes.scenes(s, job.doc("timing.json"))
     for x in out:
         p = job.dir / "clips" / x["file"]
         x["v"] = p.stat().st_mtime_ns if p.exists() else None   # 미리보기 캐시 깨기(같은 초에 바꿔도)
@@ -375,7 +435,8 @@ def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form(""
         if pick is None or not 0 <= pick < len(picks):
             raise HTTPException(400, "그 추천을 찾지 못했어요")
         p = picks[pick]
-        job = Job.create(ch.id, p["topic"], voice, brief=trends.brief(t.dir, p), source={"trend": trend, "pick": pick})
+        job = Job.create(ch.id, p["topic"], voice, brief=trends.brief(t, p), source={"trend": trend, "pick": pick},
+                         review=True)
         q.enqueue(job.id)
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
     ch = _channel(cid, 400)
@@ -384,7 +445,7 @@ def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form(""
     topic = topic.strip()
     if not 1 <= len(topic) <= 200:
         raise HTTPException(400, "주제는 1~200자로 넣어 주세요")
-    job = Job.create(ch.id, topic, voice)
+    job = Job.create(ch.id, topic, voice, review=True)
     q.enqueue(job.id)
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
@@ -393,11 +454,15 @@ def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form(""
 def job_page(request: Request, job_id: str):
     job = _load(Job, job_id)
     ch = _channel(job.data.get("channel"))
+    s, thumb, ko, cues = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json"), job.doc("cues.json")
     return _page(request, "job.html", {
         "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
-        "script": read_json(job.dir / "script.json"), "clips": read_json(job.dir / "clips.json"),
-        "cues": read_json(job.dir / "cues.json"), "has_thumb": (job.dir / "thumbnail.jpg").exists(),
-        "thumb": read_json(job.dir / "thumb.json"), "log": _tail(job),
+        "script": s, "clips": job.doc("clips.json"),
+        "cues": cues, "has_thumb": (job.dir / "thumbnail.jpg").exists(),
+        "thumb": thumb, "log": _tail(job),
+        "ko": ko, "ko_stale": bool(ko and s and ko["src"] != script.ko_source(s, thumb)),
+        # 옮긴 뒤 자막을 고쳤거나 옮길 때 자막이 없었으면 자막 뜻은 안 보인다
+        "ko_cues": ko["ko"]["cues"] if ko and cues and ko.get("cues") == [c["text"] for c in cues] else None,
         "scenes": _scenes(job), "can_upload": _can_upload(job.data)})
 
 
@@ -418,20 +483,24 @@ def retry(job_id: str):
 
 @app.post("/api/jobs/{job_id}/delete")
 def delete_job(job_id: str):
-    """작업 폴더를 통째로 지운다. 이미 올린 YouTube 영상은 그대로 둔다."""
+    """작업 기록과 폴더를 지운다. 이미 올린 YouTube 영상은 그대로 둔다."""
     job = _load(Job, job_id)
     with q.lock:   # 검사와 지우기 사이에 작업이 시작되지 않게
         data = job.data
         if data["status"] in ACTIVE or (data.get("upload") or {}).get("status") in ACTIVE:
             raise HTTPException(409, "제작·업로드 중인 작업은 지울 수 없어요")
-        shutil.rmtree(job.dir)
+        job.delete()
     return {"ok": True}
 
 
 @app.post("/api/jobs/{job_id}/confirm")
 def confirm(job_id: str):
-    """민감 분야 대본을 사람이 확인했다. 장면 만들기부터 이어서."""
-    _load(Job, job_id).update(confirmed=True)
+    """대본(민감 분야 포함)을 사람이 확인했다. 멈춘 단계부터 이어서."""
+    job = _load(Job, job_id)
+    with q.lock:   # 고쳐 쓰는 중(queued·running)에 확정하면 고치기 전 대본을 확정한 셈이 된다
+        if job.data["status"] != "waiting":
+            raise HTTPException(409, "지금은 확정할 수 없어요")
+        job.update(confirmed=True)
     return retry(job_id)
 
 
@@ -442,11 +511,11 @@ def _note(note: str) -> str:
 
 
 def _redo(job_id: str, steps: tuple, **kw) -> None:
-    """완성 뒤 고치기. 만들거나 올리는 중이면 409."""
+    """확정 전·완성 뒤 고치기. 만들거나 올리는 중이면 409."""
     job = _load(Job, job_id)
     if not q.redo(job_id, steps, **kw):
-        done = job.data["status"] in ("done", "failed", "interrupted")
-        raise HTTPException(409, "올리는 중에는 고칠 수 없어요" if done else "완성된 작업만 고칠 수 있어요")
+        done = job.data["status"] in ("done", "failed", "interrupted", "waiting")
+        raise HTTPException(409, "올리는 중에는 고칠 수 없어요" if done else "만드는 중에는 고칠 수 없어요")
 
 
 @app.post("/api/jobs/{job_id}/thumbnail")
@@ -473,12 +542,12 @@ def _clean(s: str) -> str:
 @app.post("/api/jobs/{job_id}/edit")
 def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
               sentences: list[str] = Form([]), voice: str = Form(""), cues: list[str] = Form([]),  # noqa: B008
-              thumb: list[str] = Form([]), accent: str = Form("")):  # noqa: B008
+              thumb: list[str] = Form([]), accent: str = Form(""), prompts: list[str] = Form([])):  # noqa: B008
     """상세 화면에서 손으로 고친 값. 바뀐 칸을 보고 다시 할 단계만 고른다.
     문장·목소리 → 음성부터(자막은 새로 나뉘어 고친 자막 줄은 버린다), 자막 줄 → 렌더, 썸네일 문구 → 썸네일·렌더.
-    제목·설명·태그만이면 저장만. 장면 클립은 그대로."""
+    제목·설명·태그만이면 저장만. 장면 클립은 그대로. 장면 프롬프트는 확정 전(클립을 아직 안 만들었을 때)만 받는다."""
     job = _load(Job, job_id)
-    old, was = read_json(job.dir / "script.json"), job.data["voice"]
+    old, was = job.doc("script.json"), job.data["voice"]
     lines, title, voice = [_clean(s) for s in sentences], title.strip(), voice or was
     ch = _channel(job.data.get("channel"))
     if voice != was and voice not in ch.tts.voices:
@@ -494,17 +563,24 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
     tags = [t for t in (x.strip().lstrip("#").strip() for x in tags.split(",")) if t]
     files = {"script.json": old | {"title": title, "description": description.strip(), "tags": tags,
                                    "sentences": lines}}
+    if prompts:
+        if not in_review(job.data):
+            raise HTTPException(409, "장면 프롬프트는 대본을 확정하기 전에만 고칠 수 있어요")
+        shots = [_clean(x) for x in prompts]
+        if len(shots) != len(lines) or not all(shots) or any(len(x) > 1000 for x in shots):
+            raise HTTPException(400, "장면 프롬프트는 장면 수만큼, 비우지 않고 1000자 안으로 적어 주세요")
+        files["script.json"]["prompts"] = shots
     fields, steps = {"voice": voice}, set()
     if lines != old["sentences"] or voice != was:
         steps |= {"voice", "subtitles", "render"}
-    elif cues and (before := read_json(job.dir / "cues.json")):
+    elif cues and (before := job.doc("cues.json")):
         texts = [_clean(c) for c in cues]
         if len(texts) != len(before) or not all(texts) or any(len(t) > 40 for t in texts):
             raise HTTPException(400, "자막은 줄 수 그대로, 비우지 않고 40자 안으로 적어 주세요")
         if texts != [c["text"] for c in before]:
             files["cues.json"] = [c | {"text": t} for c, t in zip(before, texts, strict=True)]
             steps.add("render")
-    if thumb and (t := read_json(job.dir / "thumb.json")):
+    if thumb and (t := job.doc("thumb.json")):
         hand = [_clean(x) for x in thumb if x.strip()]
         # 문구에 없는 강조는 뺀다
         accent = accent.strip() if accent.strip() and accent.strip() in " ".join(hand) else ""
@@ -514,7 +590,8 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
                 raise HTTPException(400, f"썸네일 문구는 1~2줄, 줄마다 {cap}자 안으로 적어 주세요")
             fields["thumb_hand"] = {"lines": hand, "accent": accent}
             steps |= {"thumbnail", "render"}
-    steps = tuple(s for s in STEPS if s in steps)
+    # 확정 전엔 음성부터 아직 안 했으니 다시 할 것 없이 저장만(확정하면 그때 만든다)
+    steps = () if in_review(job.data) else tuple(s for s in STEPS if s in steps)
     _redo(job_id, steps, files=files, **fields)
     redo = "·".join(LABELS[s] for s in steps)
     return {"ok": True, "msg": f"저장했어요. {redo}를 다시 해요" if steps else "저장했어요"}
@@ -524,8 +601,27 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
 def revise_script(job_id: str, note: str = Form("")):
     if not (note := _note(note)):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
+    review = in_review(_load(Job, job_id).data)
     _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
-    return {"ok": True, "msg": "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
+    return {"ok": True, "msg": "Claude가 대본을 고쳐요. 끝나면 다시 확인해 주세요" if review
+            else "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
+
+
+@app.post("/api/jobs/{job_id}/translate")
+def translate(job_id: str):
+    """한국어가 아닌 채널: 운영자가 확인하도록 대본·썸네일 문구를 한국어로 옮긴다. 작업 단계는 다시 하지 않는다."""
+    job = _load(Job, job_id)
+    if not (s := job.doc("script.json")):
+        raise HTTPException(409, "대본이 아직 없어요")
+    sv = registry.services(job.data["channel"])
+    try:
+        ko, usage = script.translate(sv.llm, sv.channel, s, job.doc("thumb.json"),
+                                     [c["text"] for c in job.doc("cues.json") or []])
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from None
+    job.put("ko.json", ko)
+    job.update(ko_usage=usage)
+    return {"ok": True, "msg": "한국어로 옮겼어요"}
 
 
 @app.post("/api/jobs/{job_id}/upload")
@@ -545,7 +641,7 @@ def upload(job_id: str):
 async def put_clip(request: Request, job_id: str, i: int):
     """장면 i(0부터) 클립 원본을 raw body로 받는다. 다 모이면 이어서, 완성 뒤 교체면 뒤 단계만 다시."""
     job = _load(Job, job_id)
-    s = read_json(job.dir / "script.json")
+    s = job.doc("script.json")
     if not s or not _can_upload(job.data):   # 큰 파일을 받기 전에 거절
         raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
     if not 0 <= i < len(s["sentences"]):
@@ -578,11 +674,11 @@ async def put_clip(request: Request, job_id: str, i: int):
             if not _can_upload(job.data):   # 받는 사이 다시 시도·업로드가 시작됐다
                 raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
             os.replace(tmp, dst)
-            scenes.set_clip(job.dir, {"file": dst.name, "source": "직접 올림"})
+            scenes.set_clip(job, {"file": dst.name, "source": "직접 올림"})
             job.log(f"장면 {i + 1} 클립 올림 ({size // 1024}KB)")
             if job.data["steps"]["footage"]["status"] == "done":   # 완성(또는 뒤 단계 실패) 뒤 교체: 다음 단계만
                 q.redo(job_id, ("thumbnail", "render") if i == 0 else ("render",))
-            elif not pipeline.missing_clips(job.dir):
+            elif not pipeline.missing_clips(job):
                 q.enqueue(job_id)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -604,7 +700,7 @@ def trends_page(request: Request):
 
 
 @app.post("/trends")
-def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERIOD),
+def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERIOD), mode: str = Form("trend"),
                  cid: str = Form("", alias="channel")):
     ch = _channel(cid, 400)
     keyword = keyword.strip()
@@ -612,21 +708,33 @@ def create_trend(keyword: str = Form(""), period: str = Form(trends.DEFAULT_PERI
         raise HTTPException(400, "키워드는 50자 이내로 넣어 주세요")
     if period not in trends.PERIODS:
         raise HTTPException(400, "모르는 기간이에요")
-    if not trends.ready():
+    if mode not in trends.MODES:
+        raise HTTPException(400, "모르는 방식이에요")
+    if mode == "trend" and not trends.ready():   # 아이디어 모드는 YouTube를 부르지 않는다
         raise HTTPException(400, "YouTube Data API 키가 없어요. .env에 YOUTUBE_API_KEY를 넣고 서버를 다시 켜세요.")
-    trend = Trend.create(ch.id, keyword, period)
+    trend = Trend.create(ch.id, keyword, period, mode)
     q.enqueue_trend(trend.id)
     return RedirectResponse(f"/trends/{trend.id}", status_code=303)
+
+
+@app.post("/trends/{trend_id}/again")
+def trend_again(trend_id: str):
+    trend = _load(Trend, trend_id)
+    if not trend.idea or trend.data["status"] != "done":
+        raise HTTPException(409, "끝난 아이디어 추천만 다시 뽑을 수 있어요")
+    new = trend.again()
+    q.enqueue_trend(new.id)
+    return RedirectResponse(f"/trends/{new.id}", status_code=303)
 
 
 @app.get("/trends/{trend_id}")
 def trend_page(request: Request, trend_id: str):
     trend = _load(Trend, trend_id)
-    videos = read_json(trend.dir / "videos.json", [])
+    videos = trend.doc("videos.json", [])
     return _page(request, "trend.html", {
         "t": trend.data, "ch": _channel(trend.data.get("channel")),
         "videos": videos, "vids": {v["id"]: v for v in videos},
-        "analyses": read_json(trend.dir / "analyses.json", {}), "picks": read_json(trend.dir / "picks.json"),
+        "analyses": trend.doc("analyses.json", {}), "picks": trend.doc("picks.json"),
         "log": _tail(trend)})
 
 
@@ -643,3 +751,190 @@ def trend_retry(trend_id: str):
     if not q.enqueue_trend(trend_id):
         raise HTTPException(409, "이미 끝난 분석이에요" if trend.data["status"] == "done" else "이미 분석 중이에요")
     return {"ok": True}
+
+
+# ---------- 스케줄 ----------
+
+def _notifiers() -> list[tuple[str, bool, str]]:
+    return [(n.label, n.ready(), n.hint) for n in registry.NOTIFIERS.values()]
+
+
+def _run_view(run: dict) -> dict:
+    """회차 한 줄의 배지(label·cls)·링크·주제. 시작한 회차는 작업·주제 찾기의 지금 상태를 보여 준다."""
+    label, cls = RUN.get(run["result"], ("", ""))
+    view = {"label": label, "cls": cls, "href": None, "topic": run["topic"]}
+    try:
+        if run["job"]:
+            job = Job.load(run["job"])
+            d, up = job.data, (job.data.get("upload") or {}).get("status")
+            view |= {"href": f"/jobs/{job.id}", "topic": run["topic"] or d["topic"]}
+            if run["result"] != "started":
+                return view
+            st = d["status"]
+            if up == "done":
+                return view | {"label": "업로드됨", "cls": "b-up"}
+            if up in ACTIVE:
+                return view | {"label": "올리는 중", "cls": "b-running"}
+            if up == "failed":
+                return view | {"label": "업로드 실패", "cls": "b-failed"}
+            sc = job.doc("script.json") if st == "waiting" else None
+            if sc and sc.get("sensitive") and not d.get("confirmed"):
+                return view | {"label": "확인 필요", "cls": "b-waiting"}
+            return view | {"label": STATUS[st], "cls": {"draft": "b-queued"}.get(st, f"b-{st}")}
+        if run["trend"]:
+            st = Trend.load(run["trend"]).data["status"]
+            view["href"] = f"/trends/{run['trend']}"
+            if run["result"] == "started":   # 작업 없이 멈춘 주제 찾기(중단 등)는 그 상태를 보인다
+                view |= {"label": "주제 찾는 중", "cls": "b-running"} if st in ("draft", *ACTIVE) \
+                    else {"label": TSTATUS[st], "cls": f"b-{st}"}
+    except FileNotFoundError:
+        view |= {"label": view["label"] if run["result"] != "started" else "지워진 작업", "href": None}
+    return view
+
+
+def _manual(ch: Channel | None) -> str:
+    """지금 이 채널이 클립을 사람이 올려야 하면 그 공급자 이름(스케줄 작업이 멈춘다)."""
+    if not ch:
+        return ""
+    name, p = registry.video(ch)
+    return p.label if name == registry.FALLBACK_VIDEO else ""
+
+
+def _card(s: Schedule, now: datetime) -> dict:
+    d = s.data
+    w = schedule.When(**d["when"])
+    nxt = schedule.next_runs(w, now, 1) if d["enabled"] else []
+    return d | {"summary": schedule.summary(w), "next": nxt[0] if nxt else None, "busy": schedule.busy(d),
+                "last": d["runs"][-1] | _run_view(d["runs"][-1]) if d["runs"] else None}
+
+
+def _preview(w: schedule.When) -> dict:
+    nxt = schedule.next_runs(w, datetime.now().astimezone())
+    return {"summary": schedule.summary(w), "next": [{"iso": t.isoformat(), "label": at(t), "rel": until(t)}
+                                                     for t in nxt]}
+
+
+async def _fields(request: Request) -> dict:
+    """스케줄 폼 → Schedule.create·change 인자(+channel). 시각이 틀리면 400. 나머지 검사는 core가 한다."""
+    f = await request.form()
+    when = {"kind": f.get("kind", ""), "times": [t for t in f.getlist("times") if t], "days": f.getlist("days")}
+    when |= {k: f[k] for k in ("every", "start", "end") if f.get(k)}   # 비우면 기본값
+    try:
+        when = schedule.parse_when(when)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return {"channel": f.get("channel", ""), "name": f.get("name", ""), "source": f.get("source", ""),
+            "voice": f.get("voice", ""), "keyword": f.get("keyword", ""),
+            "period": f.get("period", trends.DEFAULT_PERIOD), "topics": f.get("topics", "").splitlines(), "when": when}
+
+
+@app.get("/schedules")
+def schedules_page(request: Request):
+    sel, chs, now = _sel(request), _channels(), datetime.now().astimezone()
+    items = [_card(s, now) for s in Schedule.all() if sel in (ALL, s.data["channel"])]
+    items.sort(key=lambda c: (c["next"] is None, c["next"] or now))   # 다음에 도는 것부터, 꺼진 것은 뒤로
+    pub = {c: registry.publisher(chs[c]) for c in {i["channel"] for i in items} if c in chs}
+    return _page(request, "schedules.html", {
+        "items": items, "ch": chs.get(sel), "notifiers": _notifiers(), "trend_ok": trends.ready(),
+        "pub_bad": [p for p in pub.values() if not p.ready()][:1], "active": any(i["busy"] for i in items)})
+
+
+@app.get("/schedules/new")
+def new_schedule_page(request: Request):
+    sel = _sel(request)
+    ch = None if sel == ALL else _channels().get(sel)
+    w = schedule.When(kind="times", times=["09:00"])
+    s = {"name": "", "source": "trend", "keyword": "", "period": trends.DEFAULT_PERIOD, "topics": [],
+         "voice": ch.tts.default if ch else "", "when": w.model_dump(), "enabled": True}
+    return _page(request, "schedule.html", {"s": s, "ch": ch, "preview": _preview(w), "notifiers": _notifiers(),
+                                            "trend_ok": trends.ready(), "runs": [], "manual": _manual(ch)})
+
+
+@app.get("/schedules/{sid}")
+def schedule_page(request: Request, sid: str):
+    s = _load(Schedule, sid)
+    d = s.data
+    runs = [r | _run_view(r) for r in reversed(d["runs"])]
+    ch = _channel(d["channel"])
+    return _page(request, "schedule.html", {
+        "s": d, "ch": ch, "preview": _preview(schedule.When(**d["when"])), "manual": _manual(ch),
+        "notifiers": _notifiers(), "trend_ok": trends.ready(), "runs": runs, "active": schedule.busy(d)})
+
+
+@app.post("/schedules")
+async def create_schedule(request: Request):
+    f = await _fields(request)
+    ch = _channel(f.pop("channel"), 400)
+    try:
+        Schedule.create(ch.id, **f)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from None
+    return RedirectResponse("/schedules", status_code=303)
+
+
+@app.post("/api/schedules/preview")
+async def preview_schedule(request: Request):
+    """폼의 시각 값으로 요약과 다음 실행 5번. 저장하지 않는다."""
+    return _preview((await _fields(request))["when"])
+
+
+@app.post("/api/schedules/{sid}")
+async def save_schedule(request: Request, sid: str):
+    s = _load(Schedule, sid)
+    f = await _fields(request)
+    del f["channel"]   # 채널은 바꾸지 않는다
+    base = (await request.form()).get("topics_base", "").splitlines()   # 화면을 열 때의 주제 목록
+    with q.lock:
+        used = set(base) - set(s.data["topics"])   # 그 뒤 회차가 쓴 주제는 다시 넣지 않는다(같은 영상 두 번)
+        f["topics"] = [t for t in f["topics"] if t.strip() not in used]
+        try:
+            s.change(**f)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+    return RedirectResponse("/schedules", status_code=303)
+
+
+@app.post("/api/schedules/{sid}/toggle")
+def toggle_schedule(sid: str):
+    s = _load(Schedule, sid)
+    with q.lock:
+        on = not s.data["enabled"]
+        try:
+            s.change(enabled=on)
+        except ValueError as e:   # 주제 목록이 빈 채로 켜기
+            raise HTTPException(400, str(e)) from None
+    return {"ok": True, "enabled": on, "msg": "켰어요. 다음 시각부터 돌아요" if on else "껐어요"}
+
+
+@app.post("/api/schedules/{sid}/run")
+def run_schedule(sid: str):
+    """[지금 실행]: 정해진 시각을 기다리지 않고 한 회차를 시작한다(꺼진 스케줄도). 다음 예정 시각은 그대로."""
+    s = _load(Schedule, sid)
+    if s.data["source"] == "trend" and not trends.ready():
+        raise HTTPException(400, "YouTube Data API 키가 없어 추천 주제를 찾을 수 없어요. "
+                                 ".env에 YOUTUBE_API_KEY를 넣어 주세요.")
+    run = schedule.fire(s, q, q.notify, datetime.now().astimezone())
+    msg = {"started": f"시작했어요: {run['topic']}" if run["topic"] else "추천 주제를 찾기 시작했어요"}
+    return {"ok": run["result"] == "started", "result": run["result"], "msg": msg.get(run["result"], run["note"])}
+
+
+@app.post("/api/schedules/{sid}/delete")
+def delete_schedule(sid: str):
+    """스케줄만 지운다. 이미 만든 작업·올린 영상은 남는다(진행 중인 작업은 자동 업로드·알림 없이 끝난다)."""
+    s = _load(Schedule, sid)
+    with q.lock:   # 회차 기록과 겹치지 않게
+        s.delete()
+    return {"ok": True}
+
+
+@app.post("/api/notify/test")
+def notify_test():
+    sent = registry.notify("[테스트] shorts-printer 알림이에요. 스케줄 결과가 이렇게 와요.")
+    if not sent:
+        hints = " 또는 ".join(n.hint for n in registry.NOTIFIERS.values())
+        raise HTTPException(400, f"알림 설정이 없어요. {hints}. 넣은 뒤 서버를 다시 켜세요.")
+    ok = [label for label, err in sent if not err]
+    bad = " · ".join(f"{label}: {err}" for label, err in sent if err)
+    if not ok:
+        raise HTTPException(502, bad)
+    return {"ok": True, "msg": f"{'·'.join(ok)}로 보냈어요" + (f" ({bad})" if bad else "")}
