@@ -105,6 +105,20 @@ def test_draft_revise_rewrites_prompts_too(ko):
         script.revise(FakeLLM(out.model_copy(update={"prompts": ["p1"]})), ko, s, "줄여 줘", draft=True)
 
 
+def test_translate_sends_script_and_thumb_and_keeps_source(ko):
+    s = OK.flat()
+    out = script.Translation(title="제목", description="d", tags=["a"], sentences=["하나", "둘"], thumb=["줄"],
+                             cues=[], notes=[])
+    llm = FakeLLM(out)
+    got, _ = script.translate(llm, ko, s, {"lines": ["ライン"], "accent": 0})
+    assert got["ko"]["sentences"] == ["하나", "둘"] and got["src"] == script.ko_source(s, {"lines": ["ライン"]})
+    assert "썸네일 문구 1줄:\nライン" in llm.calls[0]["text"] and "2. " in llm.calls[0]["text"]
+    with pytest.raises(RuntimeError, match="문장 수"):
+        script.translate(FakeLLM(out.model_copy(update={"sentences": ["하나"]})), ko, s, None)
+    with pytest.raises(RuntimeError, match="자막 줄 수"):
+        script.translate(llm, ko, s, None, ["両替は"])
+
+
 # Claude 어댑터
 
 def fake_client(monkeypatch, resp=None, exc=None):

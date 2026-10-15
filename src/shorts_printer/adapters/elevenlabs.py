@@ -11,6 +11,8 @@ ELEVENLABS = "https://api.elevenlabs.io/v1/text-to-speech/{}/with-timestamps?out
 
 def words(chars: list[str], starts: list[float]) -> list[dict]:
     """글자별 시작 시각을 띄어쓰기 단위 낱말로 묶는다."""
+    if not any(c.isspace() for c in chars):   # 일본어는 띄어쓰기가 없어 묶으면 문장 하나가 된다: 글자마다 그대로 쓴다
+        return [{"text": c, "start": t} for c, t in zip(chars, starts, strict=False)]
     out, new = [], True
     for c, t in zip(chars, starts, strict=False):
         if c.isspace():

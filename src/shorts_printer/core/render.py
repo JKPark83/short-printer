@@ -38,8 +38,9 @@ LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920
            "clean": Layout(0, 1920, None, 1510)}
 THUMB_LAYOUT = {"clean": "band"}   # 썸네일 배치가 영상과 다른 것
 GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
-# 장면 클립 소리(Flow가 만든 효과음)를 클립마다 목소리 크기(약 -21 LUFS)로 맞춘 뒤 70%로 깐다
-SFX = "loudnorm=I=-21:TP=-2,aresample=48000,aformat=channel_layouts=stereo,volume=0.7,"
+# 목소리·장면 클립 소리(Flow가 만든 효과음) 크기는 채널 style.voice_lufs·sfx_lufs
+VOICE = "loudnorm=I={}:TP=-1.5,aresample=48000,"
+SFX = "loudnorm=I={}:TP=-2,aresample=48000,aformat=channel_layouts=stereo,volume=0.7,"
 SILENCE = "anullsrc=r=48000:cl=stereo,"
 
 
@@ -71,7 +72,7 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
             pad = f"tpad=stop_mode=clone:stop_duration={k / 30 + 0.1:.2f}," if same else ""
             chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
             if same:   # 효과음은 장면 클립만(스톡은 배경 음악일 수 있다). 소리 없는 클립 자리는 무음
-                src = f"[{i}:a]{SFX}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
+                src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
                 fx.append(f"{src}apad,atrim=end={k / 30:.3f},asetpts=PTS-STARTPTS[s{i}]")
         chains.append("".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[bg]")
         if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 목소리만
@@ -86,8 +87,9 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
         caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
     # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
     # 효과음을 더하면 겹치는 곳이 넘칠 수 있어 리미터로 막는다
-    voice_a = f"[{n}:a]apad[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]" if fx \
-        else f"[{n}:a]apad[a]"
+    voice = VOICE.format(ch.style.voice_lufs) if ch.style.voice_lufs else ""
+    voice_a = f"[{n}:a]{voice}apad" + ("[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
+                                       if fx else "[a]")
     chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", voice_a]
     ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",

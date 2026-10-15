@@ -136,6 +136,27 @@
           <dd><ol class="sentences">{% for s in script.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
         </dl>
         {% endif %}
+        {% if ch.language != 'ko' %}
+        {# 대본을 쓴 호출과 따로 옮긴 한국어: 운영자가 원문 언어를 몰라도 실제로 적힌 뜻을 확인한다 #}
+        <details id="ko" class="script-edit" open>
+          <summary>한국어 뜻</summary>
+          {% if ko %}
+          {% if ko_stale %}<p class="muted">대본이나 썸네일 문구가 바뀌었어요. 다시 옮겨 주세요.</p>{% endif %}
+          <dl class="kv">
+            {% for label, value in [('제목', ko.ko.title), ('설명', ko.ko.description), ('태그', ko.ko.tags|join(', ')), ('썸네일', ko.ko.thumb|join(' / '))] %}
+            <dt>{{ label }}</dt><dd><span>{{ value }}</span></dd>
+            {% endfor %}
+            <dt>문장</dt>
+            <dd><ol class="sentences">{% for s in ko.ko.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
+            {% if ko.ko.notes %}<dt>확인</dt>
+            <dd><ul class="sentences">{% for n in ko.ko.notes %}<li>{{ n }}</li>{% endfor %}</ul></dd>{% endif %}
+          </dl>
+          {% else %}<p class="muted">대본·썸네일 문구를 Claude가 따로 한국어로 옮겨, 실제로 적힌 뜻과 어색한 곳을 보여 줘요.</p>{% endif %}
+          <form class="edit-form">
+            <button class="btn btn-secondary" type="submit" data-post="translate">{{ icon('sparkles') }}{{ '다시 옮기기' if ko else '한국어로 옮기기' }}</button>
+          </form>
+        </details>
+        {% endif %}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
 
@@ -169,9 +190,12 @@
         {% if cues %}
         <ol class="cues" tabindex="0" aria-label="자막 목록">
           {% for c in cues %}<li data-start="{{ c.start }}"><time>{{ c.start|cue_ts }}</time>
+            {%- if ko_cues %}<div>{% endif %}
             {%- if editable %}<input class="ie" name="cues" form="edit" value="{{ c.text }}" maxlength="40" required data-regen="렌더" aria-label="자막 {{ loop.index }}">
-            {%- else %}<span>{{ c.text }}</span>{% endif %}</li>{% endfor %}
+            {%- else %}<span>{{ c.text }}</span>{% endif %}
+            {%- if ko_cues %}<small class="cue-ko">({{ ko_cues[loop.index0] }})</small></div>{% endif %}</li>{% endfor %}
         </ol>
+        {% if ch.language != 'ko' and not ko_cues %}<p class="muted">대본 카드의 [한국어로 옮기기]를 누르면 자막마다 한국어 뜻이 (괄호)로 나와요. 영상에는 안 들어가요.</p>{% endif %}
         {% elif review %}{{ locked }}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>

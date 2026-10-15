@@ -223,3 +223,18 @@ def test_render_mixes_scene_clip_sound(tmp_path, ch):
     r = subprocess.run([config.FFMPEG, "-hide_banner", "-ss", str(dur - 0.3), "-i", tmp_path / "final.mp4", "-af",
                         "volumedetect", "-f", "null", "-"], capture_output=True, text=True)
     assert float(re.search(r"mean_volume: (-?[\d.]+|-inf)", r.stderr).group(1)) > -40
+
+
+def test_audio_levels_follow_channel_and_default_keeps_old_mix(tmp_path, ch, monkeypatch):
+    def run(args, cwd=None):
+        raise StopIteration(args[args.index("-filter_complex") + 1])
+    monkeypatch.setattr(ffmpeg, "has_audio", lambda p: True)
+    monkeypatch.setattr(ffmpeg, "run", run)
+    with pytest.raises(StopIteration) as e:   # 기본값(한국어 채널): 목소리 원본 + 효과음 -21 LUFS의 70%
+        render.render(tmp_path, ["c.mp4"], 1.0, ch, KO, None, [0])
+    assert "[0:a]loudnorm=I=-21:TP=-2,aresample=48000,aformat=channel_layouts=stereo,volume=0.7," in e.value.value
+    assert "[1:a]apad[vo]" in e.value.value
+    quiet = ch.model_copy(update={"style": ch.style.model_copy(update={"voice_lufs": -16, "sfx_lufs": -23})})
+    with pytest.raises(StopIteration) as e:
+        render.render(tmp_path, ["c.mp4"], 1.0, quiet, KO, None, [0])
+    assert "loudnorm=I=-23:" in e.value.value and "[1:a]loudnorm=I=-16:TP=-1.5,aresample=48000,apad[vo]" in e.value.value

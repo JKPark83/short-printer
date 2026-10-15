@@ -71,6 +71,40 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False) -> tu
     return s | new, usage
 
 
+class Translation(BaseModel):
+    title: str = Field(description="제목 한국어")
+    description: str = Field(description="설명 한국어")
+    tags: list[str] = Field(description="태그 한국어. 받은 것과 같은 개수, 같은 순서")
+    sentences: list[str] = Field(description="문장 한국어. 받은 것과 같은 개수, 같은 순서")
+    thumb: list[str] = Field(description="썸네일 문구 줄 한국어. 받은 것과 같은 개수")
+    cues: list[str] = Field(description="자막 줄 한국어. 받은 것과 같은 개수, 같은 순서. 받지 않았으면 빈 목록")
+    notes: list[str] = Field(description="원문에서 어색하거나 틀렸거나 오해를 살 만한 곳. 없으면 빈 목록")
+
+
+def ko_source(s: dict, thumb: dict | None) -> dict:
+    """옮길 원문. 웹이 저장된 번역과 견줘 대본·썸네일 문구를 고친 뒤인지 본다."""
+    return {k: s[k] for k in ("title", "description", "tags", "sentences")} | {
+        "thumb": (thumb or {}).get("lines", [])}
+
+
+def translate(llm: LLM, ch: Channel, s: dict, thumb: dict | None,
+              cues: Sequence[str] = ()) -> tuple[dict, dict]:
+    """한국어가 아닌 채널의 대본·썸네일 문구·자막 줄을 운영자가 확인하도록 한국어로 옮긴다.
+    {"src": 원문, "cues": 자막 원문, "ko": 번역}. 자막은 음성 단계 뒤에 생겨 src와 따로 견준다."""
+    src = ko_source(s, thumb)
+    text = "\n".join([f"제목: {src['title']}", f"설명: {src['description']}", f"태그: {', '.join(src['tags'])}",
+                      f"문장 {len(src['sentences'])}개:", *(f"{i}. {t}" for i, t in enumerate(src["sentences"], 1)),
+                      f"썸네일 문구 {len(src['thumb'])}줄:", *src["thumb"],
+                      f"자막 {len(cues)}줄:", *(f"{i}. {t}" for i, t in enumerate(cues, 1))])
+    out, usage = llm.ask(prompts.render("translate", lang=ch.lang_name), text, Translation,
+                         refusal=f"{llm.label}가 이 대본을 옮기지 않았어요.", what="번역")
+    if len(out.sentences) != len(src["sentences"]):
+        raise RuntimeError(f"번역의 문장 수가 맞지 않아요({len(out.sentences)}/{len(src['sentences'])}개). 다시 시도하세요.")
+    if len(out.cues) != len(cues):
+        raise RuntimeError(f"번역의 자막 줄 수가 맞지 않아요({len(out.cues)}/{len(cues)}줄). 다시 시도하세요.")
+    return {"src": src, "cues": list(cues), "ko": out.model_dump()}, usage
+
+
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None,
           recent: Sequence[str] = ()) -> tuple[Script, dict]:
     """brief: 추천 주제에서 왔으면 훅·전개 방향 참고. recent: 최근 작업 제목(같은 틀을 피한다)."""

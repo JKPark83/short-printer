@@ -279,6 +279,7 @@ audio { display: block; width: 100%; }
 .cues li[aria-current] time { color: var(--ok); }
 .cues li[aria-current] :is(span, input) { font-weight: 600; }
 .cues time { padding-top: 2px; color: var(--muted-fg); font: 12px var(--mono); font-variant-numeric: tabular-nums; }
+.cue-ko { display: block; padding: 2px 6px 0; color: var(--muted-fg); font-size: 12px; }   /* 검수용 한국어 뜻(영상엔 없다) */
 
 /* 완성 영상·로그 */
 .video { display: block; height: min(70vh, 576px); width: auto; max-width: 100%; aspect-ratio: 9 / 16; margin: 0 auto; border-radius: 6px; background: #000; object-fit: contain; }

@@ -205,8 +205,9 @@ def cue_ts(sec: float) -> str:
 
 
 def job_cost(j: dict) -> float | None:
-    """대본 + 썸네일 Claude 비용. 둘 다 모르면 None."""
-    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage")) if u and u["cost_usd"] is not None]
+    """대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
+    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
+             if u and u["cost_usd"] is not None]
     return round(sum(costs), 4) if costs else None
 
 
@@ -453,11 +454,15 @@ def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form(""
 def job_page(request: Request, job_id: str):
     job = _load(Job, job_id)
     ch = _channel(job.data.get("channel"))
+    s, thumb, ko, cues = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json"), job.doc("cues.json")
     return _page(request, "job.html", {
         "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
-        "script": job.doc("script.json"), "clips": job.doc("clips.json"),
-        "cues": job.doc("cues.json"), "has_thumb": (job.dir / "thumbnail.jpg").exists(),
-        "thumb": job.doc("thumb.json"), "log": _tail(job),
+        "script": s, "clips": job.doc("clips.json"),
+        "cues": cues, "has_thumb": (job.dir / "thumbnail.jpg").exists(),
+        "thumb": thumb, "log": _tail(job),
+        "ko": ko, "ko_stale": bool(ko and s and ko["src"] != script.ko_source(s, thumb)),
+        # 옮긴 뒤 자막을 고쳤거나 옮길 때 자막이 없었으면 자막 뜻은 안 보인다
+        "ko_cues": ko["ko"]["cues"] if ko and cues and ko.get("cues") == [c["text"] for c in cues] else None,
         "scenes": _scenes(job), "can_upload": _can_upload(job.data)})
 
 
@@ -600,6 +605,23 @@ def revise_script(job_id: str, note: str = Form("")):
     _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
     return {"ok": True, "msg": "Claude가 대본을 고쳐요. 끝나면 다시 확인해 주세요" if review
             else "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
+
+
+@app.post("/api/jobs/{job_id}/translate")
+def translate(job_id: str):
+    """한국어가 아닌 채널: 운영자가 확인하도록 대본·썸네일 문구를 한국어로 옮긴다. 작업 단계는 다시 하지 않는다."""
+    job = _load(Job, job_id)
+    if not (s := job.doc("script.json")):
+        raise HTTPException(409, "대본이 아직 없어요")
+    sv = registry.services(job.data["channel"])
+    try:
+        ko, usage = script.translate(sv.llm, sv.channel, s, job.doc("thumb.json"),
+                                     [c["text"] for c in job.doc("cues.json") or []])
+    except RuntimeError as e:
+        raise HTTPException(502, str(e)) from None
+    job.put("ko.json", ko)
+    job.update(ko_usage=usage)
+    return {"ok": True, "msg": "한국어로 옮겼어요"}
 
 
 @app.post("/api/jobs/{job_id}/upload")

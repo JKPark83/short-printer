@@ -1,3 +1,4 @@
+import re
 import shutil
 
 import pytest
@@ -42,7 +43,7 @@ def two_channels(tmp_path, monkeypatch):
     toml = (en / "channel.toml").read_text(encoding="utf-8")
     head, voices = toml.split("[tts.voices]")
     head = head.replace('name = "40초 상식"', 'name = "Space Facts"').replace('language = "ko"', 'language = "en"')
-    head = head.replace('default = "LKOcTG4J4tYTPR9DnLeM"', 'default = "enVoice1"')
+    head = re.sub(r'(?m)^default = ".*"', 'default = "enVoice1"', head)
     head = head.replace("daily_goal = 3", "daily_goal = 2")
     voices = '\nenVoice1 = "Adam"\n\n[video]' + voices.split("[video]", 1)[1]
     (en / "channel.toml").write_text(head + "[tts.voices]" + voices, encoding="utf-8")
@@ -453,3 +454,27 @@ def test_all_channels_view_hides_form(two_channels):
     html = client.get("/?channel=all").text
     assert 'id="new"' not in html and "채널을 하나 고른 뒤" in html
     assert 'value="all" selected' in html and 'for="ch-sel"' in html
+
+
+def test_translate_saves_ko_shows_it_and_marks_stale(two_channels, monkeypatch):
+    from types import SimpleNamespace
+
+    from shorts_printer.core import script
+    job = done_job(two_channels, voice="enVoice1")
+    assert "한국어로 옮기기" in client.get(f"/jobs/{job.id}").text
+    assert "한국어로 옮기기" not in client.get(f"/jobs/{done_job().id}").text   # 한국어 채널엔 없다
+    out = script.Translation(title="한글 제목", description="d", tags=[], sentences=["하나", "둘"], thumb=[],
+                             cues=["하나 뜻"], notes=["어색한 곳"])
+    usage = {"model": "m", "input_tokens": 1, "output_tokens": 2, "cost_usd": 0.02}
+    llm = SimpleNamespace(label="Claude", ask=lambda *a, **kw: (out, usage))
+    with monkeypatch.context() as m:   # 화면의 환경 점검은 진짜 services를 쓴다
+        m.setattr(registry, "services", lambda cid: SimpleNamespace(llm=llm, channel=channel.load(cid)))
+        assert client.post(f"/api/jobs/{job.id}/translate").json()["msg"] == "한국어로 옮겼어요"
+    html = client.get(f"/jobs/{job.id}").text
+    assert "한글 제목" in html and "어색한 곳" in html and "다시 옮기기" in html and "바뀌었어요" not in html
+    assert "(하나 뜻)" in html   # 자막 줄마다 괄호로
+    assert web.job_cost(job.data) == 0.03
+    job.put("cues.json", [{"start": 0, "end": 1.4, "text": "바뀐 자막"}])
+    assert "(하나 뜻)" not in client.get(f"/jobs/{job.id}").text
+    job.edit("script.json", lambda s: s | {"title": "new"})
+    assert "바뀌었어요" in client.get(f"/jobs/{job.id}").text
