@@ -1,8 +1,6 @@
-"""대본 → 장면 목록, clips.json 고치기. 장면(문장)마다 클립 하나를 clips/clip{i}.mp4에 둔다.
+"""대본 → 장면 목록, 클립 기록(clips.json 문서) 고치기. 장면(문장)마다 클립 하나를 clips/clip{i}.mp4에 둔다.
 공급자(ports.video)가 못 만든 장면은 사람이 작업 화면에서 올린다."""
-from pathlib import Path
-
-from ..infra.store import atomic_write_json, read_json
+from ..infra.store import Record
 from . import render
 
 
@@ -19,8 +17,6 @@ def scenes(script: dict, timing: list[dict] | None) -> list[dict]:
             for i, (s, p, sec) in enumerate(zip(script["sentences"], col("prompts"), secs, strict=True))]
 
 
-def set_clip(job_dir: Path, meta: dict) -> None:
-    """clips.json에서 같은 file 항목을 바꿔 넣는다. 공급자와 업로드가 같이 쓴다."""
-    clips = {c["file"]: c for c in read_json(job_dir / "clips.json", [])}
-    clips[meta["file"]] = meta
-    atomic_write_json(job_dir / "clips.json", list(clips.values()))
+def set_clip(job: Record, meta: dict) -> None:
+    """clips.json에서 같은 file 항목을 바꿔 넣는다. 공급자와 업로드(웹 스레드)가 같이 써서 한 트랜잭션으로."""
+    job.edit("clips.json", lambda old: list(({c["file"]: c for c in old or []} | {meta["file"]: meta}).values()))

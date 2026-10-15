@@ -62,14 +62,16 @@ uv run pytest -q -m live      # 실제 Claude 호출(비용 발생)
 | `core/thumbnail.py` | 채널 `thumbnail.md` 본문을 지시문으로 문구를 정한다. 합성은 `render.thumbnail`(배경은 첫 장면 클립 0.5초, 없으면 단색) |
 | `core/pipeline.py` | 단계 실행. 이미 끝난 단계는 건너뛰고, 실패하거나 Ctrl+C로 멈추면 failed로 기록. 빠진 장면 클립이 있으면 `Wait`로 멈춰 status `waiting`(실패 아님). `publish()`는 YouTube 업로드 |
 | `adapters/youtube.py` | 표준 라이브러리만으로 데스크톱 OAuth(PKCE) 로그인(`sp youtube-login --channel <id>`), 메타데이터 한도 맞추기, 비공개 resumable 업로드 |
-| `infra/store.py` | `jobs/<id>/job.json` 상태, 원자적 쓰기, 로그 마스킹(redact) |
+| `infra/store.py` / `infra/sqlite.py` | `Record`(상태·결과물 문서·로그를 저장소에), 예전 폴더 옮기기(`migrate`), 원자적 쓰기, 로그 마스킹(redact) / SQLite 저장소(`shorts.db`, `docs/plan/storage.md`) |
 | `infra/worker.py` | 작업 스레드 하나와 큐. 제작과 업로드가 같은 큐를 쓴다. `redo(id, steps, script=, **fields)`는 지정한 단계만 다시 돈다(썸네일·대본 고치기, 클립 교체) |
 | `web/app.py` | FastAPI와 Jinja. `/`, `/jobs`, `/jobs/{id}`, `/api/jobs/{id}`, `/api/jobs/{id}/retry`, `/api/jobs/{id}/upload`, `/api/jobs/{id}/clips/{i}`(장면 클립 업로드, raw body) |
 | `web/static/app.js` / `style.css` | 폴링(작업 1.5초, 대시보드 3초), id 단위 부분 교체, 포커스 복원 |
 | `design-system/shorts-printer/` | ui-ux-pro-max로 만든 MASTER.md와 pages/*.md(Minimalism & Swiss, 다크) |
 | `docs/wireframe.md` | 화면 와이어프레임과 상태별 문구 |
 
-작업 폴더에 남는 산출물: `script.json`, `clips.json`, `voice.wav`, `timing.json`, `cues.json`, `subs.ass`, `final.mp4`, `poster.jpg`, `thumb.ass`, `thumb.json`(문구·이전 문구), `clips/clip{i}.mp4`(장면 i 원본 클립, 0부터), `title.ass`(위 띠 제목), `thumbnail.jpg`(업로드 뒤 thumbnails.set, 실패해도 업로드는 done), `log.txt`
+`shorts.db`에 남는 것: 상태(예전 `job.json`), 결과물 문서 `script.json`·`clips.json`·`timing.json`·`cues.json`·`thumb.json`(문구·이전 문구, 이름은 예전 파일 이름 그대로), 로그(예전 `log.txt`). 백업은 `jobs/`·`trends/`와 `shorts.db`를 같이.
+
+작업 폴더에 남는 파일: `voice.wav`, `subs.ass`, `final.mp4`, `poster.jpg`, `thumb.ass`, `clips/clip{i}.mp4`(장면 i 원본 클립, 0부터), `title.ass`(위 띠 제목), `thumbnail.jpg`(업로드 뒤 thumbnails.set, 실패해도 업로드는 done)
 
 ## 바꾸기 전에 알아야 할 결정
 

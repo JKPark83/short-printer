@@ -13,7 +13,8 @@
     <div class="jh-text">
       <h1>{{ job.topic }}</h1>
       <p class="meta"><code>{{ job.id }}</code> · {{ ch.name }} · {{ ch.tts.voices.get(job.voice, job.voice) }} · {{ job.created_at|hm }}</p>
-      {% if job.source %}<p class="meta"><a class="src-link" href="/trends/{{ job.source.trend }}#p-{{ job.source.pick }}">{{ icon('sparkles', 14) }}추천 주제에서 만듦</a></p>{% endif %}
+      {% if job.source and job.source.trend %}<p class="meta"><a class="src-link" href="/trends/{{ job.source.trend }}#p-{{ job.source.pick }}">{{ icon('sparkles', 14) }}추천 주제에서 만듦</a></p>{% endif %}
+      {% if job.source and job.source.schedule %}<p class="meta"><a class="src-link" href="/schedules/{{ job.source.schedule }}">{{ icon('clock', 14) }}스케줄로 만듦</a></p>{% endif %}
       {% if job.brief %}<details id="brief" class="brief"><summary>참고 방향</summary><p>{{ job.brief }}</p></details>{% endif %}
     </div>
     <div class="jh-actions">

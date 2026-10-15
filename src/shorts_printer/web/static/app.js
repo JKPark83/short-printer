@@ -66,22 +66,28 @@ document.addEventListener('submit', e => {
   $('span', b).textContent = b.dataset.busy;
 });
 
-// ── 목록 갱신: data-list="조각 id들"이 붙은 칸이 data-active="1"일 때만
+// ── 목록 갱신: data-list="조각 id들"이 붙은 칸이 data-active="1"일 때만. 멈춘 뒤에도 kickList()로 다시 돈다(스케줄 지금 실행)
+// data-idle="ms"면 쉬는 동안에도 그 간격으로 본다(스케줄은 정한 시각에 저절로 돈다)
 const listId = $('[data-list]')?.id;
-if (listId) {
-  const ids = $('#' + listId).dataset.list.split(' ');
-  const refresh = async () => {
-    const el = document.getElementById(listId);
-    if (el.dataset.active !== '1') return;
-    try { await swap(location.pathname, ids); }
-    catch {   // 다음 차례에 다시. 성공하면 목록 칸이 바뀌며 원래대로 돌아온다
-      const l = $('.live', el);
-      if (l) { l.textContent = '연결 끊김, 다시 시도 중'; l.classList.add('bad'); }
-    }
-    setTimeout(refresh, 3000);
-  };
-  setTimeout(refresh, 3000);
+const listIds = listId ? $('#' + listId).dataset.list.split(' ') : [];
+let listTimer;
+async function refreshList() {
+  const el = document.getElementById(listId);
+  if (el.dataset.active !== '1' && !el.dataset.idle) return;
+  try { await swap(location.pathname, listIds); }
+  catch {   // 다음 차례에 다시. 성공하면 목록 칸이 바뀌며 원래대로 돌아온다
+    const l = $('.live', el);
+    if (l) { l.textContent = '연결 끊김, 다시 시도 중'; l.classList.add('bad'); }
+  }
+  kickList();
 }
+function kickList() {
+  if (!listId) return;
+  clearTimeout(listTimer);
+  const el = document.getElementById(listId);
+  listTimer = setTimeout(refreshList, el.dataset.active === '1' ? 3000 : +el.dataset.idle || 3000);
+}
+kickList();
 
 // ── 상세 화면(작업·주제 분석)
 const api = page?.dataset.api;
@@ -317,3 +323,182 @@ document.addEventListener('click', async e => {
     tick(true);   // 409면 실제 상태로 화면을 맞춘다
   }
 });
+
+// ── 스케줄: 켜고 끄기·지금 실행·지우기(두 번 눌러 확인)·테스트 알림, 폼(시각 칩·요일·미리 보기·제출)
+const fail = err => toast(err instanceof TypeError ? '서버에 닿지 않아요' : err.message, true);
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', body });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : '요청을 처리하지 못했어요');
+  return j;
+}
+// 목록·상태 조각을 새로 받고 폴링을 다시 켠다(실행하면 data-active가 1이 된다)
+async function relist() {
+  if (!listId) return;
+  try { await swap(location.pathname, listIds); } catch { /* 다음 차례에 */ }
+  kickList();
+}
+const sid = el => encodeURIComponent(el.dataset.toggle ?? el.dataset.run ?? el.dataset.sdel);
+
+function disarm(b) {
+  clearTimeout(b.timer);
+  b.classList.remove('armed');
+  $('span', b).textContent = '지우기';
+}
+document.addEventListener('focusout', e => { if (e.target.matches?.('[data-sdel].armed')) disarm(e.target); });
+
+document.addEventListener('click', async e => {
+  const sw = e.target.closest('[data-toggle]');
+  if (sw) {
+    sw.disabled = true;
+    try {
+      const j = await post(`/api/schedules/${sid(sw)}/toggle`);
+      sw.setAttribute('aria-checked', j.enabled);
+      $('.sw-text', sw).textContent = j.enabled ? '켜짐' : '꺼짐';
+      toast(j.msg);
+      await relist();
+    } catch (err) { fail(err); }
+    sw.disabled = false;
+    if (!sw.isConnected) document.querySelector(`[data-toggle="${CSS.escape(sw.dataset.toggle)}"]`)?.focus();
+    return;
+  }
+  const run = e.target.closest('[data-run]');
+  if (run) {
+    run.disabled = true;
+    try {
+      const j = await post(`/api/schedules/${sid(run)}/run`);
+      toast(j.msg, j.result !== 'started');
+      await relist();
+    } catch (err) { fail(err); }
+    run.disabled = false;
+    return;
+  }
+  const del = e.target.closest('[data-sdel]');
+  if (del) {
+    if (!del.classList.contains('armed')) {   // 첫 번째: 확인 상태로. 4초 안에 한 번 더 눌러야 지운다
+      del.classList.add('armed');
+      $('span', del).textContent = '한 번 더 누르면 지워요';
+      toast('한 번 더 누르면 지워요. 만든 영상은 남아요');
+      del.timer = setTimeout(() => disarm(del), 4000);
+      return;
+    }
+    disarm(del);
+    del.disabled = true;
+    try {
+      await post(`/api/schedules/${sid(del)}/delete`);
+      if (location.pathname !== '/schedules') { location.href = '/schedules'; return; }
+      toast('지웠어요');
+      await swap(location.pathname, listIds);
+      ($('.sc-name') ?? $('a[href="/schedules/new"]'))?.focus();
+    } catch (err) { del.disabled = false; fail(err); }
+    return;
+  }
+  const nt = e.target.closest('[data-notify-test]');
+  if (nt) {
+    nt.disabled = true;
+    try { toast((await post('/api/notify/test')).msg); } catch (err) { fail(err); }
+    nt.disabled = false;
+    return;
+  }
+  const pre = e.target.closest('[data-days]');
+  if (pre) {
+    for (const c of document.querySelectorAll('input[name=days]')) c.checked = pre.dataset.days.includes(c.value);
+    when();
+    return;
+  }
+  if (e.target.closest('[data-tadd]')) { addTime(); return; }
+  const td = e.target.closest('[data-tdel]');
+  if (td) {
+    const li = td.closest('li'), near = li.nextElementSibling ?? li.previousElementSibling;
+    li.remove();
+    (near ? $('input', near) : $('#t-new')).focus();
+    when();
+  }
+});
+
+const form = $('#sched-form');
+function addTime() {
+  const inp = $('#t-new'), v = inp.value, list = $('#times');
+  if (!v) { inp.focus(); toast('더할 시각을 골라 주세요', true); return; }
+  const have = [...list.querySelectorAll('input')].map(i => i.value);
+  if (have.includes(v)) { toast(`${v}은 이미 있어요`, true); return; }
+  if (have.length >= 12) { toast('시각은 12개까지 넣을 수 있어요', true); return; }
+  const li = $('#t-chip').content.firstElementChild.cloneNode(true);
+  $('input', li).value = v;
+  $('input', li).setAttribute('aria-label', `시각 ${v}`);
+  $('button', li).setAttribute('aria-label', `${v} 빼기`);
+  // 시각 순서로 끼운다
+  const after = [...list.children].find(x => $('input', x).value > v);
+  list.insertBefore(li, after ?? null);
+  inp.value = '';
+  toast(`${v} 더했어요`);
+  when();
+}
+
+// 시각 미리 보기: 고칠 때마다(0.3초 모아) 서버가 계산한 요약과 다음 5번
+let pvTimer;
+function when(fetchIt = true) {
+  if (!form) return;
+  for (const b of document.querySelectorAll('[data-days]')) {
+    const on = [...document.querySelectorAll('input[name=days]:checked')].map(c => c.value).join('');
+    b.setAttribute('aria-pressed', on === b.dataset.days);
+  }
+  if (!fetchIt) return;
+  clearTimeout(pvTimer);
+  pvTimer = setTimeout(async () => {
+    const pv = $('#preview'), err = $('.pv-err', pv);
+    try {
+      const j = await post('/api/schedules/preview', new FormData(form));
+      $('.pv-sum span', pv).textContent = j.summary;
+      const ol = $('.pv-next', pv);
+      ol.replaceChildren(...j.next.map(t => {
+        const li = document.createElement('li');
+        li.innerHTML = '<span class="mono"></span><span class="muted"></span>';
+        li.children[0].textContent = t.label;
+        li.children[1].textContent = t.rel;
+        return li;
+      }));
+      if (!j.next.length) ol.innerHTML = '<li class="muted">8일 안에 도는 시각이 없어요</li>';
+      pv.classList.remove('bad');
+      err.hidden = true;
+    } catch (e) {
+      if (e instanceof TypeError) return;
+      pv.classList.add('bad');
+      err.hidden = false;
+      err.textContent = e.message;
+    }
+  }, 300);
+}
+if (form) {
+  const topics = $('[data-lines]');
+  const count = () => {
+    const n = $('#topics').value.split('\n').filter(l => l.trim()).length;
+    topics.textContent = `${n}/${topics.dataset.max}개`;
+    topics.classList.toggle('over', n > +topics.dataset.max);
+  };
+  $('#topics').addEventListener('input', count);
+  count();
+  when(false);   // 첫 미리 보기는 서버가 그려 두었다
+  form.addEventListener('input', e => { if (e.target.closest('#when')) when(); });
+  form.addEventListener('change', e => { if (e.target.closest('#when')) when(); });
+  $('#t-new').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addTime(); } });
+  // 제출: 서버가 400이면 이유를 버튼 위에 띄운다(JS가 없으면 그냥 폼 제출)
+  document.addEventListener('submit', async e => {
+    if (e.target !== form) return;
+    e.preventDefault();
+    const b = $('button[type=submit]', form), label = $('span', b).textContent, box = $('#form-err');
+    try {
+      const r = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+      if (r.ok) { location.href = r.url; return; }
+      const j = await r.json().catch(() => ({}));
+      throw new Error(typeof j.detail === 'string' ? j.detail : '저장하지 못했어요');
+    } catch (err) {
+      box.hidden = false;
+      box.textContent = err instanceof TypeError ? '서버에 닿지 않아요' : err.message;
+      box.scrollIntoView({ block: 'nearest', behavior: smooth });
+    }
+    b.disabled = false;
+    b.removeAttribute('aria-busy');
+    $('span', b).textContent = label;
+  }, true);   // 캡처: 스피너 처리(버블)보다 먼저 원래 글자를 잡는다
+}

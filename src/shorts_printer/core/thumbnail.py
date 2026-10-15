@@ -1,10 +1,7 @@
 """썸네일 단계: prompts/thumbnail.md(공통) + 채널 thumbnail.md + 길이 한도를 LLM 지시문으로 써서 문구를 정한다.
 배경은 첫 장면 클립(render.thumbnail). 문구는 영상 위 띠 제목으로도 쓴다(render.render)."""
-from pathlib import Path
-
 from pydantic import BaseModel, Field
 
-from ..infra.store import read_json
 from ..ports.llm import LLM
 from . import prompts
 from .channel import Channel
@@ -37,9 +34,8 @@ def plan(llm: LLM, ch: Channel, script: dict, topic: str, before: list[str], not
     return out.model_copy(update={"lines": lines, "accent": accent}), usage
 
 
-def make(llm: LLM, ch: Channel, job_dir: Path, script: dict, topic: str, log, note: str = "") -> dict:
-    """thumb.json에 남길 값. 다시 만들면 이전 문구를 피하고, note가 있으면 그 요청대로 고친다."""
-    texts = (read_json(job_dir / "thumb.json") or {}).get("texts", [])
+def make(llm: LLM, ch: Channel, texts: list[str], script: dict, topic: str, log, note: str = "") -> dict:
+    """thumb.json에 남길 값. texts는 이전 문구들(다시 만들면 피한다), note가 있으면 그 요청대로 고친다."""
     p, usage = plan(llm, ch, script, topic, texts, note)
     log(f"썸네일 문구: {' / '.join(p.lines)}" + (f" (요청: {note})" if note else ""))
     return {"lines": p.lines, "accent": p.accent, "position": "top", "usage": usage, "note": note,

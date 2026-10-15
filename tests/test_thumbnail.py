@@ -1,11 +1,9 @@
-import json
-
 from fastapi.testclient import TestClient
 
 from shorts_printer import registry
 from shorts_printer.core import channel, thumbnail
 from shorts_printer.core.pipeline import Job
-from shorts_printer.infra.store import atomic_write_json
+from shorts_printer.infra import store
 from shorts_printer.web import app as web
 
 SCRIPT = {"title": "라면 물 양의 비밀", "sentences": ["물은 550ml", "면은 나중에"]}
@@ -30,26 +28,24 @@ def test_system_has_channel_rules_without_front_matter_plus_limits():
     assert "문구는 한국어로 1~2줄, 줄마다 9자 이내, 합쳐 16자 이내." in r   # channel.toml [thumbnail]
 
 
-def test_make_plans_text_only(tmp_path):
+def test_make_plans_text_only():
     llm = LLM()
-    t = thumbnail.make(llm, CH, tmp_path, SCRIPT, "라면", print)
+    t = thumbnail.make(llm, CH, [], SCRIPT, "라면", print)
     assert t["lines"] == ["라면"] and t["accent"] == "" and t["position"] == "top" and "photo" not in t
     assert llm.calls[0][0].startswith(thumbnail.system(CH))   # 채널 규칙이 지시문
-    atomic_write_json(tmp_path / "thumb.json", t)
-    thumbnail.make(llm, CH, tmp_path, SCRIPT, "라면", print)
+    thumbnail.make(llm, CH, t["texts"], SCRIPT, "라면", print)
     assert "이전에 쓴 문구" in llm.calls[1][1]
-    atomic_write_json(tmp_path / "thumb.json", t)
-    t = thumbnail.make(llm, CH, tmp_path, SCRIPT, "라면", print, note="숫자를 넣어 줘")
+    t = thumbnail.make(llm, CH, t["texts"], SCRIPT, "라면", print, note="숫자를 넣어 줘")
     assert "지금 문구: 라면" in llm.calls[2][1] and "수정 요청(규칙보다 우선): 숫자를 넣어 줘" in llm.calls[2][1]
     assert "이전에 쓴 문구" not in llm.calls[2][1] and t["note"] == "숫자를 넣어 줘"
 
 
 def test_old_job_gets_thumbnail_step_and_rethumb_rules(monkeypatch):
     job = Job.create(CH.id, "주제", "ko-KR-SunHiNeural")
-    d = json.loads((job.dir / "job.json").read_text())
+    d = store.store().get("job", job.id)
     del d["steps"]["thumbnail"]
     d["status"], d["steps"]["render"]["status"] = "done", "done"
-    (job.dir / "job.json").write_text(json.dumps(d))
+    store.store().put("job", job.id, d)
     assert job.data["steps"]["thumbnail"]["status"] == "done"   # 예전 작업
 
     client = TestClient(web.app, base_url="http://127.0.0.1")

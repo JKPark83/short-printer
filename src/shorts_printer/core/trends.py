@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .. import config
 from ..infra import ffmpeg
-from ..infra.store import Record, atomic_write_json, read_json
+from ..infra.store import Record
 from ..ports.llm import add_usage
 from . import prompts
 from .channel import LANGS, Channel
@@ -60,7 +60,7 @@ def ready() -> bool:
 
 
 class Trend(Record):
-    FILE = "trend.json"
+    KIND = "trend"
     WHAT = "분석"
     EXTRA: ClassVar[dict] = {"progress": None, "quota": None}
 
@@ -169,7 +169,7 @@ def step_collect(t: Trend, sv: Services) -> str:
     if len(top) < MIN_OK:   # 적으면 분석 단계가 매번 실패하고, 수집은 다시 시도해도 건너뛴다
         raise RuntimeError(f"조건에 맞는 {lang} 쇼츠가 {len(top)}개뿐이에요({MIN_OK}개 이상 필요). "
                            "기간을 늘리거나 키워드를 바꿔 보세요.")
-    atomic_write_json(t.dir / "videos.json", top)
+    t.put("videos.json", top)
     for v in top:
         t.log(f"#{v['rank']} {v['title'][:40]} · 조회수 {v['views']:,} · 시간당 {v['views_per_hour']:,.0f}")
     return f"YouTube {len(top)}개"
@@ -302,20 +302,19 @@ def analyze_video(trend_dir: Path, v: dict, sv: Services) -> tuple[dict, dict | 
 
 
 def step_analyze(t: Trend, sv: Services) -> str:
-    videos, path = read_json(t.dir / "videos.json"), t.dir / "analyses.json"
-    found = read_json(path, {})
+    videos, found = t.doc("videos.json"), t.doc("analyses.json", {})
     todo = [v for v in videos if found.get(v["id"], {}).get("status") not in OK]   # 끝난 영상은 다시 하지 않는다
     (t.dir / "frames").mkdir(exist_ok=True)
     n = len(videos) - len(todo)
     t.update(progress={"done": n, "total": len(videos)})
-    # ponytail: 동시에 3개. LLM 요청 한도에 걸리면 줄인다. trend.json은 이 스레드에서만 쓴다
+    # ponytail: 동시에 3개. LLM 요청 한도에 걸리면 줄인다. 상태·analyses.json은 이 스레드에서만 쓴다
     pool = ThreadPoolExecutor(3)
     try:
         futures = {pool.submit(analyze_video, t.dir, v, sv): v for v in todo}
         for f in as_completed(futures):
             v, (a, usage) = futures[f], f.result()
             found[v["id"]] = a
-            atomic_write_json(path, found)
+            t.put("analyses.json", found)
             n += 1
             t.update(progress={"done": n, "total": len(videos)}, usage=add_usage(t.data["usage"], usage))
             what = {"ok": f"컷 {a['shot_count']}개", "meta_only": "썸네일만", "failed": "실패"}[a["status"]]
@@ -392,7 +391,7 @@ def finish_picks(out: PicksOut, videos: list[dict], weights: dict[str, int]) -> 
 
 def step_pick(t: Trend, sv: Services) -> str:
     ch, w = sv.channel, sv.channel.trends.weights
-    videos, found = read_json(t.dir / "videos.json"), read_json(t.dir / "analyses.json", {})
+    videos, found = t.doc("videos.json"), t.doc("analyses.json", {})
     rows = [{k: v[k] for k in ("id", "rank", "title", "duration", "views", "views_per_hour", "engagement", "age_hours")}
             | {"shots": found[v["id"]]["shot_count"], "analysis": found[v["id"]]["claude"]}
             for v in videos if found.get(v["id"], {}).get("status") in OK]
@@ -409,16 +408,16 @@ def step_pick(t: Trend, sv: Services) -> str:
     picks = finish_picks(out, videos, w)
     if not picks["picks"]:
         raise RuntimeError("추천 주제를 받지 못했어요. 다시 시도해 보세요.")
-    atomic_write_json(t.dir / "picks.json", picks)
+    t.put("picks.json", picks)
     for i, p in enumerate(picks["picks"], 1):
         t.log(f"추천 {i}: {p['topic']} ({p['total']}점)")
     return usage["model"]
 
 
-def brief(trend_dir: Path, p: dict) -> str:
+def brief(trend: Trend, p: dict) -> str:
     """추천 주제 하나 → 대본 작가에게 넘길 참고. 방향에 근거 쇼츠의 분석(훅·화면·자막·인기 이유·컷 속도)을 붙인다."""
-    videos = {v["id"]: v for v in read_json(trend_dir / "videos.json", [])}
-    found = read_json(trend_dir / "analyses.json", {})
+    videos = {v["id"]: v for v in trend.doc("videos.json", [])}
+    found = trend.doc("analyses.json", {})
     lines = [f"방향: {p['angle']}", f"포맷: {p['format']}", f"지금 만들 이유: {p['why_now']}",
              f"화면 검색어 후보: {', '.join(p['search_terms'])}"]
     for r in p["refs"]:

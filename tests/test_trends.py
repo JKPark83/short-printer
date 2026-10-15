@@ -9,7 +9,6 @@ from urllib.error import HTTPError
 import pytest
 
 from shorts_printer.core import channel, pipeline, trends
-from shorts_printer.infra.store import read_json
 from shorts_printer.ports.llm import add_usage
 
 NOW = datetime(2026, 10, 13, 12, tzinfo=UTC)
@@ -152,7 +151,7 @@ def test_collect_counts_quota_skips_normal_videos_and_ranks(monkeypatch):
     q = calls[0][1]
     assert q["q"] == "커피" and q["videoDuration"] == "short" and calls[1][1]["id"] == "a,b,c,d"
     assert q["regionCode"] == "KR" and q["relevanceLanguage"] == "ko"
-    vids = read_json(t.dir / "videos.json")
+    vids = t.doc("videos.json")
     assert [(v["id"], v["rank"]) for v in vids] == [("b", 1), ("d", 2), ("a", 3)]
     assert t.data["quota"] == 101
 
@@ -237,8 +236,8 @@ def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
     pipeline.Job.create(CH, "우리 채널 주제", "v")
     pipeline.Job.create("en-space-facts", "다른 채널 주제", "v")
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [])
-    trends.atomic_write_json(t.dir / "analyses.json", {})
+    t.put("videos.json", [])
+    t.put("analyses.json", {})
 
     def stop(*a):
         raise StopIteration
@@ -288,8 +287,8 @@ def video(vid, rank):
 
 def test_analyze_meta_only_when_download_blocked_and_skips_done(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcd", 1)])
-    trends.atomic_write_json(t.dir / "analyses.json", {"a": {"status": "ok", "claude": {}}})
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abcd", 1)])
+    t.put("analyses.json", {"a": {"status": "ok", "claude": {}}})
 
     def blocked(_dir, v, lang):
         assert lang == "ko"
@@ -300,7 +299,7 @@ def test_analyze_meta_only_when_download_blocked_and_skips_done(monkeypatch):
     llm = FakeLLM(lambda *a: (analysis(replicable=0), USAGE))
     monkeypatch.setattr(trends, "media", blocked)
     assert trends.step_analyze(t, sv(llm)) == "영상 1개 · 썸네일만 3개"
-    found = read_json(t.dir / "analyses.json")
+    found = t.doc("analyses.json")
     b = found["b"]
     assert b["status"] == "meta_only" and "bot" in b["error"] and b["claude"]["replicable"] == 1
     assert len(llm.calls) == 3 and all(len(c["images"]) == 1 and c["images"][0].startswith("https://")
@@ -326,7 +325,7 @@ def test_analyze_sends_frames_as_jpeg_bytes(monkeypatch):
 
 def test_analyze_fails_under_three(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abc", 1)])
     monkeypatch.setattr(trends, "media", lambda d, v, lang: (_ for _ in ()).throw(RuntimeError("x")))
 
     def answer(system, text, images):
@@ -335,7 +334,7 @@ def test_analyze_fails_under_three(monkeypatch):
         return analysis(), None
     with pytest.raises(RuntimeError, match="1개뿐"):
         trends.step_analyze(t, sv(FakeLLM(answer)))
-    assert read_json(t.dir / "analyses.json")["b"]["status"] == "failed"
+    assert t.doc("analyses.json")["b"]["status"] == "failed"
 
 
 def test_add_usage():
@@ -346,7 +345,7 @@ def test_add_usage():
 
 def test_analyze_interrupt_cancels_waiting_videos(monkeypatch):
     t = new()
-    trends.atomic_write_json(t.dir / "videos.json", [video(v, i) for i, v in enumerate("abcdefgh", 1)])
+    t.put("videos.json", [video(v, i) for i, v in enumerate("abcdefgh", 1)])
     started, go = [], threading.Event()
 
     def fake(_dir, v, _sv):
@@ -370,5 +369,5 @@ def test_live_collect():
         pytest.skip("YOUTUBE_API_KEY 없음")
     t = new()
     trends.step_collect(t, sv())
-    vids = read_json(t.dir / "videos.json")
+    vids = t.doc("videos.json")
     assert vids and all(v["duration"] <= trends.MAX_SEC for v in vids)

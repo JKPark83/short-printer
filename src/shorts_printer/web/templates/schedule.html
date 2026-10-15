@@ -1,0 +1,172 @@
+{% extends "_base.html" %}
+{% from "_sched.html" import controls, run_line, notify_card %}
+{% block title %}{{ s.name or '새 스케줄' }} · shorts-printer{% endblock %}
+{% block main %}
+{% set new = s.id is not defined %}
+{% set w = s.when %}
+<main id="page" class="wrap wrap-job">
+  <a class="back" href="/schedules">{{ icon('arrow-left') }}스케줄</a>
+  <header class="job-head">
+    <div class="jh-text">
+      <h1>{{ '새 스케줄' if new else s.name }}</h1>
+      {% if ch %}<p class="meta">{{ ch.name }}{% if not new %} · <code>{{ s.id }}</code>{% endif %}</p>{% endif %}
+    </div>
+  </header>
+  <div class="job-grid">
+    <div class="col">
+      <section class="card" aria-label="스케줄 설정">
+      {% if ch %}
+      <form id="sched-form" class="form sched-form" method="post" action="{{ '/schedules' if new else '/api/schedules/' ~ s.id }}">
+        {% if new %}<input type="hidden" name="channel" value="{{ ch.id }}">{% else %}<input type="hidden" name="topics_base" value="{{ s.topics|join('\n') }}">{% endif %}
+
+        <label for="name">이름</label>
+        <input id="name" name="name" type="text" maxlength="{{ schedule.MAX_NAME }}" required autocomplete="off"
+               value="{{ s.name }}" placeholder="예) 아침 과학 상식" aria-describedby="name-count">
+        <span id="name-count" class="counter" data-for="name">0/{{ schedule.MAX_NAME }}</span>
+
+        <fieldset class="fs">
+          <legend>주제</legend>
+          <div class="seg">
+            <input type="radio" id="src-trend" name="source" value="trend"{{ ' checked' if s.source == 'trend' }}>
+            <label for="src-trend">{{ icon('trending', 16) }}추천 주제</label>
+            <input type="radio" id="src-list" name="source" value="list"{{ ' checked' if s.source == 'list' }}>
+            <label for="src-list">{{ icon('list', 16) }}주제 목록</label>
+          </div>
+          <div class="panel p-trend">
+            <p class="help-under">회차마다 요즘 뜨는 쇼츠를 분석해, 이 채널에서 아직 안 만든 1순위 주제로 만들어요. 한 번에 YouTube 할당량 {{ QUOTA_PER_RUN }}유닛과 AI 분석 비용이 들어요.</p>
+            {% if not trend_ok %}<p class="hint">{{ icon('alert', 14) }}YouTube Data API 키가 없어 추천을 쓸 수 없어요(.env의 YOUTUBE_API_KEY)</p>{% endif %}
+            <div class="row2">
+              <div class="field">
+                <label for="keyword">키워드 <span class="opt">선택</span></label>
+                <input id="keyword" name="keyword" type="text" maxlength="50" autocomplete="off" value="{{ s.keyword }}"
+                       placeholder="비우면 {{ ch.trends.region }} 전체" aria-describedby="keyword-count">
+                <span id="keyword-count" class="counter" data-for="keyword">0/50</span>
+              </div>
+              <div class="field">
+                <label for="period">기간</label>
+                <select id="period" name="period">
+                  {% for key, label in trends.PERIODS.items() %}<option value="{{ key }}"{{ ' selected' if key == s.period }}>최근 {{ label }}</option>{% endfor %}
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="panel p-list">
+            <label for="topics">주제 목록 <span class="opt">한 줄에 하나</span></label>
+            <textarea id="topics" name="topics" rows="7" placeholder="바나나가 휘어 있는 이유&#10;고양이가 상자를 좋아하는 이유" aria-describedby="topics-count topics-help">{{ s.topics|join('\n') }}</textarea>
+            <span id="topics-count" class="counter" data-lines="topics" data-max="{{ schedule.MAX_TOPICS }}">{{ s.topics|length }}/{{ schedule.MAX_TOPICS }}개</span>
+            <small id="topics-help" class="help">회차마다 맨 위 줄을 쓰고 목록에서 지워요. 다 쓰면 스케줄이 꺼지고 알림이 가요.</small>
+          </div>
+        </fieldset>
+
+        <div class="voice-pick">
+          <label for="voice">목소리</label>
+          <select id="voice" name="voice">
+            {% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == s.voice }}>{{ label }}</option>{% endfor %}
+          </select>
+          <button class="btn btn-secondary" type="button" data-sample="voice" data-channel="{{ ch.id }}">{{ icon('play', 16) }}미리 듣기</button>
+        </div>
+
+        <fieldset class="fs" id="when" aria-describedby="preview">
+          <legend>언제</legend>
+          <div class="seg">
+            <input type="radio" id="k-times" name="kind" value="times"{{ ' checked' if w.kind == 'times' }}>
+            <label for="k-times">{{ icon('clock', 16) }}정한 시각</label>
+            <input type="radio" id="k-every" name="kind" value="every"{{ ' checked' if w.kind == 'every' }}>
+            <label for="k-every">{{ icon('rotate', 16) }}N시간마다</label>
+          </div>
+          <div class="panel p-times">
+            <ul id="times" class="times" aria-label="실행 시각">
+              {% for t in w.times %}
+              <li><input type="time" name="times" value="{{ t }}" aria-label="시각 {{ loop.index }}"><button class="btn-icon" type="button" data-tdel aria-label="{{ t }} 빼기">{{ icon('x', 14) }}</button></li>
+              {% endfor %}
+            </ul>
+            <template id="t-chip"><li><input type="time" name="times"><button class="btn-icon" type="button" data-tdel>{{ icon('x', 14) }}</button></li></template>
+            <div class="time-add">
+              <label for="t-new" class="sr-only">더할 시각</label>
+              <input id="t-new" type="time" name="times">
+              <button class="btn btn-secondary" type="button" data-tadd>{{ icon('plus', 16) }}<span>시각 더하기</span></button>
+            </div>
+            <small class="help-under">하루 {{ schedule.MAX_TIMES }}번까지. 한 편 만드는 데 10~20분쯤 걸려요.</small>
+          </div>
+          <div class="panel p-every">
+            <div class="every">
+              <label for="every" class="sr-only">간격(시간)</label>
+              <input id="every" name="every" type="number" min="1" max="24" inputmode="numeric" value="{{ w.every }}">
+              <span>시간마다,</span>
+              <label for="start" class="sr-only">시작 시각</label>
+              <input id="start" name="start" type="time" value="{{ w.start }}">
+              <span>부터</span>
+              <label for="end" class="sr-only">끝 시각</label>
+              <input id="end" name="end" type="time" value="{{ w.end }}">
+              <span>까지</span>
+            </div>
+          </div>
+          <div class="days-row">
+            <span class="label" id="days-label">요일</span>
+            <div class="days" role="group" aria-labelledby="days-label">
+              {% for d in schedule.DAYS %}
+              <input type="checkbox" id="d{{ loop.index0 }}" name="days" value="{{ loop.index0 }}"{{ ' checked' if loop.index0 in w.days }}>
+              <label for="d{{ loop.index0 }}"{% if loop.index0 >= 5 %} class="we"{% endif %}>{{ d }}</label>
+              {% endfor %}
+            </div>
+            <div class="presets" role="group" aria-label="요일 빠르게 고르기">
+              <button type="button" class="btn-chip" data-days="0123456">매일</button>
+              <button type="button" class="btn-chip" data-days="01234">평일</button>
+              <button type="button" class="btn-chip" data-days="56">주말</button>
+            </div>
+          </div>
+          <div id="preview" class="preview" aria-live="polite">
+            <p class="pv-sum">{{ icon('clock', 14) }}<span>{{ preview.summary }}</span></p>
+            <ol class="pv-next">
+              {% for t in preview.next %}<li><span class="mono">{{ t.label }}</span><span class="muted">{{ t.rel }}</span></li>{% endfor %}
+            </ol>
+            <p class="pv-err" hidden></p>
+          </div>
+        </fieldset>
+
+        {% if manual %}<p class="hint">{{ icon('alert', 14) }}지금 이 채널은 장면 클립을 직접 올려야 해요({{ manual }}). 올릴 때까지 작업이 멈추고 그동안 다음 회차는 건너뛰어요.</p>{% endif %}
+        <p id="form-err" class="form-err" role="alert" hidden></p>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit" data-busy="저장하는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>{{ '만들기' if new else '저장' }}</span></button>
+          <a class="btn btn-secondary" href="/schedules">취소</a>
+        </div>
+        <p class="help-under">{{ '만들면 바로 켜지고, 지금 이후의 시각부터 돌아요. 영상은 YouTube에 비공개로 올라가요.' if new else '시각을 바꾸면 지금 이후의 시각부터 다시 세요.' }}</p>
+      </form>
+      {% else %}
+      <p class="empty">스케줄은 채널마다 만들어요. 위 채널 목록에서 채널을 먼저 골라 주세요.</p>
+      {% endif %}
+      </section>
+    </div>
+    <div class="col">
+      {% if not new %}
+      <section id="sc-state" class="card" aria-labelledby="h-state">
+        <h2 id="h-state">상태</h2>
+        <div class="sc-next">
+          <span class="k">다음</span>
+          {% if s.enabled and preview.next %}<strong>{{ preview.next[0].rel }}</strong> <span class="muted mono">{{ preview.next[0].label }}</span>
+          {% elif not s.enabled %}<span class="muted">꺼져 있어요. 켜면 다음 시각부터 돌아요</span>
+          {% else %}<span class="muted">8일 안에 없어요</span>{% endif %}
+        </div>
+        {{ controls(s, edit=false) }}
+      </section>
+      <section id="runs" class="card" data-active="{{ 1 if active else 0 }}" data-idle="30000" data-list="runs sc-state" aria-labelledby="h-runs">
+        <div class="card-head">
+          <h2 id="h-runs">지난 회차 <span class="count">{{ runs|length }}</span></h2>
+          {% if active %}<span class="live">갱신 중</span>{% endif %}
+        </div>
+        {% if runs %}
+        <ol class="runs">
+          {% for r in runs %}
+          <li><span class="muted mono r-at">{{ r.at|at }}</span><span class="r-body">{{ run_line(r) }}{% if not r.slot %}<span class="chip">지금 실행</span>{% endif %}</span></li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <p class="empty">아직 돈 회차가 없어요. [지금 실행]으로 바로 한 편 만들어 볼 수 있어요.</p>
+        {% endif %}
+      </section>
+      {% endif %}
+      {{ notify_card(notifiers) }}
+    </div>
+  </div>
+</main>
+{% endblock %}

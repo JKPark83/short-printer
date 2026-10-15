@@ -13,12 +13,14 @@
 <a class="skip" href="#page">본문으로 건너뛰기</a>
 <header class="topbar">
   <a class="brand" href="/" aria-label="shorts-printer 홈">{{ icon('film', 18) }}<span>shorts-printer</span></a>
-  {% set here = 'trends' if request.url.path.startswith('/trends') else 'home' %}
+  {% set path = request.url.path %}
+  {% set here = 'trends' if path.startswith('/trends') else 'schedules' if path.startswith('/schedules') else 'home' %}
   <nav class="nav" aria-label="주 메뉴">
     <a href="/"{% if here == 'home' %} aria-current="page"{% endif %}>대시보드</a>
     <a href="/trends"{% if here == 'trends' %} aria-current="page"{% endif %}>{{ icon('trending', 14) }}주제 찾기</a>
+    <a href="/schedules"{% if here == 'schedules' %} aria-current="page"{% endif %}>{{ icon('clock', 14) }}스케줄</a>
   </nav>
-  <form class="ch-pick" method="get" action="{{ '/trends' if here == 'trends' else '/' }}">
+  <form class="ch-pick" method="get" action="{{ path if path == '/schedules/new' else {'trends': '/trends', 'schedules': '/schedules'}.get(here, '/') }}">
     <label class="sr-only" for="ch-sel">채널</label>
     <select id="ch-sel" name="channel" data-autosubmit>
       {% for c in channels.values() %}<option value="{{ c.id }}"{{ ' selected' if c.id == sel }}>{{ c.name }}</option>{% endfor %}

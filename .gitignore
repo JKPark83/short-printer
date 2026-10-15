@@ -3,6 +3,8 @@
 .secrets/
 jobs/
 trends/
+schedules/
+shorts.db*
 .venv/
 __pycache__/
 *.pyc

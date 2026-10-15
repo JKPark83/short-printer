@@ -13,7 +13,6 @@ from shorts_printer.adapters import elevenlabs
 from shorts_printer.adapters.splitters.ko import Korean
 from shorts_printer.core import channel, render, subtitles, voice
 from shorts_printer.infra import ffmpeg
-from shorts_printer.infra.store import read_json
 
 pytestmark = pytest.mark.skipif(not Path(config.FFMPEG).exists(), reason="ffmpeg-full 없음")
 
@@ -45,17 +44,15 @@ def fake_speak(text, out):
 
 def test_voice_joins_sentences_with_gap(tmp_path, ch):
     fake = Fake(fake_speak)
-    assert voice.synth(fake, ch, ["하나", "둘"], "LKOcTG4J4tYTPR9DnLeM", tmp_path, lambda m: None) == "ElevenLabs"
-    assert fake.calls == ["LKOcTG4J4tYTPR9DnLeM"] * 2
-    t = read_json(tmp_path / "timing.json")
+    engine, t = voice.synth(fake, ch, ["하나", "둘"], "LKOcTG4J4tYTPR9DnLeM", tmp_path, lambda m: None)
+    assert engine == "ElevenLabs" and fake.calls == ["LKOcTG4J4tYTPR9DnLeM"] * 2
     assert t[0]["start"] == 0 and t[0]["end"] == pytest.approx(0.5, abs=0.06)
     assert t[1]["start"] == pytest.approx(t[0]["end"] + voice.GAP, abs=0.01)
     assert (tmp_path / "voice.wav").exists()
 
 
 def test_render_gradient_with_subtitles(tmp_path, ch):
-    voice.synth(Fake(fake_speak), ch, ["커피 한 잔"], "elevenlabs", tmp_path, lambda m: None)
-    timing = read_json(tmp_path / "timing.json")
+    _, timing = voice.synth(Fake(fake_speak), ch, ["커피 한 잔"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)
     dur = render.render(tmp_path, [], timing[-1]["end"], ch, KO)
     assert dur == pytest.approx(timing[-1]["end"] + render.TAIL)
@@ -74,8 +71,8 @@ def test_elevenlabs_word_times_shift_by_sentence_start(tmp_path, ch):
     def speak_with_words(text, out):
         return fake_speak(text, out)[0], [{"text": text, "start": 0.1}]
 
-    assert voice.synth(Fake(speak_with_words), ch, ["하나", "둘"], "elevenlabs", tmp_path, print) == "ElevenLabs"
-    t = read_json(tmp_path / "timing.json")
+    engine, t = voice.synth(Fake(speak_with_words), ch, ["하나", "둘"], "elevenlabs", tmp_path, print)
+    assert engine == "ElevenLabs"
     assert t[1]["words"] == [{"text": "둘", "start": pytest.approx(t[1]["start"] + 0.1, abs=0.002)}]
 
 
@@ -151,8 +148,7 @@ def duration(path):
 
 
 def test_render_wide_clips_by_sentence(tmp_path, ch):
-    voice.synth(Fake(fake_speak), ch, ["하나", "둘"], "elevenlabs", tmp_path, lambda m: None)
-    timing = read_json(tmp_path / "timing.json")
+    _, timing = voice.synth(Fake(fake_speak), ch, ["하나", "둘"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)
     clips = make_clips(tmp_path, 2)
     # 1초 클립: 마지막 화면에서 멈춤
@@ -164,8 +160,7 @@ def test_render_wide_clips_by_sentence(tmp_path, ch):
 
 def test_render_full_layout_fills_screen(tmp_path, ch):
     full = ch.model_copy(update={"style": ch.style.model_copy(update={"layout": "full"})})
-    voice.synth(Fake(fake_speak), full, ["하나"], "elevenlabs", tmp_path, lambda m: None)
-    timing = read_json(tmp_path / "timing.json")
+    _, timing = voice.synth(Fake(fake_speak), full, ["하나"], "elevenlabs", tmp_path, lambda m: None)
     lay = render.LAYOUTS["full"]
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), full.font, lay.sub)
     clips = make_clips(tmp_path, 1)
@@ -190,8 +185,7 @@ def test_thumbnail_from_clip_shorter_than_seek(tmp_path, ch):
 
 
 def test_render_old_stock_jobs_loop_clips(tmp_path, ch):
-    voice.synth(Fake(fake_speak), ch, ["하나", "둘", "셋"], "elevenlabs", tmp_path, lambda m: None)
-    timing = read_json(tmp_path / "timing.json")
+    _, timing = voice.synth(Fake(fake_speak), ch, ["하나", "둘", "셋"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)
     clips = make_clips(tmp_path, 2)
     dur = render.render(tmp_path, clips, timing[-1]["end"], ch, KO, None, [t["start"] for t in timing])

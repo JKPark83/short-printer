@@ -8,7 +8,6 @@ from shorts_printer.adapters.youtube import YouTube
 from shorts_printer.core import trends
 from shorts_printer.core.pipeline import Job
 from shorts_printer.core.trends import Trend
-from shorts_printer.infra.store import atomic_write_json
 from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")
@@ -45,14 +44,14 @@ CLAUDE = {"topic": "편의점 신상 리뷰", "format": "음식", "hook": "첫 �
 
 def done_trend(keyword="자취"):
     t = Trend.create(CH, keyword, "3d")
-    atomic_write_json(t.dir / "videos.json", [video(1), video(2), video(3)])
-    atomic_write_json(t.dir / "analyses.json", {
+    t.put("videos.json", [video(1), video(2), video(3)])
+    t.put("analyses.json", {
         "vid1": {"status": "ok", "error": None, "shot_count": 9, "avg_shot_sec": 3.8, "has_transcript": True,
                  "frames": [{"file": "frames/vid1_0.jpg", "t": 1.5}], "claude": CLAUDE},
         "vid2": {"status": "meta_only", "error": "영상을 못 받아", "shot_count": None, "avg_shot_sec": None,
                  "has_transcript": False, "frames": [], "claude": CLAUDE},
         "vid3": {"status": "failed", "error": "Claude 오류", "frames": [], "claude": None}})
-    atomic_write_json(t.dir / "picks.json", {"summary": "음식 리뷰가 뜬다",
+    t.put("picks.json", {"summary": "음식 리뷰가 뜬다",
                                              "excluded": [{"video_id": "vid3", "reason": "방송 클립"}],
                                              "picks": [{"topic": "라면 끓이는 과학", "angle": "물 양부터 의심하게",
                                                         "format": "꿀팁·하우투", "why_now": "라면 쇼츠가 빨리 오른다",
@@ -123,7 +122,7 @@ def test_trend_page_before_results():
     t.update(status="running", progress={"done": 3, "total": 8},
              steps=t.data["steps"] | {"collect": {"status": "done", "engine": "x", "sec": 2.0},
                                       "analyze": {"status": "running", "engine": None, "sec": None}})
-    atomic_write_json(t.dir / "videos.json", [video(1)])
+    t.put("videos.json", [video(1)])
     html = client.get(f"/trends/{t.id}").text
     assert 'aria-valuenow="3"' in html and "분석 중·대기" in html and "분석이 끝나면 Claude가" in html
 

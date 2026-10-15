@@ -11,7 +11,6 @@ from shorts_printer.core import channel, pipeline, scenes, trends
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.services import Services
 from shorts_printer.infra import store
-from shorts_printer.infra.store import atomic_write_json, read_json
 from shorts_printer.infra.worker import LocalQueue
 
 CH = "ko-40sec-facts"
@@ -66,7 +65,7 @@ def test_failure_is_recorded_redacted_then_retry_resumes(monkeypatch):
         pipeline.run(job, services())
     d = job.data
     assert d["status"] == "failed" and d["error"]["step"] == "voice"
-    assert "SECRET" not in d["error"]["message"] and "SECRET" not in (job.dir / "log.txt").read_text()
+    assert "SECRET" not in d["error"]["message"] and "SECRET" not in "\n".join(job.tail())
     assert [d["steps"][s]["status"] for s in STEPS] == ["done", "failed", "pending", "pending", "pending", "pending"]
 
     ran = stub_steps(monkeypatch)
@@ -79,9 +78,9 @@ def test_failure_is_recorded_redacted_then_retry_resumes(monkeypatch):
 def scene_job(*done, ch=CH):
     """문장 2개짜리 대본·음성 시각이 있는 작업."""
     job = Job.create(ch, "주제", "ko-KR-SunHiNeural")
-    atomic_write_json(job.dir / "script.json", {"sentences": ["하나", "둘"], "prompts": ["p1", "p2"],
+    job.put("script.json", {"sentences": ["하나", "둘"], "prompts": ["p1", "p2"],
                                                 "search_terms": ["cat", "dog"]})
-    atomic_write_json(job.dir / "timing.json", [{"start": 0, "end": 1.2}, {"start": 1.3, "end": 2.5}])
+    job.put("timing.json", [{"start": 0, "end": 1.2}, {"start": 1.3, "end": 2.5}])
     for s in done:
         job.step(s, status="done")
     return job
@@ -108,7 +107,7 @@ def test_footage_waits_for_clips_then_resumes(monkeypatch):
 
 def sensitive_job():
     job = scene_job("script", "voice", "subtitles")
-    atomic_write_json(job.dir / "script.json", read_json(job.dir / "script.json") | {"sensitive": "건강·의료"})
+    job.put("script.json", job.doc("script.json") | {"sensitive": "건강·의료"})
     (job.dir / "clips").mkdir()
     for i in (0, 1):
         (job.dir / "clips" / f"clip{i}.mp4").write_bytes(b"x")
@@ -119,11 +118,11 @@ def test_sensitive_script_waits_for_confirm_before_footage(monkeypatch):
     job = sensitive_job()
     ran = footage_only(monkeypatch)
     pipeline.run(job, services())
-    assert job.data["status"] == "waiting" and ran == [] and "민감 분야(건강·의료)" in (job.dir / "log.txt").read_text()
+    assert job.data["status"] == "waiting" and ran == [] and "민감 분야(건강·의료)" in "\n".join(job.tail())
     job.update(confirmed=True)
     pipeline.run(job, services())
     assert ran == ["thumbnail", "render"] and job.data["status"] == "done"
-    assert read_json(job.dir / "clips.json") == [{"file": "clip0.mp4", "source": "직접 올림"},
+    assert job.doc("clips.json") == [{"file": "clip0.mp4", "source": "직접 올림"},
                                                  {"file": "clip1.mp4", "source": "직접 올림"}]
 
 
@@ -156,12 +155,12 @@ def test_auto_provider_fills_what_it_can_then_waits():
     with pytest.raises(pipeline.Wait):
         pipeline.step_footage(job, sv)
     sec = pytest.approx(1.3, abs=0.04)
-    assert read_json(job.dir / "clips.json") == [{"file": "clip0.mp4", "source": "Fake", "sec": sec}]
+    assert job.doc("clips.json") == [{"file": "clip0.mp4", "source": "Fake", "sec": sec}]
     (job.dir / "clips" / "clip1.mp4").write_bytes(b"x")
-    scenes.set_clip(job.dir, {"file": "clip1.mp4", "source": "직접 올림"})
+    scenes.set_clip(job, {"file": "clip1.mp4", "source": "직접 올림"})
     assert pipeline.step_footage(job, sv) == "Fake 2개"
     assert fake.calls == [[0, 1], []]   # 있는 장면은 다시 안 만든다
-    assert [c["source"] for c in read_json(job.dir / "clips.json")] == ["Fake", "직접 올림"]
+    assert [c["source"] for c in job.doc("clips.json")] == ["Fake", "직접 올림"]
 
 
 def test_flow_auto_without_chrome_falls_back_to_flow(monkeypatch):
@@ -230,7 +229,7 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
         pipeline.step_script(job, services())
     for cid, title in ((CH, "라면의 진짜 이유"), ("en-other", "Other channel title")):
         other = Job.create(cid, "예전", "v")
-        atomic_write_json(other.dir / "script.json", {"title": title, "sentences": ["x"]})
+        other.put("script.json", {"title": title, "sentences": ["x"]})
     with pytest.raises(RuntimeError):
         pipeline.step_script(job, services())
     assert seen == [(CH, "주제", "질문으로 시작", []), (CH, "주제", "질문으로 시작", ["라면의 진짜 이유"])]
@@ -243,13 +242,13 @@ def test_script_step_revises_when_note(monkeypatch):
     monkeypatch.setattr(pipeline.script, "revise", lambda llm, ch, s, note: (
         s | {"sentences": ["짧게", "둘"]}, {"model": "m", "input_tokens": 2, "output_tokens": 2, "cost_usd": 0.02}))
     assert pipeline.step_script(job, services()) == "m"
-    assert read_json(job.dir / "script.json")["prompts"] == ["p1", "p2"] and job.data["usage"]["cost_usd"] == 0.03
+    assert job.doc("script.json")["prompts"] == ["p1", "p2"] and job.data["usage"]["cost_usd"] == 0.03
 
 
 def test_publish_uses_channel_publisher():
     job = scene_job(*STEPS)
     meta = {"title": "제목", "description": "설명", "tags": ["a"]}
-    atomic_write_json(job.dir / "script.json", meta | {"sentences": ["x"]})
+    job.put("script.json", meta | {"sentences": ["x"]})
     (job.dir / "thumbnail.jpg").write_bytes(b"JPG")
     sv = services()
     pipeline.publish(job, sv)
@@ -257,7 +256,7 @@ def test_publish_uses_channel_publisher():
     assert sv.publisher.thumbs == [("VID", "thumbnail.jpg")]
     up = job.data["upload"]
     assert up["status"] == "done" and up["video_id"] == "VID" and up["note"] is None
-    assert "가짜올림 업로드 완료: VID (비공개)" in (job.dir / "log.txt").read_text()
+    assert "가짜올림 업로드 완료: VID (비공개)" in "\n".join(job.tail())
 
     sv = replace(sv, publisher=Publisher(fail_thumb=True))   # 썸네일 실패는 업로드를 실패로 두지 않는다
     pipeline.publish(job, sv)
@@ -268,7 +267,7 @@ def test_publish_uses_channel_publisher():
 def test_publish_appends_channel_footer_to_description():
     job = scene_job(*STEPS)
     s = {"title": "제목", "description": "설명\n", "tags": [], "sentences": ["x"]}
-    atomic_write_json(job.dir / "script.json", s)
+    job.put("script.json", s)
     ch = channel.load(CH)
     sv = services(channel=ch.model_copy(update={"publish": ch.publish.model_copy(update={"footer": "※AI 이미지"})}))
     pipeline.publish(job, sv)
