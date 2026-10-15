@@ -25,6 +25,7 @@ from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
 from ..infra.store import migrate, upload_state
+from ..ports.llm import add_usage
 
 log = logging.getLogger(__name__)
 
@@ -620,7 +621,7 @@ def translate(job_id: str):
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from None
     job.put("ko.json", ko)
-    job.update(ko_usage=usage)
+    job.update(ko_usage=add_usage(job.data.get("ko_usage"), usage))
     return {"ok": True, "msg": "한국어로 옮겼어요"}
 
 

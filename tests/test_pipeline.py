@@ -311,3 +311,28 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
     assert tries == ["a", "b", "c", "a", "b"]   # 실패한 장면만 딱 한 번 더
     assert got == ["c.mp4", "b.mp4"] and len(slept) == 2 and 0 < slept[0] <= fa.RETRY_AFTER
     assert "직접 올려 주세요" in logs[-2] and "다시 시도해 완료" in logs[-1]
+
+
+def test_translate_only_non_korean_when_source_changed_and_never_fails_job(monkeypatch):
+    calls = []
+
+    def translate(llm, ch, s, thumb, cues):
+        calls.append(list(cues))
+        if s["sentences"][0] == "망가짐":
+            raise RuntimeError("일부러")
+        return {"src": pipeline.script.ko_source(s, thumb), "cues": list(cues), "ko": {}}, {
+            "model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
+    monkeypatch.setattr(pipeline.script, "translate", translate)
+    job = scene_job()
+    job.put("script.json", {"title": "t", "description": "d", "tags": [], "sentences": ["a", "b"]})
+    pipeline.translate(job, services())
+    assert calls == []   # 한국어 채널은 옮기지 않는다
+    ja = services(channel=channel.load(CH).model_copy(update={"language": "ja"}))
+    pipeline.translate(job, ja)
+    pipeline.translate(job, ja)   # 원문 그대로면 다시 부르지 않는다
+    job.put("cues.json", [{"start": 0, "end": 1, "text": "あ"}])
+    pipeline.translate(job, ja)
+    assert calls == [[], ["あ"]] and job.data["ko_usage"]["cost_usd"] == 0.02
+    job.edit("script.json", lambda s: s | {"sentences": ["망가짐", "b"]})
+    pipeline.translate(job, ja)
+    assert any("한국어 뜻 실패: 일부러" in line for line in job.tail())

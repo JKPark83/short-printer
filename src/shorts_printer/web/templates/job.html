@@ -151,7 +151,7 @@
             {% if ko.ko.notes %}<dt>확인</dt>
             <dd><ul class="sentences">{% for n in ko.ko.notes %}<li>{{ n }}</li>{% endfor %}</ul></dd>{% endif %}
           </dl>
-          {% else %}<p class="muted">대본·썸네일 문구를 Claude가 따로 한국어로 옮겨, 실제로 적힌 뜻과 어색한 곳을 보여 줘요.</p>{% endif %}
+          {% else %}<p class="muted">대본을 쓰면 Claude가 따로 한국어로 옮겨, 실제로 적힌 뜻과 어색한 곳을 보여 줘요.</p>{% endif %}
           <form class="edit-form">
             <button class="btn btn-secondary" type="submit" data-post="translate">{{ icon('sparkles') }}{{ '다시 옮기기' if ko else '한국어로 옮기기' }}</button>
           </form>
@@ -195,7 +195,7 @@
             {%- else %}<span>{{ c.text }}</span>{% endif %}
             {%- if ko_cues %}<small class="cue-ko">({{ ko_cues[loop.index0] }})</small></div>{% endif %}</li>{% endfor %}
         </ol>
-        {% if ch.language != 'ko' and not ko_cues %}<p class="muted">대본 카드의 [한국어로 옮기기]를 누르면 자막마다 한국어 뜻이 (괄호)로 나와요. 영상에는 안 들어가요.</p>{% endif %}
+        {% if ch.language != 'ko' and not ko_cues %}<p class="muted">렌더가 끝나면 자막마다 한국어 뜻이 (괄호)로 나와요. 영상에는 안 들어가요.</p>{% endif %}
         {% elif review %}{{ locked }}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>

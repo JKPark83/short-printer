@@ -53,6 +53,7 @@ def step_script(job: Job, sv: Services) -> str:
         job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
+        translate(job, sv)
         return usage["model"]
     # 최근 제목은 같은 채널 안에서만 피한다
     recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
@@ -64,7 +65,26 @@ def step_script(job: Job, sv: Services) -> str:
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
     if s.sensitive and sv.channel.sensitive_gate:
         job.log(f"민감 분야({s.sensitive}): 대본을 확인한 뒤 [확인하고 계속]을 눌러야 장면을 만들어요")
+    translate(job, sv)
     return usage["model"]
+
+
+def translate(job: Job, sv: Services) -> None:
+    """한국어가 아닌 채널: 운영자가 확인하도록 대본·썸네일 문구·자막에 한국어 뜻을 붙인다(ko.json).
+    원문이 그대로면 다시 부르지 않는다. 확인용이라 실패해도 작업은 이어 간다(상세 화면에서 다시 옮긴다)."""
+    if sv.channel.language == "ko":
+        return
+    s, thumb, ko = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json")
+    cues = [c["text"] for c in job.doc("cues.json") or []]
+    if ko and ko["src"] == script.ko_source(s, thumb) and ko["cues"] == cues:
+        return
+    try:
+        ko, usage = script.translate(sv.llm, sv.channel, s, thumb, cues)
+    except Exception as e:
+        job.log(f"한국어 뜻 실패: {redact(str(e)) or type(e).__name__}")
+        return
+    job.put("ko.json", ko)
+    job.update(ko_usage=add_usage(job.data.get("ko_usage"), usage))
 
 
 def step_footage(job: Job, sv: Services) -> str:
@@ -132,6 +152,7 @@ def step_render(job: Job, sv: Services) -> str:
         subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub)
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], sv.channel, sv.splitter, title,
                                       [t["start"] for t in timing]))
+    translate(job, sv)   # 자막·썸네일 문구는 대본 뒤에 생기고, 무엇을 고쳐도 렌더는 다시 돈다
     return "ffmpeg"
 
 
