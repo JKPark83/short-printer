@@ -46,7 +46,7 @@ max_total = 18
 provider = "youtube"
 category = "19"
 footer = "※映像はAIで再現したイメージです。"
-channel_id = ""
+channel_id = "UCRYIJCDhM7pS3S7JB2aHTKw"
 
 [trends]
 region = "JP"
