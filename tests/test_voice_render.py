@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -238,3 +239,17 @@ def test_audio_levels_follow_channel_and_default_keeps_old_mix(tmp_path, ch, mon
     with pytest.raises(StopIteration) as e:
         render.render(tmp_path, ["c.mp4"], 1.0, quiet, KO, None, [0])
     assert "loudnorm=I=-23:" in e.value.value and "[1:a]loudnorm=I=-16:TP=-1.5,aresample=48000,apad[vo]" in e.value.value
+
+
+def test_scenes_cross_fade_centered_on_sentence_starts(tmp_path, ch, monkeypatch):
+    calls = []
+    monkeypatch.setattr(render.ffmpeg, "run", lambda args, cwd=None: calls.append([str(a) for a in args]))
+    monkeypatch.setattr(render.ffmpeg, "has_audio", lambda p: False)
+    monkeypatch.setattr(os, "replace", lambda a, b: None)
+    render.render(tmp_path, ["a.mp4", "b.mp4", "c.mp4"], 5.4, ch, KO, None, [0, 2.0, 4.0])   # dur 6.0 = 180f
+    fc = calls[0][calls[0].index("-filter_complex") + 1]
+    # 겹침 15프레임(0.5초): 첫 장면은 7f 더, 가운데는 8+7f 더, 마지막은 8f 더 자르고 경계 8f 전에 녹아들기 시작한다
+    assert "trim=end_frame=67," in fc and "trim=end_frame=75," in fc and "trim=end_frame=68," in fc
+    assert "[v0][v1]xfade=transition=fade:duration=0.5:offset=1.733[x1]" in fc
+    assert "[x1][v2]xfade=transition=fade:duration=0.5:offset=3.733[bg]" in fc
+    assert "concat=n=3:v=1" not in fc

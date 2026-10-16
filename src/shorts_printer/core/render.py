@@ -11,6 +11,7 @@ from . import subtitles
 from .channel import Channel
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
+XFADE = 0.5   # 장면 클립 사이 겹침(초). 8초마다 딱 끊기지 않게 경계를 가운데 두고 녹아든다
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 채널 강조색. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
 # 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 아래 띠 맨 위에(subtitles MarginV)
@@ -67,14 +68,26 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     args, chains, fx = [], [], []
     if clips:
         same = bool(starts) and len(clips) == len(starts)   # 장면 클립: 짧으면 마지막 화면에서 멈춤
-        for i, (c, k) in enumerate(zip(clips, frames(starts or [0], dur, len(clips)), strict=True)):
+        ks, n = frames(starts or [0], dur, len(clips)), len(clips)
+        # 겹침은 경계를 가운데 둔다: 다음 장면이 pre 프레임 먼저 들어오고 앞 장면이 post 프레임 더 남는다
+        pre = round(XFADE * 30 / 2)
+        post = round(XFADE * 30) - pre
+        for i, (c, k) in enumerate(zip(clips, ks, strict=True)):
+            ext = k + (post if i < n - 1 else 0) + (pre if i else 0)   # 겹침만큼 길게 자른다
             args += ([] if same else ["-stream_loop", "-1"]) + ["-i", f"clips/{c}"]   # 예전 스톡 작업은 반복
-            pad = f"tpad=stop_mode=clone:stop_duration={k / 30 + 0.1:.2f}," if same else ""
-            chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
+            pad = f"tpad=stop_mode=clone:stop_duration={ext / 30 + 0.1:.2f}," if same else ""
+            chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={ext},setpts=PTS-STARTPTS[v{i}]")
             if same:   # 효과음은 장면 클립만(스톡은 배경 음악일 수 있다). 소리 없는 클립 자리는 무음
                 src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
                 fx.append(f"{src}apad,atrim=end={k / 30:.3f},asetpts=PTS-STARTPTS[s{i}]")
-        chains.append("".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[bg]")
+        prev, cum = "[v0]", 0
+        for i in range(1, n):   # xfade offset은 앞 입력(누적 결과) 기준 = 최종 시간축. 경계 pre 프레임 전에 시작
+            cum += ks[i - 1]
+            out = "[bg]" if i == n - 1 else f"[x{i}]"
+            chains.append(f"{prev}[v{i}]xfade=transition=fade:duration={XFADE}:offset={(cum - pre) / 30:.3f}{out}")
+            prev = out
+        if n == 1:
+            chains.append("[v0]null[bg]")
         if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 목소리만
             chains += fx + ["".join(f"[s{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[fx]"]
         else:
