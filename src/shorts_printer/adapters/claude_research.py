@@ -57,10 +57,11 @@ class ClaudeResearch:
                max_pages: int) -> tuple[list[dict], dict]:
         model = self.model
         # 인용은 구조화 출력(output_format)과 같이 못 쓰니 글로 받아 인용 블록을 읽는다
+        where = {"allowed_domains": domains} if domains else {}   # 빈 목록 = 제한 없음
         tools = [
-            {"type": "web_search_20260209", "name": "web_search", "max_uses": queries, "allowed_domains": domains},
-            {"type": "web_fetch_20260309", "name": "web_fetch", "max_uses": max_pages, "allowed_domains": domains,
-             "citations": {"enabled": True}, "max_content_tokens": 8000, "use_cache": False},
+            {"type": "web_search_20260209", "name": "web_search", "max_uses": queries} | where,
+            {"type": "web_fetch_20260309", "name": "web_fetch", "max_uses": max_pages,
+             "citations": {"enabled": True}, "max_content_tokens": 8000, "use_cache": False} | where,
         ]
         messages = [{"role": "user", "content": text}]
         contents, inp, out, searches = [], 0, 0, 0

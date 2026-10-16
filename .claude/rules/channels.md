@@ -58,6 +58,7 @@
 | `[research]` `provider` | registry `RESEARCHERS` 이름(`claude`) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |
+| `[research]` `open` | true면 사이트 제한 없이 블로그·일반 웹까지 검색한다. `domains`·`news`는 먼저 볼 곳이 되고, 그 밖에서 온 사실은 "웹"으로 구별한다. 기본 false |
 | `[research]` `languages` | 검색 언어 코드 목록. 비우면 `language` |
 | `[research]` `queries_per_topic` / `max_pages` | 한 편에 쓸 검색 수(1~10, 기본 5) / 열어 볼 쪽 수(1~20, 기본 8). 비용 상한 |
 

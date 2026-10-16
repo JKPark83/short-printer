@@ -57,6 +57,7 @@ domains = ["japanese.visitkorea.or.kr", "japanese.visitseoul.net", "k-eta.go.kr"
 news = ["www3.nhk.or.jp", "newsdig.tbs.co.jp", "news.tv-asahi.co.jp", "travelvoice.jp",
         "travel.watch.impress.co.jp", "prtimes.jp", "jp.yna.co.kr", "japanese.joins.com", "japanese.korea.net"]
 languages = ["ko", "ja"]   # 한국 공식 자료는 한국어로 더 많다
+open = true   # 여행 실전 정보(요금·동선·팁)는 공식 사이트에 없는 게 많아 블로그·커뮤니티도 본다
 
 [trends]
 region = "JP"

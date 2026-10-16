@@ -65,6 +65,15 @@ def test_claude_research_refusal(monkeypatch):
         ClaudeResearch().gather("s", "t", domains=["a.kr"], queries=1, max_pages=1)
 
 
+def test_claude_research_without_domains_has_no_allowed_domains(monkeypatch):
+    calls = []
+    resp = NS(stop_reason="end_turn", model="m", usage=_usage(1, 1, 0), content=[])
+    monkeypatch.setattr(anthropic, "Anthropic",
+                        lambda: NS(beta=NS(messages=NS(create=lambda **kw: calls.append(kw) or resp))))
+    ClaudeResearch().gather("s", "t", domains=[], queries=1, max_pages=1)
+    assert all("allowed_domains" not in t for t in calls[0]["tools"])
+
+
 class FakeResearcher:
     label, hint = "가짜조사", ""
 
@@ -105,6 +114,17 @@ def test_gather_numbers_sites_kinds_and_merges():
     rs = FakeResearcher([_f("라", "https://www.yna.co.kr/v/1"), _f("마", "https://m.yna.co.kr/x")])
     doc, _ = research.gather(rs, _ch(news=["https://www.yna.co.kr/"]), "독감", None)
     assert [f["kind"] for f in doc["facts"]] == ["news", "news"]
+
+
+def test_gather_open_searches_anywhere_and_marks_web():
+    rs = FakeResearcher([_f("가", "https://blog.naver.com/x"), _f("나", "https://www.kdca.go.kr/a"),
+                         _f("다", "https://yna.co.kr/d")])
+    doc, _ = research.gather(rs, _ch(domains=["kdca.go.kr"], news=["yna.co.kr"], open=True), "독감", None)
+    assert rs.calls[0]["domains"] == [] and "블로그" in rs.calls[0]["system"]
+    assert [f["kind"] for f in doc["facts"]] == ["web", "official", "news"]
+    assert research.sheet(doc["facts"]) == "F1. 가 (웹)\nF2. 나\nF3. 다 (보도)"
+    research.gather(rs, _ch(domains=["kdca.go.kr"]), "독감", None)   # 기본은 닫힘
+    assert not _ch(domains=["kdca.go.kr"]).research.open and "블로그" not in rs.calls[1]["system"]
 
 
 def test_gather_stops_without_sites_or_facts():

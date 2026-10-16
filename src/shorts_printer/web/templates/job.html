@@ -147,7 +147,7 @@
         <details id="facts" class="script-edit" open>
           <summary>자료 {{ facts|length }}개</summary>
           <ol class="facts">{% for f in facts %}
-            <li id="fact-{{ f.id }}"><p><span class="chip">{{ f.id }}</span>{% if f.kind == 'news' %} <span class="chip chip-news">보도</span>{% endif %} {{ f.text }}</p>
+            <li id="fact-{{ f.id }}"><p><span class="chip">{{ f.id }}</span>{% if f.kind == 'news' %} <span class="chip chip-news">보도</span>{% elif f.kind == 'web' %} <span class="chip chip-news">웹</span>{% endif %} {{ f.text }}</p>
               <p class="muted fact-src"><a href="{{ f.url }}" target="_blank" rel="noopener" aria-label="{{ f.title or f.site }} (새 창)">{{ icon('external', 14) }}{{ f.site }}</a> · {{ f.retrieved_at[:10] }} 확인</p></li>{% endfor %}
           </ol>
         </details>

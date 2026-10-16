@@ -78,6 +78,7 @@ class ResearchCfg(BaseModel):
     queries_per_topic: int = Field(5, ge=1, le=10)   # 상한이 곧 비용 상한
     max_pages: int = Field(8, ge=1, le=20)
     news: list[str] = []   # 언론 기사 사이트. domains와 합쳐 검색하고 여기서 온 사실은 kind="news"
+    open: bool = False   # true면 사이트 제한 없이 웹 전체(블로그 포함)를 검색한다. domains·news는 먼저 볼 곳이 된다
 
     @field_validator("domains", "news")
     @classmethod
