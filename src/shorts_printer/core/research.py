@@ -15,7 +15,8 @@ def system(ch: Channel) -> str:
     scope = prompts.render("research_open", sites=", ".join(ch.research.domains) or "없음") if ch.research.open else ""
     return prompts.render("research", today=datetime.now().astimezone().date().isoformat(),
                           search_langs=", ".join(LANGS.get(c, c) for c in langs), max_facts=MAX_FACTS,
-                          news_sites=", ".join(ch.research.news) or "없음", scope=scope)
+                          news_sites=", ".join(ch.research.news) or "없음", scope=scope,
+                          queries=ch.research.queries_per_topic, max_pages=ch.research.max_pages)
 
 
 def _site(url: str) -> str:

@@ -21,22 +21,40 @@ def _source(c, fetched: list[dict]) -> dict | None:
     return next((f for f in fetched if title and f["title"] == title), fetched[-1])
 
 
+def _note(text: str) -> dict:
+    return {"text": text, "url": "", "title": "", "published": "", "retrieved_at": ""}
+
+
 def parse(contents: list) -> list[dict]:
-    """응답들의 content(차례대로)에서 인용 있는 text는 사실로, 인용 없는 text("확인 못 함: …" 등)는 url 없는 메모로."""
-    fetched, facts = [], []
+    """응답들의 content(차례대로)에서 인용 있는 text는 사실로, 인용 없는 text("확인 못 함: …" 등)는 url 없는 메모로.
+    도구 호출 수와 도구 오류도 메모로 남겨, 못 찾았을 때 검색이 막힌 건지 자료가 없는 건지 알 수 있게 한다."""
+    fetched, facts, calls, errs = [], [], {}, []   # errs: 검색어마다 결과 수와 도구 오류(왜 못 찾았는지)
+    n = {"web_search": 0, "web_fetch": 0}
     for block in (b for content in contents for b in content):
-        if block.type == "web_fetch_tool_result" and getattr(block.content, "type", None) == "web_fetch_result":
-            r = block.content
-            fetched.append({"url": r.url, "title": getattr(r.content, "title", None) or "",
-                            "retrieved_at": getattr(r, "retrieved_at", None) or ""})
+        if block.type == "server_tool_use":
+            calls[block.id] = block.input.get("query") or block.input.get("url") or ""
+        elif block.type in ("web_search_tool_result", "web_fetch_tool_result"):
+            tool = block.type.removesuffix("_tool_result")
+            n[tool] += 1
+            c = block.content
+            code = getattr(c, "error_code", None) if "error" in (getattr(c, "type", None) or "") else None
+            if code:
+                what = "검색" if tool == "web_search" else "열람"
+                errs.append(f"{what} '{calls.get(block.tool_use_id, '')}' 오류: {code}")
+            elif tool == "web_search":
+                errs.append(f"검색 '{calls.get(block.tool_use_id, '')}': {len(c) if isinstance(c, list) else 0}건")
+            elif tool == "web_fetch" and getattr(c, "type", None) == "web_fetch_result":
+                fetched.append({"url": c.url, "title": getattr(c.content, "title", None) or "",
+                                "retrieved_at": getattr(c, "retrieved_at", None) or ""})
         elif block.type == "text" and (text := block.text.strip()):
             src = next((s for c in getattr(block, "citations", None) or () if (s := _source(c, fetched))), None)
             if src:
                 facts.append({"text": text, "url": src["url"], "title": src["title"], "published": "",
                               "retrieved_at": src["retrieved_at"]})
             else:   # 왜 못 찾았는지 화면에 보여 주려고 남긴다
-                facts.append({"text": text, "url": "", "title": "", "published": "", "retrieved_at": ""})
-    return facts
+                facts.append(_note(text))
+    summary = _note(f"도구: 검색 {n['web_search']}번, 열람 {n['web_fetch']}쪽")
+    return [summary, *map(_note, errs), *facts]
 
 
 class ClaudeResearch:
@@ -58,10 +76,12 @@ class ClaudeResearch:
         model = self.model
         # 인용은 구조화 출력(output_format)과 같이 못 쓰니 글로 받아 인용 블록을 읽는다
         where = {"allowed_domains": domains} if domains else {}   # 빈 목록 = 제한 없음
+        # web_fetch는 기본 버전(20250910)을 쓴다. 동적 필터링 버전(20260209 이후)은 코드 실행 안에서 페이지를 열어
+        # 인용(citation)이 붙지 않아 사실이 전부 메모로 떨어진다. 대신 max_content_tokens로 길이를 막는다
         tools = [
             {"type": "web_search_20260209", "name": "web_search", "max_uses": queries} | where,
-            {"type": "web_fetch_20260309", "name": "web_fetch", "max_uses": max_pages,
-             "citations": {"enabled": True}, "max_content_tokens": 8000, "use_cache": False} | where,
+            {"type": "web_fetch_20250910", "name": "web_fetch", "max_uses": max_pages,
+             "citations": {"enabled": True}, "max_content_tokens": 8000} | where,
         ]
         messages = [{"role": "user", "content": text}]
         contents, inp, out, searches = [], 0, 0, 0

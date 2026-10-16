@@ -21,7 +21,8 @@ def _cite(**kw):
 
 def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
     first = NS(stop_reason="pause_turn", model="claude-opus-5-5", usage=_usage(1000, 100, 2), content=[
-        NS(type="web_search_tool_result", content=[]),
+        NS(type="server_tool_use", id="s1", input={"query": "물 끓는점"}),
+        NS(type="web_search_tool_result", tool_use_id="s1", content=[]),
         NS(type="text", text=" 물은 100도에서 끓는다. ", citations=[
             _cite(type="web_search_result_location", url="https://a.go.kr/x", title="A")]),
     ])
@@ -44,6 +45,8 @@ def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
     facts, usage = ClaudeResearch().gather("지시", "주제: 물", domains=["a.go.kr", "b.go.kr"], queries=3, max_pages=4)
 
     assert facts == [
+        {"text": "도구: 검색 1번, 열람 1쪽", "url": "", "title": "", "published": "", "retrieved_at": ""},
+        {"text": "검색 '물 끓는점': 0건", "url": "", "title": "", "published": "", "retrieved_at": ""},
         {"text": "물은 100도에서 끓는다.", "url": "https://a.go.kr/x", "title": "A", "published": "",
          "retrieved_at": ""},
         {"text": "얼음은 0도에서 녹는다.", "url": "https://b.go.kr/y", "title": "B 문서", "published": "",
@@ -67,11 +70,18 @@ def test_claude_research_refusal(monkeypatch):
 
 def test_claude_research_without_domains_has_no_allowed_domains(monkeypatch):
     calls = []
-    resp = NS(stop_reason="end_turn", model="m", usage=_usage(1, 1, 0), content=[])
+    resp = NS(stop_reason="end_turn", model="m", usage=_usage(1, 1, 0), content=[
+        NS(type="server_tool_use", id="u1", input={"url": "https://a.kr/p"}),
+        NS(type="web_fetch_tool_result", tool_use_id="u1",
+           content=NS(type="web_fetch_tool_result_error", error_code="url_not_accessible")),
+    ])
     monkeypatch.setattr(anthropic, "Anthropic",
                         lambda: NS(beta=NS(messages=NS(create=lambda **kw: calls.append(kw) or resp))))
-    ClaudeResearch().gather("s", "t", domains=[], queries=1, max_pages=1)
+    facts, _ = ClaudeResearch().gather("s", "t", domains=[], queries=1, max_pages=1)
     assert all("allowed_domains" not in t for t in calls[0]["tools"])
+    # 도구 오류가 메모로 남아 못 찾은 이유를 알 수 있다
+    assert [f["text"] for f in facts] == ["도구: 검색 0번, 열람 1쪽",
+                                          "열람 'https://a.kr/p' 오류: url_not_accessible"]
 
 
 class FakeResearcher:
@@ -120,11 +130,11 @@ def test_gather_open_searches_anywhere_and_marks_web():
     rs = FakeResearcher([_f("가", "https://blog.naver.com/x"), _f("나", "https://www.kdca.go.kr/a"),
                          _f("다", "https://yna.co.kr/d")])
     doc, _ = research.gather(rs, _ch(domains=["kdca.go.kr"], news=["yna.co.kr"], open=True), "독감", None)
-    assert rs.calls[0]["domains"] == [] and "블로그" in rs.calls[0]["system"]
+    assert rs.calls[0]["domains"] == [] and "일반 웹도 쓴다" in rs.calls[0]["system"]
     assert [f["kind"] for f in doc["facts"]] == ["web", "official", "news"]
     assert research.sheet(doc["facts"]) == "F1. 가 (웹)\nF2. 나\nF3. 다 (보도)"
     research.gather(rs, _ch(domains=["kdca.go.kr"]), "독감", None)   # 기본은 닫힘
-    assert not _ch(domains=["kdca.go.kr"]).research.open and "블로그" not in rs.calls[1]["system"]
+    assert not _ch(domains=["kdca.go.kr"]).research.open and "일반 웹도 쓴다" not in rs.calls[1]["system"]
 
 
 def test_gather_stops_without_sites_or_facts():
