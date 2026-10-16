@@ -4,8 +4,9 @@ import re
 import tomllib
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .. import config
 from . import prompts
@@ -67,6 +68,23 @@ class PublishCfg(BaseModel):
     category: str = "22"
     channel_id: str = ""   # UC… 스튜디오 화면으로 올릴 때 이 채널로 간다
     footer: str = ""   # 설명 맨 끝에 붙는 문구(AI 표시 등). LLM이 빼먹지 않게 코드로 붙인다
+    sources_heading: str = ""   # 설명란 출처 머리말(출처 / 出典). 비우면 붙이지 않는다
+
+
+class ResearchCfg(BaseModel):
+    provider: str = "claude"
+    domains: list[str] = []   # 허용 목록. news와 둘 다 비면 research 단계가 멈춘다(출처 없는 대본 금지)
+    languages: list[str] = []   # 검색 언어 코드. 비우면 채널 language
+    queries_per_topic: int = Field(5, ge=1, le=10)   # 상한이 곧 비용 상한
+    max_pages: int = Field(8, ge=1, le=20)
+    news: list[str] = []   # 언론 기사 사이트. domains와 합쳐 검색하고 여기서 온 사실은 kind="news"
+
+    @field_validator("domains", "news")
+    @classmethod
+    def _hosts(cls, v: list[str]) -> list[str]:
+        # 웹 도구는 scheme·경로·포트가 붙은 도메인을 받지 않는다. www.는 떼어 사실의 site와 맞춘다(하위 도메인은 허용됨)
+        hosts = (urlsplit(d if "//" in d else "//" + d).hostname or "" for d in map(str.strip, v))
+        return list(dict.fromkeys(h.removeprefix("www.") for h in hosts if h))
 
 
 class TrendsCfg(BaseModel):
@@ -100,6 +118,7 @@ class Channel(BaseModel):
     thumbnail: ThumbCfg = ThumbCfg()
     publish: PublishCfg = PublishCfg()
     trends: TrendsCfg
+    research: ResearchCfg = ResearchCfg()
 
     @property
     def lang_name(self) -> str:

@@ -43,7 +43,7 @@ STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "d
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
 # 상세 화면 단계 묶음: 대본·음성·자막을 확정해야 영상으로 넘어간다
-PHASES = (("대본", ("script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
+PHASES = (("대본", ("research", "script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
           ("완성", ("render",)))
 # 스케줄 회차 배지(글, 색)
 RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
@@ -206,8 +206,8 @@ def cue_ts(sec: float) -> str:
 
 
 def job_cost(j: dict) -> float | None:
-    """대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
-    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
+    """자료 조사 + 대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
+    costs = [u["cost_usd"] for u in (j.get("research_usage"), j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
              if u and u["cost_usd"] is not None]
     return round(sum(costs), 4) if costs else None
 
@@ -371,6 +371,9 @@ def _checks(cid: str) -> list[tuple[str, str, str]]:
     on = [n.label for n in registry.NOTIFIERS.values() if n.ready()]
     return checks + [
         ("ok" if sv.tts.ready() else "bad", f"음성 · {sv.tts.label}", sv.tts.hint),
+        ("ok" if sv.research.ready() else "bad", f"조사 · {sv.research.label}", sv.research.hint)
+        if sv.channel.research.domains or sv.channel.research.news
+        else ("bad", f"조사 · {sv.research.label}", "channel.toml [research] domains에 허용 사이트를 넣어 주세요"),
         ("ok" if pub.ready() else "warn", f"{pub.label} 업로드", pub.hint),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
         else ("warn", "YouTube Data API 키", "선택 · 주제 찾기용 · .env에 YOUTUBE_API_KEY"),

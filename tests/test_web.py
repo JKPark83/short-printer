@@ -91,7 +91,7 @@ def test_job_page_api_and_retry_rules():
     html = client.get(f"/jobs/{job.id}").text
     assert "#커피상식 #카페" in html and "final.mp4?v=2026-10-13" in html and "그라데이션 배경" in html
     d = client.get(f"/api/jobs/{job.id}").json()
-    assert d["sig"] == "done:dddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
+    assert d["sig"] == "done:ddddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
     assert client.post(f"/api/jobs/{job.id}/retry").status_code == 409
     assert client.get("/jobs/..%2Fetc").status_code == 404 and client.get("/api/jobs/nope").status_code == 404
 
@@ -284,6 +284,8 @@ def test_checks_list_providers():
     labels = [c[1] for c in web._checks(CH)]
     assert labels[0] == "Claude API 키" and "영상 · Google Flow(자동) (이 채널)" in labels
     assert "음성 · ElevenLabs" in labels
+    research = next(c for c in web._checks(CH) if c[1] == "조사 · Claude 조사")
+    assert research[0] == "bad" and "[research] domains" in research[2]   # 지금 채널은 허용 사이트가 없다
     assert "YouTube 업로드" in labels and labels == [c[1] for c in web._checks("all")]   # 전체는 첫 채널
     html = client.get("/").text   # 대시보드 카드가 아니라 상단바의 점 하나 + 펼침
     assert 'popovertarget="env-pop"' in html and "Claude API 키" in html and 'id="h-env"' not in html
@@ -481,3 +483,10 @@ def test_translate_saves_ko_shows_it_and_marks_stale(two_channels, monkeypatch):
     assert "(하나 뜻)" not in client.get(f"/jobs/{job.id}").text
     job.edit("script.json", lambda s: s | {"title": "new"})
     assert "바뀌었어요" in client.get(f"/jobs/{job.id}").text
+
+
+def test_job_cost_adds_research_and_page_shows_step():
+    job = done_job()
+    job.update(research_usage={"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.05})
+    assert web.job_cost(job.data) == 0.06
+    assert "자료 조사" in client.get(f"/jobs/{job.id}").text

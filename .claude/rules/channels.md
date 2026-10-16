@@ -50,10 +50,16 @@
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |
 | `[publish]` `footer` | 업로드할 때 설명 맨 끝에 빈 줄 하나 두고 붙는 문구(AI 표시 등). 비우면 안 붙는다 |
+| `[publish]` `sources_heading` | 설명란 출처 머리말(`출처`·`出典`). 비우면 출처를 붙이지 않는다 |
 | `[trends]` `region` / `language` | 추천 수집 지역 코드 / 언어(비우면 `language`) |
 | `[trends]` `keywords` | 키워드 없이 찾을 때 OR로 묶어 검색할 낱말들 |
 | `[trends]` `production` | 우리 제작 방식 한 단락(분석·선정 지시문에 들어간다) |
 | `[trends]` `weights` | `trend`·`fit`·`fresh`·`safe` 네 개, 합 100 |
+| `[research]` `provider` | registry `RESEARCHERS` 이름(`claude`) |
+| `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
+| `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |
+| `[research]` `languages` | 검색 언어 코드 목록. 비우면 `language` |
+| `[research]` `queries_per_topic` / `max_pages` | 한 편에 쓸 검색 수(1~10, 기본 5) / 열어 볼 쪽 수(1~20, 기본 8). 비용 상한 |
 
 ## 만든 뒤 손으로 할 일
 

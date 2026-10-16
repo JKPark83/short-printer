@@ -1,6 +1,7 @@
 """LLM 구현: Claude API. 대본·썸네일·주제 찾기가 같이 쓴다."""
 import base64
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 
 import anthropic
 
@@ -16,6 +17,30 @@ NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서�
 def cost(model: str, inp: int, out: int) -> float | None:
     price = next((p for k, p in PRICES.items() if model.startswith(k)), None)
     return round((inp * price[0] + out * price[1]) / 1e6, 4) if price else None
+
+
+def fallback(model: str) -> dict:
+    """안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다. haiku는 대상이 아니라 뺀다."""
+    return {} if "haiku" in model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+
+
+@contextmanager
+def errors() -> Iterator[None]:
+    """SDK 오류를 한국어 RuntimeError로. 대본·조사가 같이 쓴다."""
+    try:
+        yield
+    except TypeError as e:   # 키가 아예 없으면 SDK가 요청 직전에 TypeError를 낸다
+        if "authentication" not in str(e):
+            raise
+        raise RuntimeError(NO_KEY) from None
+    except anthropic.AuthenticationError:
+        raise RuntimeError("Claude API 키가 맞지 않아요. .env의 ANTHROPIC_API_KEY를 확인하세요.") from None
+    except anthropic.RateLimitError:
+        raise RuntimeError("Claude API 요청 한도에 걸렸어요. 잠시 뒤 다시 시도하세요.") from None
+    except anthropic.APIStatusError as e:
+        raise RuntimeError(f"Claude API 오류({e.status_code}): {e.message}") from None
+    except anthropic.APIConnectionError:
+        raise RuntimeError("Claude API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
 
 
 def _image(img: bytes | str) -> dict:
@@ -48,13 +73,12 @@ class Claude:
         """Claude 한 번 부르고 (구조화 결과, 사용량)을 돌려준다. 오류는 한국어 RuntimeError로."""
         model = self.model
         content = [*map(_image, images), {"type": "text", "text": text}] if images else text
-        # 안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다. haiku는 대상이 아니라 뺀다.
-        extra = {} if "haiku" in model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        extra = fallback(model)
         if web:
             extra["tools"] = [WEB_SEARCH]
         messages = [{"role": "user", "content": content}]
         inp = out = searches = 0
-        try:
+        with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
                 resp = anthropic.Anthropic().beta.messages.parse(
                     model=model,
@@ -70,18 +94,6 @@ class Claude:
                 if resp.stop_reason != "pause_turn":
                     break
                 messages.append({"role": "assistant", "content": resp.content})
-        except TypeError as e:   # 키가 아예 없으면 SDK가 요청 직전에 TypeError를 낸다
-            if "authentication" not in str(e):
-                raise
-            raise RuntimeError(NO_KEY) from None
-        except anthropic.AuthenticationError:
-            raise RuntimeError("Claude API 키가 맞지 않아요. .env의 ANTHROPIC_API_KEY를 확인하세요.") from None
-        except anthropic.RateLimitError:
-            raise RuntimeError("Claude API 요청 한도에 걸렸어요. 잠시 뒤 다시 시도하세요.") from None
-        except anthropic.APIStatusError as e:
-            raise RuntimeError(f"Claude API 오류({e.status_code}): {e.message}") from None
-        except anthropic.APIConnectionError:
-            raise RuntimeError("Claude API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
         if resp.stop_reason == "refusal":
             raise RuntimeError(refusal)
         if resp.parsed_output is None:

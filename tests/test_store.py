@@ -88,7 +88,8 @@ def test_record_over_store(monkeypatch):
 def _old(root, rec_id, kind, files, log=None):
     d = root / rec_id
     d.mkdir(parents=True)
-    atomic_write_json(d / f"{kind}.json", {"id": rec_id, "status": "done", "steps": {"render": {"status": "done"}}})
+    atomic_write_json(d / f"{kind}.json", {"id": rec_id, "status": "done", "steps": {"script": {"status": "done"},
+                                                                                "render": {"status": "done"}}})
     for name, value in files.items():
         (d / name).parent.mkdir(exist_ok=True)
         atomic_write_json(d / name, value)

@@ -1,16 +1,17 @@
-"""여섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
+"""일곱 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
 화면에서 만든 작업은 대본·음성·자막 뒤 확정 전까지, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
 from typing import ClassVar
 
 from ..infra.store import Record, now, redact, upload_state
 from ..ports.llm import add_usage
-from . import render, scenes, script, subtitles, thumbnail, voice
+from . import render, research, scenes, script, subtitles, thumbnail, voice
 from .services import Services
 
-STEPS = ("script", "voice", "subtitles", "footage", "thumbnail", "render")   # 사람을 기다리는 영상 소스는 뒤로
-LABELS = {"script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막", "thumbnail": "썸네일",
-          "render": "렌더"}
+# 사람을 기다리는 영상 소스는 뒤로
+STEPS = ("research", "script", "voice", "subtitles", "footage", "thumbnail", "render")
+LABELS = {"research": "자료 조사", "script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막",
+          "thumbnail": "썸네일", "render": "렌더"}
 
 
 class Job(Record):
@@ -21,6 +22,9 @@ class Job(Record):
         # 썸네일 단계가 생기기 전 job.json: 렌더까지 끝났으면 옛 방식 썸네일이 있으니 done으로 본다
         d["steps"].setdefault("thumbnail", {"status": "done" if d["steps"]["render"]["status"] == "done" else "pending",
                                             "engine": None, "sec": None})
+        # 자료 조사 단계가 생기기 전 작업: 대본이 이미 있으면 조사 없이 그대로 연다
+        d["steps"].setdefault("research", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
+                                           "engine": None, "sec": None})
         return d
 
     @classmethod
@@ -45,6 +49,14 @@ def missing_clips(job: Job) -> list[int]:
     """아직 안 올라온 장면 번호(0부터). 장면 = 대본 문장."""
     n = len(job.doc("script.json")["sentences"])
     return [i for i in range(n) if not (job.dir / "clips" / f"clip{i}.mp4").exists()]
+
+
+def step_research(job: Job, sv: Services) -> str:
+    facts, usage = research.gather(sv.research, sv.channel, job.data["topic"], job.data.get("brief"))
+    job.put("facts.json", facts)
+    job.update(research_usage=usage)
+    job.log(f"사실 {len(facts['facts'])}개")
+    return usage["model"]
 
 
 def step_script(job: Job, sv: Services) -> str:
@@ -157,7 +169,7 @@ def step_render(job: Job, sv: Services) -> str:
     return "ffmpeg"
 
 
-RUN = {"script": step_script, "footage": step_footage, "voice": step_voice,
+RUN = {"research": step_research, "script": step_script, "footage": step_footage, "voice": step_voice,
        "subtitles": step_subtitles, "thumbnail": step_thumbnail, "render": step_render}
 
 

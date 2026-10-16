@@ -1,0 +1,127 @@
+from types import SimpleNamespace as NS
+
+import anthropic
+import pytest
+
+from shorts_printer import config
+from shorts_printer.adapters.claude_research import ClaudeResearch
+from shorts_printer.core import channel, research
+from shorts_printer.core.channel import ResearchCfg
+
+CH = "ko-40sec-facts"
+
+
+def _usage(inp, out, searches):
+    return NS(input_tokens=inp, output_tokens=out, server_tool_use=NS(web_search_requests=searches))
+
+
+def _cite(**kw):
+    return NS(**kw)
+
+
+def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
+    first = NS(stop_reason="pause_turn", model="claude-opus-5-5", usage=_usage(1000, 100, 2), content=[
+        NS(type="web_search_tool_result", content=[]),
+        NS(type="text", text=" 물은 100도에서 끓는다. ", citations=[
+            _cite(type="web_search_result_location", url="https://a.go.kr/x", title="A")]),
+    ])
+    page = NS(type="web_fetch_result", url="https://b.go.kr/y", retrieved_at="2026-10-16T00:00:00Z",
+              content=NS(title="B 문서"))
+    second = NS(stop_reason="end_turn", model="claude-opus-5-5", usage=_usage(2000, 200, 1), content=[
+        NS(type="web_fetch_tool_result", content=page),
+        NS(type="text", text="얼음은 0도에서 녹는다.", citations=[_cite(type="char_location", document_index=0)]),
+        NS(type="text", text="확인 못 함: 달은 치즈다", citations=None),
+    ])
+    calls, resps = [], [first, second]
+
+    def create(**kw):
+        calls.append(kw | {"messages": list(kw["messages"])})
+        return resps.pop(0)
+
+    client = NS(beta=NS(messages=NS(create=create)))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(config, "CLAUDE_MODEL", "claude-opus-5-5")
+    facts, usage = ClaudeResearch().gather("지시", "주제: 물", domains=["a.go.kr", "b.go.kr"], queries=3, max_pages=4)
+
+    assert facts == [
+        {"text": "물은 100도에서 끓는다.", "url": "https://a.go.kr/x", "title": "A", "published": "",
+         "retrieved_at": ""},
+        {"text": "얼음은 0도에서 녹는다.", "url": "https://b.go.kr/y", "title": "B 문서", "published": "",
+         "retrieved_at": "2026-10-16T00:00:00Z"},
+    ]
+    # 토큰 3000·300 → 3000*4/1e6 + 300*20/1e6 = 0.018, 검색 3번 0.03
+    assert usage == {"model": "claude-opus-5-5", "input_tokens": 3000, "output_tokens": 300, "cost_usd": 0.048}
+    search, fetch = calls[0]["tools"]
+    assert search["allowed_domains"] == fetch["allowed_domains"] == ["a.go.kr", "b.go.kr"]
+    assert search["max_uses"] == 3 and fetch["max_uses"] == 4 and fetch["citations"] == {"enabled": True}
+    assert "output_format" not in calls[0] and len(calls[1]["messages"]) == 2   # pause_turn이면 이어 부른다
+
+
+def test_claude_research_refusal(monkeypatch):
+    resp = NS(stop_reason="refusal", model="claude-opus-5-5", usage=_usage(1, 1, 0), content=[])
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: NS(beta=NS(messages=NS(create=lambda **kw: resp))))
+    with pytest.raises(RuntimeError, match="거절"):
+        ClaudeResearch().gather("s", "t", domains=["a.kr"], queries=1, max_pages=1)
+
+
+class FakeResearcher:
+    label, hint = "가짜조사", ""
+
+    def __init__(self, facts):
+        self.facts, self.calls = facts, []
+
+    def ready(self):
+        return True
+
+    def gather(self, system, text, *, domains, queries, max_pages):
+        self.calls.append({"system": system, "text": text, "domains": domains})
+        return self.facts, {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
+
+
+def _ch(**cfg):
+    return channel.load(CH).model_copy(update={"research": ResearchCfg(**cfg)})
+
+
+def _f(text, url):
+    return {"text": text, "url": url, "title": "t", "published": "", "retrieved_at": ""}
+
+
+def test_gather_numbers_sites_kinds_and_merges():
+    rs = FakeResearcher([_f("가", "https://www.kdca.go.kr/a"), _f("나", "https://news.yna.co.kr/b"),
+                         _f("가", "https://other.go.kr/c"), _f("다", "https://yna.co.kr/d")])
+    doc, usage = research.gather(rs, _ch(domains=["kdca.go.kr"], news=["yna.co.kr"]), "독감", "주장 1")
+    facts = doc["facts"]
+    assert [f["id"] for f in facts] == ["F1", "F2", "F3"] and doc["queries"] == []
+    assert [(f["text"], f["site"], f["kind"]) for f in facts] == [
+        ("가", "kdca.go.kr", "official"), ("나", "news.yna.co.kr", "news"), ("다", "yna.co.kr", "news")]
+    assert all(f["retrieved_at"] for f in facts) and usage["cost_usd"] == 0.01
+    call = rs.calls[0]
+    assert call["domains"] == ["kdca.go.kr", "yna.co.kr"] and "확인할 주장·참고:\n주장 1" in call["text"]
+    assert "yna.co.kr" in call["system"] and "${" not in call["system"]
+    research.gather(rs, _ch(domains=["kdca.go.kr"]), "독감", None)
+    assert rs.calls[1]["text"] == "주제: 독감"
+    # news에 www.를 붙여 적어도 www·m 기사 모두 보도로 본다
+    rs = FakeResearcher([_f("라", "https://www.yna.co.kr/v/1"), _f("마", "https://m.yna.co.kr/x")])
+    doc, _ = research.gather(rs, _ch(news=["https://www.yna.co.kr/"]), "독감", None)
+    assert [f["kind"] for f in doc["facts"]] == ["news", "news"]
+
+
+def test_gather_stops_without_sites_or_facts():
+    with pytest.raises(RuntimeError, match="조사 사이트"):
+        research.gather(FakeResearcher([_f("가", "https://a.kr")]), _ch(), "주제", None)
+    with pytest.raises(RuntimeError, match="자료를 찾지 못했어요"):
+        research.gather(FakeResearcher([]), _ch(news=["yna.co.kr"]), "주제", None)
+
+
+def test_sheet_marks_news():
+    facts = [{"id": "F1", "text": "공식.", "kind": "official"}, {"id": "F2", "text": "기사.", "kind": "news"},
+             {"id": "F3", "text": "새 제도 (2026-10-12 보도, 연합뉴스)", "kind": "news"}]
+    assert research.sheet(facts) == "F1. 공식.\nF2. 기사. (보도)\nF3. 새 제도 (2026-10-12 보도, 연합뉴스)"
+
+
+def test_research_cfg_normalizes_domains():
+    r = ResearchCfg(domains=[" https://WWW.KDCA.go.kr/board/1 ", "http://a.kr", "a.kr/", "", "kdca.go.kr",
+                             "b.kr:443", "c.kr?x=1", "d.kr#top"],
+                    news=["https://Yna.co.kr/"])
+    assert r.domains == ["kdca.go.kr", "a.kr", "b.kr", "c.kr", "d.kr"] and r.news == ["yna.co.kr"]
+    assert channel.load(CH).research.domains == []   # 기존 channel.toml은 기본값으로 읽힌다

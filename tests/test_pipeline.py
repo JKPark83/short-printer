@@ -8,6 +8,7 @@ from shorts_printer.adapters import flow_auto
 from shorts_printer.adapters.flow import Flow
 from shorts_printer.adapters.splitters.ko import Korean
 from shorts_printer.core import channel, pipeline, scenes, trends
+from shorts_printer.core.channel import ResearchCfg
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.services import Services
 from shorts_printer.infra import store
@@ -38,7 +39,7 @@ class Publisher:
 def services(**kw) -> Services:
     """작은 가짜로 묶은 Services. 쓰지 않는 공급자는 None."""
     return Services(**{"channel": channel.load(CH), "llm": None, "tts": None, "video": Flow(),
-                       "publisher": Publisher(), "splitter": Korean()} | kw)
+                       "publisher": Publisher(), "splitter": Korean(), "research": None} | kw)
 
 
 def stub_steps(monkeypatch, fail=None):
@@ -66,7 +67,8 @@ def test_failure_is_recorded_redacted_then_retry_resumes(monkeypatch):
     d = job.data
     assert d["status"] == "failed" and d["error"]["step"] == "voice"
     assert "SECRET" not in d["error"]["message"] and "SECRET" not in "\n".join(job.tail())
-    assert [d["steps"][s]["status"] for s in STEPS] == ["done", "failed", "pending", "pending", "pending", "pending"]
+    assert [d["steps"][s]["status"] for s in STEPS] == ["done", "done", "failed", "pending", "pending", "pending",
+                                                        "pending"]
 
     ran = stub_steps(monkeypatch)
     pipeline.run(job, services())
@@ -81,7 +83,7 @@ def scene_job(*done, ch=CH):
     job.put("script.json", {"sentences": ["하나", "둘"], "prompts": ["p1", "p2"],
                                                 "search_terms": ["cat", "dog"]})
     job.put("timing.json", [{"start": 0, "end": 1.2}, {"start": 1.3, "end": 2.5}])
-    for s in done:
+    for s in done + (("research",) if "script" in done else ()):   # 대본이 있으면 조사는 끝났다
         job.step(s, status="done")
     return job
 
@@ -337,3 +339,28 @@ def test_translate_only_non_korean_when_source_changed_and_never_fails_job(monke
     job.edit("script.json", lambda s: s | {"sentences": ["망가짐", "b"]})
     pipeline.translate(job, ja)
     assert any("한국어 뜻 실패: 일부러" in line for line in job.tail())
+
+
+def test_old_job_without_research_step_is_filled_from_script(db):
+    for status in ("done", "pending"):
+        job = Job.create(CH, "주제", "v")
+        old = {k: v for k, v in job.data["steps"].items() if k != "research"}
+        old["script"]["status"] = status
+        db.edit("job", job.id, lambda d, old=old: d | {"steps": old})
+        assert job.data["steps"]["research"]["status"] == status
+
+
+def test_step_research_saves_facts_and_usage():
+    calls = []
+
+    def gather(system, text, **kw):
+        calls.append(text)
+        return ([{"text": "가", "url": "https://kdca.go.kr/a", "title": "t", "published": "", "retrieved_at": "x"}],
+                {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01})
+
+    ch = channel.load(CH).model_copy(update={"research": ResearchCfg(domains=["kdca.go.kr"])})
+    rs = SimpleNamespace(gather=gather)
+    job = Job.create(CH, "독감", "v", brief="주장")
+    assert pipeline.step_research(job, services(channel=ch, research=rs)) == "m"
+    assert job.doc("facts.json")["facts"][0]["id"] == "F1" and job.data["research_usage"]["cost_usd"] == 0.01
+    assert "주장" in calls[0] and "사실 1개" in job.tail()[-1]
