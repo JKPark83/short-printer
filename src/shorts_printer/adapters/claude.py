@@ -1,5 +1,6 @@
 """LLM 구현: Claude API. 대본·썸네일·주제 찾기가 같이 쓴다."""
 import base64
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
@@ -12,6 +13,7 @@ PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haik
 SEARCH_USD = 0.01   # 웹 검색 한 번
 WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜세요."
+BLOCKED = re.compile(r"not accessible to our user agent: \[([^\]]*)\]")
 
 
 def cost(model: str, inp: int, out: int) -> float | None:
@@ -41,6 +43,21 @@ def errors() -> Iterator[None]:
         raise RuntimeError(f"Claude API 오류({e.status_code}): {e.message}") from None
     except anthropic.APIConnectionError:
         raise RuntimeError("Claude API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
+
+
+def with_sites(request, tools: list[dict] | None):
+    """request(tools)를 부른다. 크롤러를 막는 사이트가 allowed_domains에 있으면 서버가 400으로 목록을 알려 주니,
+    그 사이트만 빼고 한 번 더 부른다. (응답, 실제로 쓴 tools)."""
+    try:
+        return request(tools), tools
+    except anthropic.BadRequestError as e:
+        m = BLOCKED.search(str(e))
+        if not m or not tools:
+            raise
+        bad = set(re.findall(r"'([^']+)'", m.group(1)))
+        tools = [t | {"allowed_domains": [d for d in t["allowed_domains"] if d not in bad]} if "allowed_domains" in t
+                 else t for t in tools]
+        return request(tools), tools
 
 
 def _image(img: bytes | str) -> dict:
@@ -74,20 +91,20 @@ class Claude:
         model = self.model
         content = [*map(_image, images), {"type": "text", "text": text}] if images else text
         extra = fallback(model)
-        if web:   # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
-            extra["tools"] = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}]
+        # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
+        tools = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}] if web else None
         messages = [{"role": "user", "content": content}]
         inp = out = searches = 0
         with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp = anthropic.Anthropic().beta.messages.parse(
+                resp, tools = with_sites(lambda t: anthropic.Anthropic().beta.messages.parse(
                     model=model,
                     max_tokens=16000,
                     system=system,
                     messages=messages,
                     output_format=schema,
-                    **extra,
-                )
+                    **(extra | {"tools": t} if t else extra),
+                ), tools)
                 u = resp.usage
                 inp, out = inp + u.input_tokens, out + u.output_tokens
                 searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0

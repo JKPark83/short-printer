@@ -47,7 +47,7 @@ sources_heading = "출처"
 domains = ["kdca.go.kr", "health.kdca.go.kr", "mfds.go.kr", "korean.go.kr", "encykorea.aks.ac.kr", "khs.go.kr",
            "scent.kisti.re.kr", "kasi.re.kr", "weather.go.kr", "kostat.go.kr", "mods.go.kr",
            "pubmed.ncbi.nlm.nih.gov", "nih.gov", "nasa.gov", "noaa.gov", "who.int"]
-news = ["yna.co.kr", "news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
+news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
         "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
         "bbc.com", "nature.com", "science.org", "nationalgeographic.com"]
 

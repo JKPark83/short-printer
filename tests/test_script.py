@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import anthropic
+import httpx
 import pytest
 
 from shorts_printer import config
@@ -216,6 +217,24 @@ def test_claude_web_search_limited_to_sites(monkeypatch):
     calls = fake_client(monkeypatch, resp())
     ask(web=["kma.go.kr", "yna.co.kr"])
     assert calls[0]["tools"] == [claude.WEB_SEARCH | {"allowed_domains": ["kma.go.kr", "yna.co.kr"]}]
+
+
+def test_claude_drops_sites_that_block_the_crawler_and_retries(monkeypatch):
+    calls = []
+    msg = "The following domains are not accessible to our user agent: ['fnn.jp', 'yna.co.kr']."
+    body = {"error": {"message": msg}}
+    http = httpx.Response(400, request=httpx.Request("POST", "http://x"))
+    err = anthropic.BadRequestError(msg, response=http, body=body)
+
+    def parse(**kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            raise err
+        return resp()
+    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=parse)))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+    ask(web=["kma.go.kr", "fnn.jp", "yna.co.kr"])
+    assert [c["tools"][0]["allowed_domains"] for c in calls] == [["kma.go.kr", "fnn.jp", "yna.co.kr"], ["kma.go.kr"]]
 
 
 def test_claude_puts_images_before_text(monkeypatch):

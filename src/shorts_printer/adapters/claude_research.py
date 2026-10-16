@@ -2,7 +2,7 @@
 import anthropic
 
 from .. import config
-from .claude import SEARCH_USD, cost, errors, fallback
+from .claude import SEARCH_USD, cost, errors, fallback, with_sites
 
 REFUSAL = "Claude가 이 주제의 조사를 거절했어요. 주제를 바꿔 보세요."
 
@@ -64,8 +64,8 @@ class ClaudeResearch:
         contents, inp, out, searches = [], 0, 0, 0
         with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp = anthropic.Anthropic().beta.messages.create(
-                    model=model, max_tokens=8000, system=system, messages=messages, tools=tools, **fallback(model))
+                resp, tools = with_sites(lambda t: anthropic.Anthropic().beta.messages.create(
+                    model=model, max_tokens=8000, system=system, messages=messages, tools=t, **fallback(model)), tools)
                 u = resp.usage
                 inp, out = inp + u.input_tokens, out + u.output_tokens
                 searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
