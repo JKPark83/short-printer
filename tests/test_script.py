@@ -52,9 +52,9 @@ def test_write_without_style_keeps_prompt(tmp_path):
 
 def test_ko_system_keeps_every_old_rule(ko):
     sys = script.system(ko)
-    for rule in ["52~56초", "정확히 7개", "62~68자", "68자를 넘지", "이모지·해시태그·괄호", "80~110단어", "photoreal",
-                 "주인공·장소·시대·옷차림", "앞 5초", "No on-screen text, no numbers, no logos.", "실존 인물의 얼굴",
-                 "No dialogue, no voices, no music.",
+    for rule in ["100~110초", "정확히 13개", "52~58자", "58자를 넘지", "이모지·해시태그·괄호", "80~110단어",
+                 "photoreal", "주인공·장소·시대·옷차림", "앞 5초", "No on-screen text, no numbers, no logos.",
+                 "실존 인물의 얼굴", "No dialogue, no voices, no music.",
                  "훅", "존댓말", "사실 시트", "fact_ids", "prompt_ko",
                  "여기까진 다들 아시죠?", "오늘도 상식 하나 챙기셨네요?", "질문형",
                  "3D 애니메이션", "단면도", "한국어"]:

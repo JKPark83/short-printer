@@ -786,6 +786,8 @@ def _run_view(run: dict) -> dict:
                 return view | {"label": "올리는 중", "cls": "b-running"}
             if up == "failed":
                 return view | {"label": "업로드 실패", "cls": "b-failed"}
+            if in_review(d):
+                return view | {"label": "대본 확인", "cls": "b-waiting"}
             sc = job.doc("script.json") if st == "waiting" else None
             if sc and sc.get("sensitive") and not d.get("confirmed"):
                 return view | {"label": "확인 필요", "cls": "b-waiting"}

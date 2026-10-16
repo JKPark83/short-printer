@@ -124,4 +124,4 @@ def test_research_cfg_normalizes_domains():
                              "b.kr:443", "c.kr?x=1", "d.kr#top"],
                     news=["https://Yna.co.kr/"])
     assert r.domains == ["kdca.go.kr", "a.kr", "b.kr", "c.kr", "d.kr"] and r.news == ["yna.co.kr"]
-    assert channel.load(CH).research.domains == []   # 기존 channel.toml은 기본값으로 읽힌다
+    assert "kdca.go.kr" in channel.load(CH).research.domains   # 채널 허용 목록도 같은 검증을 지난다

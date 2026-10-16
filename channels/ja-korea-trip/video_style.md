@@ -1,10 +1,21 @@
 # 장면 영상 규칙
 
-- 화풍은 미니어처 디오라마 3D 해설 애니메이션 하나다. 지금의 서울 동네를 탁자 위 모형처럼 보여 주고(틸트시프트, 클레이 질감), 건축·과학 해설 채널처럼 깔끔하게 설명한다. 누가 봐도 만든 영상이어야 한다. 실사·포토리얼은 쓰지 않는다(실존 장소를 사실처럼 그리면 AI 라벨 대상이 된다).
-- 동네를 위에서 비스듬히 내려다보는 장면을 기본으로 쓴다. 카페가 모인 골목, 역에서 가는 길, 줄 서는 곳처럼 실제 영상으로는 한눈에 안 보이는 것을 모형 전체로 보여 준다.
-- 길·동선·순서·비교(요금, 줄 길이)는 숫자 대신 빨간 선·화살표로 보여 준다. 건물 안이나 원리는 단면도(cutaway)로 보여 준다.
-- 사람은 얼굴을 단순화한 클레이 인형으로 쓴다. 젊은 여성 여행자 인형(작은 캐리어·토트백)을 주인공으로 자주 쓴다. 실존 인물·연예인을 닮게 그리지 않는다.
-- 간판·한글·로고·상품 상표는 넣지 않는다. 가게는 업종만 알아보게 그린다(카페 테이블, 화장품 진열대, 포장마차).
-- 옛 모습을 한 장면 보여 줄 때는 prompt 끝(마지막 문장 앞)에 시대 제약 문장을 붙인다. 조선 시대면 "Joseon era only: no modern buildings, no glass windows, no cars, no power lines, no tourists."
-- 카메라 움직임은 아주 느린 것 하나만 쓴다(very slow push-in, very slow orbit 등).
-- prompt는 카메라 → 피사체 → 동작 → 배경 → 분위기 순으로 쓰고, 제약(시대 고증, 텍스트 금지)은 끝에 둔다.
+- 화풍은 미니어처 디오라마 3D 해설 애니메이션 하나다. 지금의 서울 동네를 탁자 위 모형처럼 보여 준다. 누가 봐도 만든 영상이어야 한다. 실사·포토리얼은 쓰지 않는다(실존 장소를 사실처럼 그리면 AI 라벨·공개 의무 대상이 된다). 화풍·재질·흐림은 앱이 머리말로 붙이므로 prompt에 다시 쓰지 않는다.
+- 주인공은 아래 마스코트 문장을 글자 그대로 넣는다. 소품과 옷을 장면마다 바꾸지 않는다. 다른 사람은 얼굴을 단순화한 작은 클레이 인형으로 쓰고, 실존 인물·연예인을 닮게 그리지 않는다.
+  - Mina, the channel's clay traveler figure: round face with dot eyes, cream beret, sage-green coat, small coral suitcase.
+- 거리 장면은 동네를 위에서 비스듬히 내려다보는 장면을 기본으로 쓴다. 카페가 모인 골목, 역에서 가는 길, 줄 서는 곳처럼 실제 영상으로는 한눈에 안 보이는 것을 모형 전체로 보여 준다.
+- 실내 장면(가게 안, 숙소, 공항 안)은 지붕을 떼어 낸 방 모형(a tabletop model room with the roof removed)으로 쓴다. 동네 이름을 붙이지 않는다.
+- 길·동선·순서는 숫자 대신 바닥에 그려지는 glossy coral clay path로 보여 준다. 비교(요금, 줄 길이)는 같은 물건 두 개의 높이·길이 차이로 보여 준다. 건물 안이나 원리는 단면도(cutaway)로 보여 준다.
+- 간판·한글·로고·상품 상표·가격표·달력은 넣지 않는다. 가게는 업종만 알아보게 그린다. 진열대·포장은 plain pastel boxes with blank labels로 쓴다.
+- 지명은 그림이 되지 않으므로 prompt에 동네 이름 대신 모습을 쓴다(성수: low red-brick former factories turned into cafés with large steel-framed windows / 한남동: a steep hillside of small boutiques and narrow sloping alleys / 명동: a dense pedestrian shopping street with rows of street-food carts / 익선동: narrow alleys of low hanok houses with curved grey tile roofs / 광장시장: rows of covered food stalls with steaming pots under warm bulbs).
+- 한국 물건은 이름 뒤에 생김새를 붙여 쓴다.
+  - 김밥: gimbap, a seaweed-wrapped rice roll sliced into round pieces showing yellow, green, orange and egg fillings
+  - 떡볶이: tteokbokki, short cylindrical rice cakes in glossy bright red sauce in a wide shallow pan
+  - 한옥: a hanok, a traditional Korean wooden house with dark gray curved tile roofs, upturned eaves, white plaster walls and wooden lattice doors around a small courtyard
+  - 한복: a hanbok, a high-waisted long full skirt with a short jacket tied with a long ribbon at the chest
+  - 교통카드: a plain blank card-sized transit pass tapped on a round reader at a subway gate
+  - 포장마차: a street-food tent with an orange tarp and a steaming counter
+  - 화장품 가게: a bright health-and-beauty drugstore with rows of plain skincare bottles
+- 옛 모습을 한 장면 보여 줄 때는 prompt 끝(마지막 두 줄 앞)에 시대 제약 문장을 붙인다. 조선 시대면 "Joseon era only: no modern buildings, no glass windows, no cars, no power lines, no tourists."
+- 카메라 움직임은 아주 느린 것 하나만 쓴다: very slow push-in, very slow orbit, very slow pull-back, high three-quarter overhead 고정.
+- prompt는 컷 → 카메라 → 마스코트 → 동작(시간 순) → 배경 → 시간대 빛 순으로 쓰고, 제약(시대, 소리, 텍스트 금지)은 끝에 둔다.

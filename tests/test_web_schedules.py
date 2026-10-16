@@ -236,3 +236,14 @@ def test_recover_notifies_scheduled_and_view_shows_trend_state(queued):
     assert "주제 찾기 실패: 서버가 꺼져 멈췄어요" in queued["notify"][0] and "업로드 실패" in queued["notify"][1]
     s.update(runs=[s.data["runs"][0] | {"result": "started"}])   # after_trend가 못 돈 경우
     assert web._run_view(s.data["runs"][0])["label"] == "중단"
+
+
+def test_run_view_shows_review_wait():
+    s = make()
+    job = Job.create(CH, "커피", VOICE, source={"schedule": s.id}, review=True)
+    job.update(status="waiting")
+    run = {"at": "2026-10-15T09:00:00+09:00", "slot": None, "result": "started", "job": job.id, "trend": None,
+           "topic": "커피", "note": None}
+    assert web._run_view(run)["label"] == "대본 확인"
+    job.update(confirmed=True)   # 확정하면 클립 대기로 돌아간다
+    assert web._run_view(run)["label"] == "클립 대기"
