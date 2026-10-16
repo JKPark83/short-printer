@@ -276,7 +276,7 @@ def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
     assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
     assert "(가중치 60)" in text and "(가중치 10)" in text
     assert llm.calls[0]["system"] == trends.system_pick(ch) and llm.calls[0]["web"] == research.sites(ch)
-    assert any("허용 사이트" in m and "쇼츠 0개로" in m and "주제 1개 제외" in m for m in logs(t))
+    assert any("허용 사이트" in m and "쇼츠 0개로" in m and "주제 1개," in m for m in logs(t))
 
 
 def logs(t):
@@ -477,3 +477,15 @@ def test_idea_again_avoids_shown_topics():
     llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))
     trends.run(n, sv(llm))
     assert "앞서 추천했지만 고르지 않은 주제:\n- 예전 주제\n- 정전기\n- 입김" in llm.calls[0]["text"]
+
+
+def test_idea_fresh_run_avoids_topics_shown_in_earlier_runs():
+    old = trends.Trend.create(CH, "", mode="idea")
+    old.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "단풍 색"}, {"topic": "고구마 냉장고"}]})
+    other = trends.Trend.create("ja-korea-trip", "", mode="idea")
+    other.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "다른 채널 주제"}]})
+    t = trends.Trend.create(CH, "", mode="idea")   # 다시 추천이 아니라 새로 시작한 주제 찾기
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))
+    trends.run(t, sv(llm))
+    text = llm.calls[0]["text"]
+    assert "앞서 추천했지만 고르지 않은 주제:\n- 단풍 색\n- 고구마 냉장고" in text and "다른 채널 주제" not in text

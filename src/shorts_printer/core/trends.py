@@ -478,6 +478,15 @@ def _made(cid: str) -> list[str]:
     return [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid][-30:]
 
 
+def _shown(t: Trend) -> list[str]:
+    """이 채널에서 앞서 추천했던 주제 최근 50개(새 것 먼저): 이어진 기록(avoid)뿐 아니라 지난 주제 찾기 전부.
+    새로 시작한 주제 찾기도 지난 추천을 되풀이하지 않게."""
+    cid = t.data["channel"]
+    past = [p["topic"] for o in reversed(Trend.all()) if o.id != t.id and o.data.get("channel") == cid
+            for p in (o.doc("picks.json") or {}).get("picks", [])]
+    return list(dict.fromkeys((t.data.get("avoid") or []) + past))[:50]
+
+
 def _bullets(items: list[str]) -> str:
     return "\n".join(f"- {m}" for m in items) or "(없음)"
 
@@ -509,7 +518,7 @@ def _criteria(w: dict[str, int], keys) -> str:
 def pick_ideas(t: Trend, sv: Services) -> str:
     ch = sv.channel
     keys = ("fit", "fresh", "safe")
-    made, avoid, web = _made(ch.id), t.data.get("avoid") or [], _web(ch)
+    made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     text = (f"오늘: {datetime.now():%Y-%m-%d}\n좁힐 주제: {t.data['keyword'] or '없음'}\n\n"
             f"점수 기준:\n{_criteria(ch.trends.weights, keys)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
     if avoid:
@@ -536,11 +545,13 @@ def step_pick(t: Trend, sv: Services) -> str:
             | {"shots": found[v["id"]]["shot_count"], "analysis": found[v["id"]]["claude"]}
             for v in videos if found.get(v["id"], {}).get("status") in OK]
     keyword = t.data.get("search") or t.data["keyword"] or f"(없음, {ch.trends.region} 전체)"   # 예전 기록은 search가 없다
-    made, web = _made(ch.id), _web(ch)
+    made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     text = (f"오늘: {datetime.now():%Y-%m-%d}\n검색어: {keyword} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
             f"선정 기준:\n{_criteria(w, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}"
+            f"\n\n앞서 추천했지만 고르지 않은 주제:\n{_bullets(avoid)}"
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
-    t.log(f"{_where(web)} 분석된 쇼츠 {len(rows)}개로 주제 고르는 중 (이미 만든 주제 {len(made)}개 제외)")
+    t.log(f"{_where(web)} 분석된 쇼츠 {len(rows)}개로 주제 고르는 중 "
+          f"(이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
     out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제", web=web,
                             refusal=f"{sv.llm.label}가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. "
                                     "키워드를 바꿔 보세요.")
