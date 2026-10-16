@@ -1,5 +1,5 @@
-"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 대본 확정 → 영상·썸네일 진행 보기(장면 클립 올리기)
-→ 완성 영상."""
+"""브라우저 화면: 주제 넣기(또는 인기 쇼츠 분석에서 고르기) → 대본·음성·자막 확정
+→ 영상·썸네일 진행 보기(장면 클립 올리기) → 완성 영상."""
 import asyncio
 import logging
 import os
@@ -42,8 +42,8 @@ STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "d
           "failed": "실패", "interrupted": "중단", "waiting": "클립 대기"}
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
-# 상세 화면 단계 묶음: 대본을 확정해야 영상으로 넘어간다
-PHASES = (("대본", ("script",)), ("영상", ("voice", "subtitles", "footage")), ("썸네일", ("thumbnail",)),
+# 상세 화면 단계 묶음: 대본·음성·자막을 확정해야 영상으로 넘어간다
+PHASES = (("대본", ("script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
           ("완성", ("render",)))
 # 스케줄 회차 배지(글, 색)
 RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
@@ -591,8 +591,9 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
                 raise HTTPException(400, f"썸네일 문구는 1~2줄, 줄마다 {cap}자 안으로 적어 주세요")
             fields["thumb_hand"] = {"lines": hand, "accent": accent}
             steps |= {"thumbnail", "render"}
-    # 확정 전엔 음성부터 아직 안 했으니 다시 할 것 없이 저장만(확정하면 그때 만든다)
-    steps = () if in_review(job.data) else tuple(s for s in STEPS if s in steps)
+    if in_review(job.data):   # 확정 전엔 썸네일·렌더를 아직 안 했다(확정하면 그때 만든다)
+        steps -= {"thumbnail", "render"}
+    steps = tuple(s for s in STEPS if s in steps)
     _redo(job_id, steps, files=files, **fields)
     redo = "·".join(LABELS[s] for s in steps)
     return {"ok": True, "msg": f"저장했어요. {redo}를 다시 해요" if steps else "저장했어요"}
@@ -604,7 +605,7 @@ def revise_script(job_id: str, note: str = Form("")):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
     review = in_review(_load(Job, job_id).data)
     _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
-    return {"ok": True, "msg": "Claude가 대본을 고쳐요. 끝나면 다시 확인해 주세요" if review
+    return {"ok": True, "msg": "Claude가 대본을 고치고 음성·자막을 다시 만들어요. 끝나면 다시 확인해 주세요" if review
             else "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
 
 

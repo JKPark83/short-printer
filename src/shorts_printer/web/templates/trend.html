@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}{% if t.mode == 'idea' %}{{ t.keyword or '전체' }} 아이디어 추천{% else %}{{ t.keyword or (ch.trends.region ~ ' 전체') }} 주제 분석{% endif %} · shorts-printer{% endblock %}
+{% block title %}{% if t.mode == 'idea' %}{{ t.keyword or '전체' }} 아이디어 추천{% else %}{{ t.keyword or '채널 분야' }} 주제 분석{% endif %} · shorts-printer{% endblock %}
 {% block main %}
 {% set busy = t.status in ACTIVE %}
 {% set files = '/trend-files/' ~ t.id ~ '/' %}
@@ -24,7 +24,7 @@
 
   <header id="head" class="job-head">
     <div class="jh-text">
-      <h1>{% if idea %}{% if t.keyword %}“{{ t.keyword }}” {% endif %}아이디어 추천{% elif t.keyword %}“{{ t.keyword }}” 인기 쇼츠 분석{% else %}{{ ch.trends.region }} 인기 쇼츠 분석{% endif %}</h1>
+      <h1>{% if idea %}{% if t.keyword %}“{{ t.keyword }}” {% endif %}아이디어 추천{% elif t.keyword %}“{{ t.keyword }}” 인기 쇼츠 분석{% else %}채널 분야 인기 쇼츠 분석{% endif %}</h1>
       <p class="meta"><code>{{ t.id }}</code> · {{ ch.name }} · {% if idea %}아이디어(분석 없이){% else %}최근 {{ period }} · {{ ch.trends.region }}{% endif %} · {{ lang }} · {{ t.created_at|hm }}</p>
     </div>
     <div class="jh-actions">
@@ -80,7 +80,7 @@
           <h2 id="h-videos"><span class="num">1</span>수집된 쇼츠</h2>
           {% if videos %}<span class="mono muted">{{ videos|length }}개 · 시간당 조회수 순</span>{% endif %}
         </div>
-        <p class="card-lead">최근 {{ period }} 동안 올라온 {{ lang }} 쇼츠(3분 이하){% if t.keyword %} 가운데 “{{ t.keyword }}”가 들어간 것{% endif %}을 조회수 순으로 받아, 올린 뒤 <strong>시간당 조회수</strong>가 높은 순서로 {{ trends.TOP_N }}개를 남겼어요. 썸네일을 누르면 이 자리에서 재생해요.</p>
+        <p class="card-lead">최근 {{ period }} 동안 올라온 {{ lang }} 쇼츠(3분 이하){% if t.search or t.keyword %} 가운데 “{{ t.search or t.keyword }}”로 찾은 것{% endif %}을 조회수 순으로 받아, 올린 뒤 <strong>시간당 조회수</strong>가 높은 순서로 {{ trends.TOP_N }}개를 남겼어요. 썸네일을 누르면 이 자리에서 재생해요.</p>
         {% if videos %}
         <ol class="vgrid">
           {% for v in videos %}

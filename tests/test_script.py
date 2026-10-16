@@ -19,7 +19,7 @@ class FakeLLM:
     def __init__(self, out=OK):
         self.out, self.calls = out, []
 
-    def ask(self, system, text, schema, *, refusal, what, images=()):
+    def ask(self, system, text, schema, *, refusal, what, images=(), web=False):
         self.calls.append(dict(system=system, text=text, schema=schema, refusal=refusal, what=what))
         return self.out, USAGE
 
@@ -122,13 +122,13 @@ def test_translate_sends_script_and_thumb_and_keeps_source(ko):
 # Claude 어댑터
 
 def fake_client(monkeypatch, resp=None, exc=None):
-    calls = []
+    calls, resps = [], resp if isinstance(resp, list) else [resp]
 
     def parse(**kw):
-        calls.append(kw)
+        calls.append(kw | {"messages": list(kw["messages"])})
         if exc:
             raise exc
-        return resp
+        return resps.pop(0) if len(resps) > 1 else resps[0]
 
     client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=parse)))
     monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
@@ -137,7 +137,7 @@ def fake_client(monkeypatch, resp=None, exc=None):
 
 def resp(**kw):
     base = dict(stop_reason="end_turn", parsed_output=OK, model="claude-opus-5-5",
-                usage=SimpleNamespace(input_tokens=1000, output_tokens=2000))
+                usage=SimpleNamespace(input_tokens=1000, output_tokens=2000, server_tool_use=None))
     return SimpleNamespace(**base | kw)
 
 
@@ -151,7 +151,19 @@ def test_claude_returns_result_and_cost(monkeypatch):
     assert out is OK
     assert usage == {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 2000, "cost_usd": 0.044}
     assert calls[0]["output_format"] is script.Script and calls[0]["fallbacks"] == "default"
-    assert calls[0]["messages"][0]["content"] == "글" and calls[0]["system"] == "sys"
+    assert calls[0]["messages"][0]["content"] == "글" and calls[0]["system"] == "sys" and "tools" not in calls[0]
+
+
+def test_claude_web_search_resumes_pause_and_adds_search_cost(monkeypatch):
+    searched = SimpleNamespace(input_tokens=1000, output_tokens=2000,
+                               server_tool_use=SimpleNamespace(web_search_requests=3))
+    calls = fake_client(monkeypatch, [resp(stop_reason="pause_turn", parsed_output=None, content=["검색 중"],
+                                           usage=searched), resp(usage=searched)])
+    out, usage = ask(web=True)
+    assert out is OK and len(calls) == 2
+    assert calls[0]["tools"] == [claude.WEB_SEARCH] and len(calls[0]["messages"]) == 1
+    assert calls[1]["messages"][1] == {"role": "assistant", "content": ["검색 중"]}
+    assert usage["input_tokens"] == 2000 and usage["cost_usd"] == round(0.088 + 6 * claude.SEARCH_USD, 4)
 
 
 def test_claude_puts_images_before_text(monkeypatch):

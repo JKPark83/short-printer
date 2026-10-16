@@ -18,9 +18,9 @@
           </select>
           <label for="keyword">키워드 <span class="opt">선택</span></label>
           <input id="keyword" name="keyword" type="text" maxlength="50" autocomplete="off"
-                 placeholder="비우면 {{ ch.trends.region }} 전체" aria-describedby="keyword-count keyword-help">
+                 placeholder="비우면 채널 분야로" aria-describedby="keyword-count keyword-help">
           <span id="keyword-count" class="counter" data-for="keyword">0/50</span>
-          <small id="keyword-help" class="help">넣으면 그 낱말이 들어간 쇼츠만 찾아요. 아이디어는 그 안에서 주제를 골라요(예: 겨울, 주방).</small>
+          <small id="keyword-help" class="help">넣으면 그 낱말이 들어간 쇼츠만 찾아요. 비우면 채널 분야 검색어로 찾아요. 아이디어는 그 안에서 주제를 골라요(예: 겨울, 주방).</small>
           <label for="period">기간 <span class="opt">인기 쇼츠 분석만</span></label>
           <select id="period" name="period">
             {% for key, label in trends.PERIODS.items() %}<option value="{{ key }}"{% if key == trends.DEFAULT_PERIOD %} selected{% endif %}>최근 {{ label }}</option>{% endfor %}
@@ -70,7 +70,7 @@
           {% set tc = channels.get(t.channel) %}
           <li><a class="job-row" href="/trends/{{ t.id }}">
             <span class="jr-main">
-              <span class="jr-topic">{% if t.mode == 'idea' %}아이디어 · {{ t.keyword or '전체' }}{% else %}{{ t.keyword or ((tc.trends.region if tc else '') ~ ' 전체') }} · 최근 {{ trends.PERIODS.get(t.period, t.period) }}{% endif %}</span>
+              <span class="jr-topic">{% if t.mode == 'idea' %}아이디어 · {{ t.keyword or '전체' }}{% else %}{{ t.keyword or '채널 분야' }} · 최근 {{ trends.PERIODS.get(t.period, t.period) }}{% endif %}</span>
               <span class="jr-meta">{% if not ch and tc %}<span class="badge b-ch">{{ tc.name }}</span> {% endif %}{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}{% if t.quota %} · {{ t.quota }}유닛{% endif %}</span>
             </span>
             <span class="dots" role="img" aria-label="{% for s in trends.STEPS %}{{ trends.LABELS[s] }} {{ STATE[t.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">

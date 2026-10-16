@@ -99,9 +99,9 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
     assert [r.split("/")[-2] for r in urls[1:]] == ["envID", "iWLjl1zCuqXRkW6494ve"]
 
 
-def test_voices_default_mister_kim(ch):
-    assert list(ch.tts.voices.values()) == ["미스터킴", "이하나", "지수", "미스터최"]
-    assert ch.tts.default == "LKOcTG4J4tYTPR9DnLeM"
+def test_voices_default_chris(ch):
+    assert list(ch.tts.voices.values()) == ["크리스", "미스터킴", "이하나", "지수", "미스터최"]
+    assert ch.tts.default == "PDoCXqBQFGsvfO0hNkEs"
 
 
 def test_synth_refuses_old_voice_and_missing_key(tmp_path, ch):

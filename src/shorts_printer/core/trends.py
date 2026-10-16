@@ -155,6 +155,27 @@ def is_short(video_id: str) -> bool:
         return True
 
 
+class KeywordsOut(BaseModel):
+    keywords: list[str] = Field(description="YouTube 검색어 3~6개. 채널 언어로, 각각 1~3낱말")
+
+
+def search_words(t: Trend, sv: Services) -> str:
+    """검색어. 넣은 키워드 → 채널 keywords → LLM이 웹에서 지금 이 분야 화제를 찾아 정한 낱말.
+    검색어 없이 찾으면 지역 전체 인기 쇼츠(드라마·아이돌·축구)가 모여 채널과 상관없는 주제가 나온다."""
+    if kw := t.data["keyword"] or " | ".join(sv.channel.trends.keywords):   # | 는 YouTube 검색의 OR
+        return kw
+    ch = sv.channel
+    system = prompts.render("trend_keywords", lang=ch.lang_name, concept=ch.concept, channel_rules=ch.text("trends.md"))
+    out, usage = sv.llm.ask(system, f"오늘: {datetime.now():%Y-%m-%d}\n지역: {ch.trends.region}", KeywordsOut,
+                            what="검색어", web=True, refusal=f"{sv.llm.label}가 검색어를 정하지 않았어요. 키워드를 넣어 보세요.")
+    t.update(usage=add_usage(t.data["usage"], usage))
+    words = [w.strip() for w in out.keywords if w.strip()][:6]
+    if not words:
+        raise RuntimeError("검색어를 받지 못했어요. 키워드를 넣어 보세요.")
+    t.log(f"채널 분야 검색어: {', '.join(words)}")
+    return " | ".join(words)
+
+
 def step_collect(t: Trend, sv: Services) -> str:
     if t.idea:
         return "건너뜀"
@@ -166,8 +187,8 @@ def step_collect(t: Trend, sv: Services) -> str:
          "relevanceLanguage": ch.trend_language,
          "order": "viewCount", "maxResults": 50,
          "publishedAfter": (now - timedelta(days=int(d["period"][:-1]))).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    if kw := d["keyword"] or " | ".join(ch.trends.keywords):   # | 는 YouTube 검색의 OR
-        q["q"] = kw
+    q["q"] = search_words(t, sv)
+    t.update(search=q["q"])
     ids = [it["id"]["videoId"] for it in _api("search", **q).get("items", [])]
     t.update(quota=(d.get("quota") or 0) + 100)
     items = []
@@ -468,7 +489,7 @@ def pick_ideas(t: Trend, sv: Services) -> str:
             f"점수 기준:\n{_criteria(ch.trends.weights, keys)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}")
     if avoid := t.data.get("avoid"):
         text += "\n\n앞서 추천했지만 고르지 않은 주제:\n" + "\n".join(f"- {a}" for a in avoid)
-    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제",
+    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=True,
                             refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 좁힐 주제를 바꿔 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))
     picks = finish_ideas(out, ch.trends.weights)
@@ -488,11 +509,11 @@ def step_pick(t: Trend, sv: Services) -> str:
     rows = [{k: v[k] for k in ("id", "rank", "title", "duration", "views", "views_per_hour", "engagement", "age_hours")}
             | {"shots": found[v["id"]]["shot_count"], "analysis": found[v["id"]]["claude"]}
             for v in videos if found.get(v["id"], {}).get("status") in OK]
-    keyword = t.data["keyword"] or f"(없음, {ch.trends.region} 전체)"
-    text = (f"오늘: {datetime.now():%Y-%m-%d}\n키워드: {keyword} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
+    keyword = t.data.get("search") or t.data["keyword"] or f"(없음, {ch.trends.region} 전체)"   # 예전 기록은 search가 없다
+    text = (f"오늘: {datetime.now():%Y-%m-%d}\n검색어: {keyword} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
             f"선정 기준:\n{_criteria(w, CRITERIA)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}"
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
-    out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제",
+    out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제", web=True,
                             refusal=f"{sv.llm.label}가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. "
                                     "키워드를 바꿔 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))

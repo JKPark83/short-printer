@@ -8,6 +8,8 @@ from .. import config
 
 # 백만 토큰당 달러(입력, 출력). 모르는 모델이면 비용을 비워 둔다.
 PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-4-5": (1, 5)}
+SEARCH_USD = 0.01   # 웹 검색 한 번
+WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜세요."
 
 
@@ -41,21 +43,33 @@ class Claude:
     def cost(self, input_tokens: int, output_tokens: int) -> float | None:
         return cost(self.model, input_tokens, output_tokens)
 
-    def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = ()):
+    def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = (),
+            web: bool = False):
         """Claude 한 번 부르고 (구조화 결과, 사용량)을 돌려준다. 오류는 한국어 RuntimeError로."""
         model = self.model
         content = [*map(_image, images), {"type": "text", "text": text}] if images else text
         # 안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다. haiku는 대상이 아니라 뺀다.
         extra = {} if "haiku" in model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+        if web:
+            extra["tools"] = [WEB_SEARCH]
+        messages = [{"role": "user", "content": content}]
+        inp = out = searches = 0
         try:
-            resp = anthropic.Anthropic().beta.messages.parse(
-                model=model,
-                max_tokens=16000,
-                system=system,
-                messages=[{"role": "user", "content": content}],
-                output_format=schema,
-                **extra,
-            )
+            for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
+                resp = anthropic.Anthropic().beta.messages.parse(
+                    model=model,
+                    max_tokens=16000,
+                    system=system,
+                    messages=messages,
+                    output_format=schema,
+                    **extra,
+                )
+                u = resp.usage
+                inp, out = inp + u.input_tokens, out + u.output_tokens
+                searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
+                if resp.stop_reason != "pause_turn":
+                    break
+                messages.append({"role": "assistant", "content": resp.content})
         except TypeError as e:   # 키가 아예 없으면 SDK가 요청 직전에 TypeError를 낸다
             if "authentication" not in str(e):
                 raise
@@ -72,9 +86,8 @@ class Claude:
             raise RuntimeError(refusal)
         if resp.parsed_output is None:
             raise RuntimeError(f"{what}을 받지 못했어요(stop_reason={resp.stop_reason}).")
-        u = resp.usage
         # ponytail: 대체 모델이 돌았으면 응답 모델 값으로 한 번에 계산한다.
         # 정확한 단계별 비용은 usage.iterations를 보면 된다.
-        return resp.parsed_output, {"model": resp.model, "input_tokens": u.input_tokens,
-                                    "output_tokens": u.output_tokens,
-                                    "cost_usd": cost(resp.model, u.input_tokens, u.output_tokens)}
+        usd = cost(resp.model, inp, out)
+        return resp.parsed_output, {"model": resp.model, "input_tokens": inp, "output_tokens": out,
+                                    "cost_usd": None if usd is None else round(usd + searches * SEARCH_USD, 4)}

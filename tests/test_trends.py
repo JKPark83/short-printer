@@ -25,8 +25,8 @@ class FakeLLM:
     def __init__(self, answer=None):
         self.calls, self.answer = [], answer
 
-    def ask(self, system, text, schema, *, refusal, what, images=()):
-        self.calls.append({"system": system, "text": text, "images": list(images)})
+    def ask(self, system, text, schema, *, refusal, what, images=(), web=False):
+        self.calls.append({"system": system, "text": text, "images": list(images), "web": web})
         return self.answer(system, text, list(images))
 
 
@@ -168,14 +168,15 @@ def test_collect_fails_under_three_and_counts_only_used_quota(monkeypatch):
             return {"items": [{"id": {"videoId": v}} for v in hits["ids"]]}
         return {"items": [item(v) for v in hits["ids"]]}
     monkeypatch.setattr(trends, "_api", api)
+    llm = FakeLLM(lambda *a: (trends.KeywordsOut(keywords=["상식"]), USAGE))
     t = new()
     with pytest.raises(RuntimeError, match="한국어 쇼츠가 2개뿐"):   # 2개로 넘기면 분석이 매번 실패하고 빠져나올 수 없다
-        trends.step_collect(t, sv())
+        trends.step_collect(t, sv(llm))
     assert t.data["quota"] == 101
     hits["ids"] = []
     t = new()
     with pytest.raises(RuntimeError, match="0개뿐"):
-        trends.step_collect(t, sv())
+        trends.step_collect(t, sv(llm))
     assert t.data["quota"] == 100   # 결과가 없으면 videos.list를 부르지 않는다
 
 
@@ -197,6 +198,26 @@ def test_collect_keywords_or_query_and_channel_region(monkeypatch):
     with pytest.raises(RuntimeError):
         trends.step_collect(new("커피"), sv(ch=ch))
     assert calls[0]["q"] == "커피"   # 키워드가 있으면 채널 keywords는 쓰지 않는다
+
+
+def test_collect_without_keywords_asks_llm_for_channel_search_words(monkeypatch):
+    monkeypatch.setattr(trends, "ready", lambda: True)
+    calls = []
+
+    def api(path, **q):
+        calls.append(q)
+        return {"items": []}
+    monkeypatch.setattr(trends, "_api", api)
+    llm = FakeLLM(lambda *a: (trends.KeywordsOut(keywords=[" 겨울 상식 ", "", "정전기"]), USAGE))
+    t = new()
+    with pytest.raises(RuntimeError, match="0개뿐"):
+        trends.step_collect(t, sv(llm))
+    assert calls[0]["q"] == "겨울 상식 | 정전기" and t.data["search"] == "겨울 상식 | 정전기"   # 지역 전체로 찾지 않는다
+    assert llm.calls[0]["web"] and channel.load(CH).concept in llm.calls[0]["system"]
+    assert t.data["usage"]["cost_usd"] == 0.01
+    with pytest.raises(RuntimeError, match="검색어를 받지 못했어요"):
+        trends.step_collect(new(), sv(FakeLLM(lambda *a: (trends.KeywordsOut(keywords=[" "]), USAGE))))
+    assert len(calls) == 1
 
 
 def test_create_rejects_unknown_period():
@@ -229,8 +250,9 @@ def test_system_pick_has_channel_concept_rules_and_production():
     ch = channel.load(CH)
     s = trends.system_pick(ch)
     assert f"채널 분야: {ch.concept}" in s and ch.trends.production in s and "한국어" in s
-    assert "난방비 절약 꿀팁" in s and "장마철 빨래" in s   # trends.md 채널 규칙
-    assert "인기 이유(포맷·훅·소재)" in s and "search_terms만 영어" in s   # 공통 규칙
+    assert "뻔한 절약 요령" in s and "장마철 빨래" in s   # trends.md 채널 규칙
+    assert "인기 이유(포맷·훅·소재)" in s and "search_terms만 영어" in s and "웹 검색" in s   # 공통 규칙
+    assert "재미 규칙" in s and "거짓 낚시" in s
     assert s.index("난방비") < s.index("공통 규칙")
 
 
@@ -253,7 +275,7 @@ def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
     assert f"오늘: {datetime.now():%Y-%m-%d}" in text and "(없음, KR 전체)" in text
     assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
     assert "(가중치 60)" in text and "(가중치 10)" in text
-    assert llm.calls[0]["system"] == trends.system_pick(ch)
+    assert llm.calls[0]["system"] == trends.system_pick(ch) and llm.calls[0]["web"]
 
 
 def test_percentile_single_video():
@@ -412,7 +434,7 @@ def test_idea_run_skips_youtube_and_fills_picks(monkeypatch):
     d = t.data
     assert d["status"] == "done" and d["steps"]["collect"]["engine"] == "건너뜀" and not d.get("quota")
     call = llm.calls[0]
-    assert call["system"] == trends.system_idea(channel.load(CH)) and call["images"] == []
+    assert call["system"] == trends.system_idea(channel.load(CH)) and call["images"] == [] and call["web"]
     assert "좁힐 주제: 겨울" in call["text"] and "- 우리 채널 주제" in call["text"] and "화제성" not in call["text"]
     p = t.doc("picks.json")["picks"][0]
     assert p["topic"] == "손가락 꺾는 소리" and p["refs"] == [] and t.doc("videos.json") is None

@@ -18,5 +18,6 @@ def test_every_prompt_file_renders_for_a_real_channel():
     ch = channel.load("ko-40sec-facts")
     for s in (script.system(ch), prompts.render("script_revise"), prompts.render("script_revise_draft"),
               thumbnail.system(ch), trends.system_video(ch), trends.system_pick(ch),
-              trends.system_idea(ch), prompts.render("translate", lang=ch.lang_name)):
+              trends.system_idea(ch), prompts.render("translate", lang=ch.lang_name),
+              prompts.render("trend_keywords", lang=ch.lang_name, concept=ch.concept, channel_rules="")):
         assert s and "${" not in s and "---" not in s.splitlines()[0]

@@ -79,7 +79,7 @@ def test_tick_fires_list_in_order_and_records_missed(q, sent):
     assert run["result"] == "started" and run["topic"] == "커피" and d["topics"] == ["우유"]
     assert d["last_slot"] == at(FRI, "09:00").isoformat()
     job = Job.load(run["job"]).data
-    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "LKOcTG4J4tYTPR9DnLeM"
+    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "PDoCXqBQFGsvfO0hNkEs"
     assert q._q.get_nowait() == ("run", run["job"])
     schedule.tick(q, sent.append, at(FRI, "09:01"))   # 같은 시각은 한 번만
     assert len(s.data["runs"]) == 1

@@ -117,7 +117,7 @@ def test_trend_page_before_results():
     t = Trend.create(CH)
     t.update(status="queued")
     html = client.get(f"/trends/{t.id}").text
-    assert "KR 인기 쇼츠 분석" in html and "40초 상식" in html
+    assert "채널 분야 인기 쇼츠 분석" in html and "40초 상식" in html
     assert "대기열에서 차례를 기다려요" in html and 'data-active="1"' in html
     t.update(status="running", progress={"done": 3, "total": 8},
              steps=t.data["steps"] | {"collect": {"status": "done", "engine": "x", "sec": 2.0},

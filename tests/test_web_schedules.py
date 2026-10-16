@@ -115,7 +115,8 @@ def test_preview_returns_summary_and_next_runs():
     r = client.post("/api/schedules/preview", data=FORM | {"days": ["5", "6"], "times": ["07:30"]})
     j = r.json()
     assert r.status_code == 200 and j["summary"] == "주말 07:30"
-    assert [t["label"][-9:] for t in j["next"]] == ["(토) 07:30", "(일) 07:30"]   # 8일 안의 것만
+    labels = [t["label"][-9:] for t in j["next"]]
+    assert set(labels) == {"(토) 07:30", "(일) 07:30"} and 2 <= len(labels) <= 3   # 8일 안의 것만(요일 따라 2~3개)
     assert j["next"][0]["rel"].endswith(("뒤", "곧"))
     r = client.post("/api/schedules/preview", data=FORM | {"kind": "every", "every": "0"})
     assert r.status_code == 400 and "1~24시간" in r.json()["detail"]

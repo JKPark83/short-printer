@@ -235,7 +235,7 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     job = scene_job()
     job.update(review=True)
     html = client.get(f"/jobs/{job.id}").text
-    assert "대본을 확인해 주세요" in html and "대본 확인" in html and "대본을 확정하면 시작해요" in html
+    assert "대본·음성·자막을 확인해 주세요" in html and "대본 확인" in html and "대본을 확정하면 시작해요" in html
     assert 'name="prompts"' in html and "클립 바꾸기" not in html
     assert client.get("/").text.count("대본 확인")
     enqueued = []
@@ -247,7 +247,10 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     assert client.post(url, data=form).status_code == 200
     s, d = job.doc("script.json"), job.data
     assert s["sentences"] == ["하나", "셋"] and s["prompts"] == ["p1", "p3"] and d["voice"] == "elevenlabs"
-    assert d["status"] == "waiting" and d["steps"]["voice"]["status"] == "pending" and web.q._q.empty()
+    assert d["status"] == "queued" and d["steps"]["voice"]["status"] == "pending"   # 음성·자막만 다시
+    assert d["steps"]["render"]["status"] == "pending" and web.q._q.get_nowait() == ("run", job.id)
+    job.update(status="waiting")
+    assert client.post(url, data=form | {"title": "t2"}).status_code == 200 and web.q._q.empty()   # 제목만이면 저장만
     rev = client.post(f"/api/jobs/{job.id}/script/revise", data={"note": "더 짧게"}).json()
     assert "다시 확인" in rev["msg"] and job.data["status"] == "queued"
     web.q._q.get_nowait()

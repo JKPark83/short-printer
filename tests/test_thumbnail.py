@@ -17,7 +17,7 @@ class LLM:
     def __init__(self):
         self.calls = []
 
-    def ask(self, system, text, schema, *, refusal, what, images=()):
+    def ask(self, system, text, schema, *, refusal, what, images=(), web=False):
         self.calls.append((system, text))
         return schema(lines=["  ", "라면"], accent="없는말"), USAGE
 

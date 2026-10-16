@@ -86,12 +86,13 @@ def scene_job(*done, ch=CH):
     return job
 
 
-def test_review_job_waits_for_confirmed_script():
-    job = Job.create(CH, "주제", "ko-KR-SunHiNeural", review=True)
-    job.step("script", status="done")
-    with pytest.raises(pipeline.Wait):   # 확정 전엔 음성(크레딧)부터 멈춘다
-        pipeline.step_voice(job, services())
-    job.update(status="waiting")
+def test_review_job_waits_for_confirmed_script(monkeypatch):
+    job = scene_job("script")
+    job.update(review=True)
+    ran = stub_steps(monkeypatch)
+    monkeypatch.setitem(pipeline.RUN, "footage", pipeline.step_footage)
+    pipeline.run(job, services())   # 대본·음성·자막까지 돌고 영상 소스(크레딧) 앞에서 멈춘다
+    assert ran == ["voice", "subtitles"] and job.data["status"] == "waiting"
     assert pipeline.in_review(job.data)
     job.update(confirmed=True)
     assert not pipeline.in_review(job.data)
