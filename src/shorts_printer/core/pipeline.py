@@ -56,6 +56,11 @@ def step_research(job: Job, sv: Services) -> str:
     facts, usage = research.gather(sv.research, sv.channel, job.data["topic"], job.data.get("brief"))
     job.put("facts.json", facts)
     job.update(research_usage=usage)
+    for n in facts["notes"]:
+        job.log(f"조사 메모: {n[:200]}")
+    if not facts["facts"]:
+        raise RuntimeError("출처가 붙은 사실을 하나도 찾지 못했어요. "
+                           "로그의 조사 메모를 보고 허용 사이트를 더하거나 주제를 바꿔 주세요.")
     job.log(f"사실 {len(facts['facts'])}개")
     return usage["model"]
 

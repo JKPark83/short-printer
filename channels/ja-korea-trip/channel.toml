@@ -53,7 +53,7 @@ sources_heading = "出典"
 
 [research]
 domains = ["japanese.visitkorea.or.kr", "japanese.visitseoul.net", "k-eta.go.kr", "immigration.go.kr", "hikorea.go.kr",
-           "0404.go.kr", "anzen.mofa.go.jp", "seoulmetro.co.kr", "airport.kr", "wowpass.io", "global.oliveyoung.com"]
+           "0404.go.kr", "anzen.mofa.go.jp", "seoulmetro.co.kr", "arex.or.kr", "airport.kr", "wowpass.io", "global.oliveyoung.com"]
 news = ["www3.nhk.or.jp", "newsdig.tbs.co.jp", "news.tv-asahi.co.jp", "travelvoice.jp",
         "travel.watch.impress.co.jp", "prtimes.jp", "jp.yna.co.kr", "japanese.joins.com", "japanese.korea.net"]
 languages = ["ko", "ja"]   # 한국 공식 자료는 한국어로 더 많다

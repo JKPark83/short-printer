@@ -48,6 +48,7 @@ def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
          "retrieved_at": ""},
         {"text": "얼음은 0도에서 녹는다.", "url": "https://b.go.kr/y", "title": "B 문서", "published": "",
          "retrieved_at": "2026-10-16T00:00:00Z"},
+        {"text": "확인 못 함: 달은 치즈다", "url": "", "title": "", "published": "", "retrieved_at": ""},
     ]
     # 토큰 3000·300 → 3000*4/1e6 + 300*20/1e6 = 0.018, 검색 3번 0.03
     assert usage == {"model": "claude-opus-5-5", "input_tokens": 3000, "output_tokens": 300, "cost_usd": 0.048}
@@ -109,8 +110,8 @@ def test_gather_numbers_sites_kinds_and_merges():
 def test_gather_stops_without_sites_or_facts():
     with pytest.raises(RuntimeError, match="조사 사이트"):
         research.gather(FakeResearcher([_f("가", "https://a.kr")]), _ch(), "주제", None)
-    with pytest.raises(RuntimeError, match="자료를 찾지 못했어요"):
-        research.gather(FakeResearcher([]), _ch(news=["yna.co.kr"]), "주제", None)
+    doc, _ = research.gather(FakeResearcher([_f("확인 못 함: 달은 치즈다", "")]), _ch(news=["yna.co.kr"]), "주제", None)
+    assert doc["facts"] == [] and doc["notes"] == ["확인 못 함: 달은 치즈다"]
 
 
 def test_sheet_marks_news():

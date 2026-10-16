@@ -27,7 +27,8 @@ def sites(ch: Channel) -> list[str]:
 
 
 def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[dict, dict]:
-    """(facts.json 문서, 사용량). 사실마다 F1부터 번호, 사이트, 공식/보도 구분을 붙인다."""
+    """(facts.json 문서, 사용량). 사실마다 F1부터 번호, 사이트, 공식/보도 구분을 붙인다.
+    인용 없는 문장은 notes에 둔다(못 찾은 이유가 거기 적혀 있다). 사실이 없어도 돌려준다: 멈출지는 부른 쪽이 정한다."""
     r = ch.research
     domains = sites(ch)
     if not domains:
@@ -35,7 +36,8 @@ def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[
     text = f"주제: {topic}" + (f"\n\n확인할 주장·참고:\n{brief}" if brief else "")
     raw, usage = rs.gather(system(ch), text, domains=domains, queries=r.queries_per_topic, max_pages=r.max_pages)
     uniq: dict[str, dict] = {}
-    for f in raw:
+    notes = list(dict.fromkeys(f["text"] for f in raw if not f["url"]))
+    for f in (f for f in raw if f["url"]):
         uniq.setdefault(f["text"], f)   # 같은 문장은 첫 것만
     at = datetime.now().astimezone().isoformat(timespec="seconds")
     facts = []
@@ -45,10 +47,8 @@ def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[
         facts.append({"id": f"F{i}", "text": f["text"], "url": f["url"], "title": f.get("title") or "", "site": site,
                       "kind": "news" if news else "official", "published": f.get("published") or "",
                       "retrieved_at": f.get("retrieved_at") or at})
-    if not facts:
-        raise RuntimeError("자료를 찾지 못했어요. 주제를 바꾸거나 다시 시도해 주세요.")
     # 어댑터가 검색어를 돌려주지 않아 비워 둔다(문서 모양은 맞춘다)
-    return {"queries": [], "facts": facts}, usage
+    return {"queries": [], "facts": facts, "notes": notes}, usage
 
 
 def sheet(facts: list[dict]) -> str:

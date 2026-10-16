@@ -399,3 +399,17 @@ def test_step_research_saves_facts_and_usage():
     assert pipeline.step_research(job, services(channel=ch, research=rs)) == "m"
     assert job.doc("facts.json")["facts"][0]["id"] == "F1" and job.data["research_usage"]["cost_usd"] == 0.01
     assert "주장" in calls[0] and "사실 1개" in job.tail()[-1]
+
+
+def test_step_research_without_facts_keeps_notes_and_usage():
+    def gather(system, text, **kw):
+        note = {"text": "확인 못 함: 요금", "url": "", "title": "", "published": "", "retrieved_at": ""}
+        return ([note], {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01})
+
+    ch = channel.load(CH).model_copy(update={"research": ResearchCfg(domains=["kdca.go.kr"])})
+    job = Job.create(CH, "독감", "v")
+    with pytest.raises(RuntimeError, match="출처가 붙은 사실을 하나도"):
+        pipeline.step_research(job, services(channel=ch, research=SimpleNamespace(gather=gather)))
+    # 왜 못 찾았는지 남는다: 메모는 로그에, 비용은 usage에
+    assert job.doc("facts.json")["notes"] == ["확인 못 함: 요금"]
+    assert job.data["research_usage"]["cost_usd"] == 0.01 and "조사 메모: 확인 못 함" in job.tail()[-1]

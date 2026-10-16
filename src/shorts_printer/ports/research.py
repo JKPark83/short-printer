@@ -11,7 +11,8 @@ class Researcher(Protocol):
 
     def gather(self, system: str, text: str, *, domains: list[str], queries: int,
                max_pages: int) -> tuple[list[dict], dict]:
-        """인용이 붙은 문장만 [{"text", "url", "title", "published", "retrieved_at"}]로,
+        """문장을 [{"text", "url", "title", "published", "retrieved_at"}]로 돌려준다. 인용이 붙은 문장은 url이 있고,
+        인용 없는 문장("확인 못 함: …" 같은 메모)은 url이 ""다.
         쓴 양은 usage({"model", "input_tokens", "output_tokens", "cost_usd"(모르면 None)})로 돌려준다.
         domains 밖은 검색·열람하지 않는다. queries는 검색 수, max_pages는 열어 볼 쪽 수 상한.
         오류는 한국어 RuntimeError. 키 값은 메시지에 넣지 않는다."""

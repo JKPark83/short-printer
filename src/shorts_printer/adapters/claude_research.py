@@ -22,18 +22,20 @@ def _source(c, fetched: list[dict]) -> dict | None:
 
 
 def parse(contents: list) -> list[dict]:
-    """응답들의 content(차례대로)에서 인용 있는 text만 사실로. 인용 없는 text("확인 못 함: …" 등)는 버린다."""
+    """응답들의 content(차례대로)에서 인용 있는 text는 사실로, 인용 없는 text("확인 못 함: …" 등)는 url 없는 메모로."""
     fetched, facts = [], []
     for block in (b for content in contents for b in content):
         if block.type == "web_fetch_tool_result" and getattr(block.content, "type", None) == "web_fetch_result":
             r = block.content
             fetched.append({"url": r.url, "title": getattr(r.content, "title", None) or "",
                             "retrieved_at": getattr(r, "retrieved_at", None) or ""})
-        elif block.type == "text" and getattr(block, "citations", None) and (text := block.text.strip()):
-            src = next((s for c in block.citations if (s := _source(c, fetched))), None)
+        elif block.type == "text" and (text := block.text.strip()):
+            src = next((s for c in getattr(block, "citations", None) or () if (s := _source(c, fetched))), None)
             if src:
                 facts.append({"text": text, "url": src["url"], "title": src["title"], "published": "",
                               "retrieved_at": src["retrieved_at"]})
+            else:   # 왜 못 찾았는지 화면에 보여 주려고 남긴다
+                facts.append({"text": text, "url": "", "title": "", "published": "", "retrieved_at": ""})
     return facts
 
 
