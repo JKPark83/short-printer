@@ -1,4 +1,4 @@
-"""일곱 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
+"""여덟 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
 화면에서 만든 작업은 대본·음성·자막 뒤 확정 전까지, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
 from typing import ClassVar
@@ -10,9 +10,10 @@ from .channel import Channel
 from .services import Services
 
 # 사람을 기다리는 영상 소스는 뒤로
-STEPS = ("research", "script", "voice", "subtitles", "footage", "thumbnail", "render")
-LABELS = {"research": "자료 조사", "script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막",
-          "thumbnail": "썸네일", "render": "렌더"}
+STEPS = ("research", "script", "proofread", "voice", "subtitles", "footage", "thumbnail", "render")
+LABELS = {"research": "자료 조사", "script": "대본", "proofread": "원어민 검수", "footage": "영상 소스",
+          "voice": "음성", "subtitles": "자막", "thumbnail": "썸네일", "render": "렌더"}
+PROOFREAD_TRIES = 3   # 한국어가 아닌 채널: 검수 → 지적대로 다시 쓰기를 돌아 이만큼 검수하고도 떨어지면 실패
 
 
 class Job(Record):
@@ -26,6 +27,9 @@ class Job(Record):
         # 자료 조사 단계가 생기기 전 작업: 대본이 이미 있으면 조사 없이 그대로 연다
         d["steps"].setdefault("research", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
                                            "engine": None, "sec": None})
+        # 원어민 검수 단계가 생기기 전 작업: 대본이 있으면 검수 없이 그대로 쓴다
+        d["steps"].setdefault("proofread", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
+                                            "engine": None, "sec": None})
         return d
 
     @classmethod
@@ -76,17 +80,49 @@ def step_script(job: Job, sv: Services) -> str:
         job.log(f"대본 고침: {note}")
         translate(job, sv)
         return usage["model"]
-    # 최근 제목은 같은 채널 안에서만 피한다
-    recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
-              and (t := (j.doc("script.json") or {}).get("title"))][-15:]
-    # 예전 job.json엔 brief가 없다
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent, facts=facts)
+    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv), facts=facts)
     job.put("script.json", s.flat())
-    job.update(usage=usage)
+    job.update(usage=add_usage(job.data.get("usage"), usage))
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
     if s.sensitive and sv.channel.sensitive_gate:
         job.log(f"민감 분야({s.sensitive}): 대본을 확인한 뒤 [확인하고 계속]을 눌러야 장면을 만들어요")
     translate(job, sv)
+    return usage["model"]
+
+
+def _recent(job: Job, sv: Services) -> list[str]:
+    """최근 제목은 같은 채널 안에서만 피한다."""
+    return [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
+            and (t := (j.doc("script.json") or {}).get("title"))][-15:]
+
+
+def step_proofread(job: Job, sv: Services) -> str:
+    """한국어가 아닌 채널: 대본을 원어민 편집자 눈으로 검수한다(말·자막 끊김만).
+    떨어지면 지적을 그대로 넘겨 처음부터 다시 쓰고 또 검수한다. 한국어는 운영자가 직접 읽으니 건너뛴다."""
+    if sv.channel.language == "ko":
+        job.log("한국어 채널은 운영자가 직접 읽으니 건너뛰어요")
+        return "건너뜀"
+    facts = (job.doc("facts.json") or {}).get("facts", [])
+    s = job.doc("script.json")
+    for n in range(1, PROOFREAD_TRIES + 1):
+        verdict, usage = script.proofread(sv.llm, sv.channel, s, sv.splitter,
+                                          sv.channel.style.subtitle_limit or sv.splitter.limit)
+        job.update(usage=add_usage(job.data["usage"], usage))
+        if verdict.passed:
+            job.log(f"통과({n}번째 대본)")
+            break
+        feedback = verdict.lines(s["sentences"])
+        job.log(f"불통과({n}/{PROOFREAD_TRIES}), 지적 {len(feedback)}개:\n" + "\n".join(feedback))
+        if n == PROOFREAD_TRIES:
+            raise RuntimeError(f"대본이 원어민 검수를 {PROOFREAD_TRIES}번 통과하지 못했어요. "
+                               "로그의 지적을 보고 주제나 채널 대본 규칙을 손본 뒤 다시 시도하세요.")
+        new, u = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv),
+                              facts=facts, feedback=feedback)
+        s = new.flat()
+        job.put("script.json", s)   # 떨어져도 마지막 대본은 화면에서 보게 남긴다
+        job.update(usage=add_usage(job.data["usage"], u))
+        job.log(f"지적대로 다시 씀: {new.title} · 장면 {len(new.scenes)}개")
+    translate(job, sv)   # 대본이 바뀌었으면 한국어 뜻도 새로 붙는다
     return usage["model"]
 
 
@@ -177,7 +213,8 @@ def step_render(job: Job, sv: Services) -> str:
     return "ffmpeg"
 
 
-RUN = {"research": step_research, "script": step_script, "footage": step_footage, "voice": step_voice,
+RUN = {"research": step_research, "script": step_script, "proofread": step_proofread, "footage": step_footage,
+       "voice": step_voice,
        "subtitles": step_subtitles, "thumbnail": step_thumbnail, "render": step_render}
 
 

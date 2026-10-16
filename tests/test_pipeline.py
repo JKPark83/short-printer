@@ -8,6 +8,7 @@ from shorts_printer.adapters import flow_auto
 from shorts_printer.adapters.flow import Flow
 from shorts_printer.adapters.splitters.ko import Korean
 from shorts_printer.core import channel, pipeline, scenes, trends
+from shorts_printer.core import script as script_mod
 from shorts_printer.core.channel import ResearchCfg
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.services import Services
@@ -67,8 +68,8 @@ def test_failure_is_recorded_redacted_then_retry_resumes(monkeypatch):
     d = job.data
     assert d["status"] == "failed" and d["error"]["step"] == "voice"
     assert "SECRET" not in d["error"]["message"] and "SECRET" not in "\n".join(job.tail())
-    assert [d["steps"][s]["status"] for s in STEPS] == ["done", "done", "failed", "pending", "pending", "pending",
-                                                        "pending"]
+    assert [d["steps"][s]["status"] for s in STEPS] == ["done", "done", "done", "failed", "pending", "pending",
+                                                        "pending", "pending"]
 
     ran = stub_steps(monkeypatch)
     pipeline.run(job, services())
@@ -83,7 +84,7 @@ def scene_job(*done, ch=CH):
     job.put("script.json", {"sentences": ["하나", "둘"], "prompts": ["p1", "p2"],
                                                 "search_terms": ["cat", "dog"]})
     job.put("timing.json", [{"start": 0, "end": 1.2}, {"start": 1.3, "end": 2.5}])
-    for s in done + (("research",) if "script" in done else ()):   # 대본이 있으면 조사는 끝났다
+    for s in done + (("research", "proofread") if "script" in done else ()):   # 대본이 있으면 조사·검수는 끝났다
         job.step(s, status="done")
     return job
 
@@ -236,7 +237,7 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
     assert job.data["brief"] == "질문으로 시작" and job.data["source"] == {"trend": "t1", "pick": 0}
     seen = []
 
-    def write(llm, ch, topic, brief=None, recent=(), facts=()):
+    def write(llm, ch, topic, brief=None, recent=(), facts=(), feedback=()):
         seen.append((ch.id, topic, brief, recent, facts))
         raise RuntimeError("여기까지만")
     monkeypatch.setattr(pipeline.script, "write", write)
@@ -413,3 +414,56 @@ def test_step_research_without_facts_keeps_notes_and_usage():
     # 왜 못 찾았는지 남는다: 메모는 로그에, 비용은 usage에
     assert job.doc("facts.json")["notes"] == ["확인 못 함: 요금"]
     assert job.data["research_usage"]["cost_usd"] == 0.01 and "조사 메모: 확인 못 함" in job.tail()[-1]
+
+
+def test_proofread_step_rewrites_with_feedback_until_it_passes(monkeypatch):
+    ja = channel.load("ja-korea-trip")
+    monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
+    fed, verdicts = [], iter([
+        script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="번역투", fix="こう")]),
+        script_mod.Verdict(passed=True)])
+    usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
+
+    def write(llm, ch, topic, brief=None, recent=(), facts=(), feedback=()):
+        fed.append(list(feedback))
+        return script_mod.Script(title=f"t{len(fed)}", description="d", tags=["a"], sensitive="",
+                                 scenes=[script_mod.Scene(sentence="一", prompt="p")]), usage
+    monkeypatch.setattr(pipeline.script, "write", write)
+    monkeypatch.setattr(pipeline.script, "proofread", lambda llm, ch, s, splitter, limit: (next(verdicts), usage))
+    job = Job.create("ja-korea-trip", "주제", "v")
+    sv = services(channel=ja)
+    assert pipeline.step_script(job, sv) == "m" and fed == [[]]   # 대본 단계는 한 번만 쓴다
+    assert pipeline.step_proofread(job, sv) == "m"
+    assert fed == [[], ["장면 1「一」: 번역투 → こう"]]   # 지적이 원문과 함께 다시 쓰기에 넘어간다
+    assert job.doc("script.json")["title"] == "t2" and job.data["usage"]["cost_usd"] == 0.04   # 쓰기 2 + 검수 2
+    logs = "\n".join(job.tail())
+    assert "불통과(1/3)" in logs and "번역투 → こう" in logs and "다시 씀: t2" in logs and "통과(2번째 대본)" in logs
+    # 한국어 채널은 검수하지 않는다
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a: pytest.fail("ko는 검수 안 함"))
+    assert pipeline.step_proofread(Job.create(CH, "주제", "v"), services()) == "건너뜀"
+
+
+def test_script_that_never_passes_proofread_fails_with_last_draft_kept(monkeypatch):
+    ja = channel.load("ja-korea-trip")
+    monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
+    usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
+    monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
+        title="t", description="d", tags=["a"], sensitive="", scenes=[script_mod.Scene(sentence="一", prompt="p")]),
+        usage))
+    bad = script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=0, problem="제목", fix="x")])
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a: (bad, usage))
+    job = Job.create("ja-korea-trip", "주제", "v")
+    sv = services(channel=ja)
+    pipeline.step_script(job, sv)
+    with pytest.raises(RuntimeError, match="3번 통과하지 못했어요"):
+        pipeline.step_proofread(job, sv)
+    assert job.doc("script.json")["title"] == "t"
+    assert sum("불통과" in line for line in job.tail()) == 3 and sum("다시 씀" in line for line in job.tail()) == 2
+
+
+def test_old_job_without_proofread_step_is_filled_from_script(db):
+    job = Job.create(CH, "주제", "v")
+    old = {k: v for k, v in job.data["steps"].items() if k != "proofread"}
+    old["script"]["status"] = "done"
+    db.edit("job", job.id, lambda d: d | {"steps": old})
+    assert job.data["steps"]["proofread"]["status"] == "done"

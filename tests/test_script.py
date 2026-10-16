@@ -6,6 +6,7 @@ import pytest
 
 from shorts_printer import config
 from shorts_printer.adapters import claude
+from shorts_printer.adapters.splitters.ja import Japanese
 from shorts_printer.core import channel, prompts, script
 
 OK = script.Script(title="t", description="d", tags=["a"], sensitive="",
@@ -283,3 +284,25 @@ def test_live_claude_writes_korean_script(ko):
     s, usage = script.write(claude.Claude(), ko, "커피를 처음 마신 사람들")
     assert 6 <= len(s.scenes) <= 7 and all("No on-screen text" in x.prompt for x in s.scenes)
     assert usage["output_tokens"] > 0
+
+
+def test_proofread_shows_subtitle_cuts_and_feedback_goes_back_to_write(tmp_path):
+    ch = make_channel(tmp_path, language="ja")
+    s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一", "二"]}
+    verdict = script.Verdict(passed=False, issues=[script.Issue(scene=2, problem="번역투", fix="三にする")])
+    llm = FakeLLM(verdict)
+    out, _ = script.proofread(llm, ch, s, Japanese(), 10)
+    call = llm.calls[0]
+    assert out is verdict and call["schema"] is script.Verdict and "한 줄 10자" in call["system"]
+    assert "1. 一\n2. 二" in call["text"]
+    # 자막 단계와 같은 자리에 /를 넣어 보여 준다. 문장 끝(。)에서는 자막처럼 따로 나눈다
+    script.proofread(llm, ch, s | {"sentences": ["今日は天気がいいですね。散歩に行きましょう。"]}, Japanese(), 10)
+    assert "1. 今日は天気が / いいですね。 / 散歩に行きましょう。" in llm.calls[1]["text"]
+    lines = verdict.lines(s["sentences"])
+    assert lines == ["장면 2「二」: 번역투 → 三にする"]
+    w = FakeLLM()
+    script.write(w, ch, "주제", feedback=lines)
+    assert "검수에서 아래 지적" in w.calls[0]["text"]
+    assert w.calls[0]["text"].endswith("- 장면 2「二」: 번역투 → 三にする")
+    script.write(w, ch, "주제")
+    assert "검수" not in w.calls[1]["text"]

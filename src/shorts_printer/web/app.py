@@ -43,8 +43,8 @@ STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "d
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
 # 상세 화면 단계 묶음: 대본·음성·자막을 확정해야 영상으로 넘어간다
-PHASES = (("대본", ("research", "script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
-          ("완성", ("render",)))
+PHASES = (("대본", ("research", "script", "proofread", "voice", "subtitles")), ("영상", ("footage",)),
+          ("썸네일", ("thumbnail",)), ("완성", ("render",)))
 # 스케줄 회차 배지(글, 색)
 RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
 # Lucide 아이콘 경로(ISC 라이선스). 이모지 대신 쓴다.
@@ -614,6 +614,17 @@ def revise_script(job_id: str, note: str = Form("")):
     _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
     return {"ok": True, "msg": "Claude가 대본을 고치고 음성·자막을 다시 만들어요. 끝나면 다시 확인해 주세요" if review
             else "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
+
+
+@app.post("/api/jobs/{job_id}/script/rewrite")
+def rewrite_script(job_id: str):
+    """대본을 처음부터 다시 쓴다(검수에 떨어졌거나 그냥 마음에 안 들 때).
+    장면 클립을 만든 뒤에는 새 장면과 어긋나니 막는다."""
+    job = _load(Job, job_id)
+    if job.data["steps"]["footage"]["status"] == "done":
+        raise HTTPException(409, "장면 클립을 이미 만든 뒤라 처음부터 다시 쓸 수 없어요. 수정 요청으로 고쳐 주세요")
+    _redo(job_id, ("script", "proofread", "voice", "subtitles", "thumbnail", "render"), script_note=None)
+    return {"ok": True, "msg": "Claude가 대본을 처음부터 다시 쓰고 검수·음성·자막을 다시 만들어요"}
 
 
 @app.post("/api/jobs/{job_id}/translate")

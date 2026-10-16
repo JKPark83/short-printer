@@ -7,8 +7,10 @@ from collections.abc import Sequence
 from pydantic import BaseModel, Field
 
 from ..ports.llm import LLM
+from ..ports.splitter import Splitter
 from . import prompts, research
 from .channel import Channel
+from .subtitles import SENTENCE_END
 
 
 class Scene(BaseModel):
@@ -152,10 +154,39 @@ def translate(llm: LLM, ch: Channel, s: dict, thumb: dict | None,
     return {"src": src, "cues": list(cues), "ko": out.model_dump()}, usage
 
 
-def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None,
-          recent: Sequence[str] = (), facts: Sequence[dict] = ()) -> tuple[Script, dict]:
+class Issue(BaseModel):
+    scene: int = Field(description="장면 번호(1부터). 제목·설명·태그는 0")
+    problem: str = Field(description="어느 표현이 무슨 뜻이고 왜 어색한지 한 줄. 반드시 한국어(확인하는 사람은 한국인)")
+    fix: str = Field(description="고친 문장(대본 언어)과 괄호 안에 그 뜻을 한국어로 짧게")
+
+
+class Verdict(BaseModel):
+    passed: bool = Field(description="시청자에게 내보내도 되면 true")
+    issues: list[Issue] = Field(default_factory=list, description="고칠 곳. passed가 true면 비운다")
+
+    def lines(self, sentences: Sequence[str]) -> list[str]:
+        """로그에 남기고 다시 쓰기에 넘기는 꼴. 원문을 같이 적어 장면 번호 없이도 무엇을 고칠지 알게 한다."""
+        return [f"장면 {i.scene}" + (f"「{sentences[i.scene - 1]}」" if 0 < i.scene <= len(sentences) else "")
+                + f": {i.problem} → {i.fix}" for i in self.issues]
+
+
+def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int) -> tuple[Verdict, dict]:
+    """한국어가 아닌 채널: 대본(script.json 꼴)이 그 말로 자연스러운지, 자막으로 끊었을 때 잘 읽히는지 검수한다.
+    문장마다 자막 단계와 같은 규칙으로 끊은 자리를 " / "로 보여 준다(끊는 규칙은 못 고치니 문장을 고치게).
+    통과하지 못하면 호출한 쪽이 Verdict.lines()를 write(feedback=)로 넘겨 다시 쓴다."""
+    def cut(t: str) -> str:
+        return " / ".join(p for part in SENTENCE_END.split(t) if part.strip() for p in splitter.chunks(part, limit))
+    scenes = "\n".join(f"{i}. {cut(t)}" for i, t in enumerate(s["sentences"], 1))
+    text = f"제목: {s['title']}\n설명: {s['description']}\n장면 {len(s['sentences'])}개(자막 끊는 자리는 /):\n{scenes}"
+    return llm.ask(prompts.render("script_proofread", lang=ch.lang_name, limit=limit), text, Verdict,
+                   refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
+
+
+def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: Sequence[str] = (),
+          facts: Sequence[dict] = (), feedback: Sequence[str] = ()) -> tuple[Script, dict]:
     """brief: 추천 주제에서 왔으면 훅·전개 방향 참고. recent: 최근 작업 제목(같은 틀을 피한다).
-    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다."""
+    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다.
+    feedback: 앞 대본이 검수에서 받은 지적(Verdict.lines). 같은 실수를 되풀이하지 않게 함께 넘긴다."""
     text = f"주제: {topic}"
     if brief:
         text += f"\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n{brief}"
@@ -164,6 +195,9 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None,
         text += "\n\n최근 제목(이 틀을 피한다):\n" + "\n".join(f"- {t}" for t in recent)
     if facts:
         text += "\n\n" + sheet_block(facts)
+    if feedback:
+        text += ("\n\n앞서 쓴 대본이 원어민 검수에서 아래 지적을 받았다. 지적받은 문장은 고친 대로 쓰고, "
+                 "같은 종류의 문제가 다른 문장에도 없게 처음부터 다시 쓴다:\n" + "\n".join(f"- {x}" for x in feedback))
     refusal = f"{llm.label}가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요."
     script, usage = llm.ask(system(ch), text, Script, refusal=refusal, what="대본")
     if not script.scenes:

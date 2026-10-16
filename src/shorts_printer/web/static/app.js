@@ -292,6 +292,7 @@ document.addEventListener('click', async e => {
   if (re) {
     e.preventDefault();   // 폼 제출(엔터 포함) 대신 fetch로
     if (!re.form.reportValidity()) return;
+    if (re.dataset.ask && !confirm(re.dataset.ask)) return;
     re.disabled = true;
     try {
       const r = await fetch(`${api}/${re.dataset.post}`, { method: 'POST', body: new FormData(re.form) });

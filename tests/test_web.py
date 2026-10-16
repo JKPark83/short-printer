@@ -91,7 +91,7 @@ def test_job_page_api_and_retry_rules():
     html = client.get(f"/jobs/{job.id}").text
     assert "#커피상식 #카페" in html and "final.mp4?v=2026-10-13" in html and "그라데이션 배경" in html
     d = client.get(f"/api/jobs/{job.id}").json()
-    assert d["sig"] == "done:ddddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
+    assert d["sig"] == "done:dddddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
     assert client.post(f"/api/jobs/{job.id}/retry").status_code == 409
     assert client.get("/jobs/..%2Fetc").status_code == 404 and client.get("/api/jobs/nope").status_code == 404
 
@@ -337,6 +337,10 @@ def test_script_edit_direct_and_revise():
     assert d["script_note"] == "더 짧게" and d["steps"]["script"]["status"] == "pending"
     assert d["steps"]["footage"]["status"] == "done"
     assert web.q._q.get_nowait() == ("run", job.id)
+    # 처음부터 다시 쓰기: 클립을 만든 뒤에는 막는다(장면이 어긋난다)
+    job.update(status="done")
+    assert client.post(f"/api/jobs/{job.id}/script/rewrite").status_code == 409
+    assert 'id="script-rewrite"' not in client.get(f"/jobs/{job.id}").text
     # 목소리만 바꿔도 음성부터 다시. 모르는 목소리는 거절
     job.update(status="done")
     assert client.post(url, data=form | {"voice": "nope"}).status_code == 400
