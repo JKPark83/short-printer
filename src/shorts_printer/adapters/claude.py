@@ -69,13 +69,13 @@ class Claude:
         return cost(self.model, input_tokens, output_tokens)
 
     def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = (),
-            web: bool = False):
+            web: bool | Sequence[str] = False):
         """Claude 한 번 부르고 (구조화 결과, 사용량)을 돌려준다. 오류는 한국어 RuntimeError로."""
         model = self.model
         content = [*map(_image, images), {"type": "text", "text": text}] if images else text
         extra = fallback(model)
-        if web:
-            extra["tools"] = [WEB_SEARCH]
+        if web:   # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
+            extra["tools"] = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}]
         messages = [{"role": "user", "content": content}]
         inp = out = searches = 0
         with errors():

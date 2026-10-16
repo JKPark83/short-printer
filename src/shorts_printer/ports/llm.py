@@ -15,9 +15,10 @@ class LLM(Protocol):
     def ready(self) -> bool: ...
 
     def ask(self, system: str, text: str, schema: type[T], *, refusal: str, what: str,
-            images: Sequence[bytes | str] = (), web: bool = False) -> tuple[T, dict]:
+            images: Sequence[bytes | str] = (), web: bool | Sequence[str] = False) -> tuple[T, dict]:
         """(구조화 결과, 사용량). images는 JPEG 바이트 또는 URL, 글 앞에 붙는다.
         web=True면 답하기 전에 인터넷을 검색해도 된다(검색 비용은 cost_usd에 더한다).
+        web에 사이트 목록을 주면 그 사이트 안에서만 검색한다.
         거절하면 RuntimeError(refusal), 결과가 없으면 RuntimeError(f"{what}을 받지 못했어요…").
         오류는 모두 한국어 RuntimeError.
         사용량 = {"model", "input_tokens", "output_tokens", "cost_usd"(모르면 None)}."""

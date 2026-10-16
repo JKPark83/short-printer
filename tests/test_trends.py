@@ -9,7 +9,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from shorts_printer.core import channel, pipeline, trends
+from shorts_printer.core import channel, pipeline, research, trends
 from shorts_printer.infra.store import store
 from shorts_printer.ports.llm import add_usage
 
@@ -275,7 +275,18 @@ def test_pick_prompt_has_today_weights_and_only_this_channels_topics():
     assert f"오늘: {datetime.now():%Y-%m-%d}" in text and "(없음, KR 전체)" in text
     assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
     assert "(가중치 60)" in text and "(가중치 10)" in text
-    assert llm.calls[0]["system"] == trends.system_pick(ch) and llm.calls[0]["web"]
+    assert llm.calls[0]["system"] == trends.system_pick(ch) and llm.calls[0]["web"] == research.sites(ch)
+    assert any("허용 사이트" in m and "쇼츠 0개로" in m and "주제 1개 제외" in m for m in logs(t))
+
+
+def logs(t):
+    return t.tail()
+
+
+def test_web_falls_back_to_anywhere_without_sites():
+    ch = channel.load(CH)
+    ch = ch.model_copy(update={"research": ch.research.model_copy(update={"domains": [], "news": []})})
+    assert trends._web(ch) is True
 
 
 def test_percentile_single_video():
@@ -434,7 +445,12 @@ def test_idea_run_skips_youtube_and_fills_picks(monkeypatch):
     d = t.data
     assert d["status"] == "done" and d["steps"]["collect"]["engine"] == "건너뜀" and not d.get("quota")
     call = llm.calls[0]
-    assert call["system"] == trends.system_idea(channel.load(CH)) and call["images"] == [] and call["web"]
+    assert call["system"] == trends.system_idea(channel.load(CH)) and call["images"] == []
+    assert call["web"] == research.sites(channel.load(CH))
+    msgs = logs(t)
+    assert any("주제 10개 고르는 중 (이미 만든 주제 1개" in m for m in msgs)
+    assert any(" m 답: 주제 1개 → 점수" in m for m in msgs)
+    assert any("추천 1: 손가락 꺾는 소리 (" in m and "제작 적합도 " in m for m in msgs)
     assert "좁힐 주제: 겨울" in call["text"] and "- 우리 채널 주제" in call["text"] and "화제성" not in call["text"]
     p = t.doc("picks.json")["picks"][0]
     assert p["topic"] == "손가락 꺾는 소리" and p["refs"] == [] and t.doc("videos.json") is None

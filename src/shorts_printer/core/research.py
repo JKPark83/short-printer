@@ -21,10 +21,15 @@ def _site(url: str) -> str:
     return host.removeprefix("www.")
 
 
+def sites(ch: Channel) -> list[str]:
+    """채널이 허용한 검색 사이트(공식 + 보도). 조사와 주제 찾기가 같은 목록을 쓴다."""
+    return list(dict.fromkeys(ch.research.domains + ch.research.news))
+
+
 def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[dict, dict]:
     """(facts.json 문서, 사용량). 사실마다 F1부터 번호, 사이트, 공식/보도 구분을 붙인다."""
     r = ch.research
-    domains = list(dict.fromkeys(r.domains + r.news))
+    domains = sites(ch)
     if not domains:
         raise RuntimeError("채널에 조사 사이트([research] domains)가 없어요. channel.toml에 허용 사이트를 넣어 주세요.")
     text = f"주제: {topic}" + (f"\n\n확인할 주장·참고:\n{brief}" if brief else "")

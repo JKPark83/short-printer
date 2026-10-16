@@ -212,6 +212,12 @@ def test_claude_web_search_resumes_pause_and_adds_search_cost(monkeypatch):
     assert usage["input_tokens"] == 2000 and usage["cost_usd"] == round(0.088 + 6 * claude.SEARCH_USD, 4)
 
 
+def test_claude_web_search_limited_to_sites(monkeypatch):
+    calls = fake_client(monkeypatch, resp())
+    ask(web=["kma.go.kr", "yna.co.kr"])
+    assert calls[0]["tools"] == [claude.WEB_SEARCH | {"allowed_domains": ["kma.go.kr", "yna.co.kr"]}]
+
+
 def test_claude_puts_images_before_text(monkeypatch):
     calls = fake_client(monkeypatch, resp())
     ask(images=[b"\xff\xd8", "https://i.ytimg.com/x.jpg"])
