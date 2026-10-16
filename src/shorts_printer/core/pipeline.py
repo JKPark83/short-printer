@@ -6,6 +6,7 @@ from typing import ClassVar
 from ..infra.store import Record, now, redact, upload_state
 from ..ports.llm import add_usage
 from . import render, research, scenes, script, subtitles, thumbnail, voice
+from .channel import Channel
 from .services import Services
 
 # 사람을 기다리는 영상 소스는 뒤로
@@ -60,9 +61,11 @@ def step_research(job: Job, sv: Services) -> str:
 
 
 def step_script(job: Job, sv: Services) -> str:
+    facts = (job.doc("facts.json") or {}).get("facts", [])   # 예전 작업엔 없다
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
         draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
-        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft))
+        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft),
+                                  facts=facts)
         job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
@@ -72,7 +75,7 @@ def step_script(job: Job, sv: Services) -> str:
     recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
               and (t := (j.doc("script.json") or {}).get("title"))][-15:]
     # 예전 job.json엔 brief가 없다
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent)
+    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent, facts=facts)
     job.put("script.json", s.flat())
     job.update(usage=usage)
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
@@ -207,6 +210,28 @@ def run(job: Job, sv: Services) -> None:
     run_steps(job, STEPS, LABELS, {k: lambda rec, f=f: f(rec, sv) for k, f in RUN.items()}, "완성")
 
 
+MAX_DESC = 5000   # YouTube 설명란 한도(UTF-8 바이트)
+
+
+def description(job: Job, ch: Channel) -> str:
+    """올릴 설명란: LLM 설명 / 출처 머리말 + 대본이 쓴 사실의 URL(등장 순) / footer. 업로드와 검수 화면이 같이 쓴다.
+    넘치면 URL을 뒤에서부터 뺀다. 어댑터가 뒤를 자르면 footer(AI 표시)가 잘리기 때문이다."""
+    s = job.doc("script.json")
+    urls = {f["id"]: f["url"] for f in (job.doc("facts.json") or {}).get("facts", [])}
+    used = list(dict.fromkeys(urls[i] for ids in s.get("fact_ids") or [] for i in ids if i in urls))
+    head, foot = ch.publish.sources_heading, ch.publish.footer
+
+    def join(xs: list[str]) -> str:
+        src = "\n".join([head, *xs]) if head and xs else ""
+        return "\n\n".join(x for x in (s["description"].rstrip(), src, foot) if x)
+
+    out = join(used)
+    while len(out.encode()) > MAX_DESC and used:
+        used.pop()
+        out = join(used)
+    return out   # 그래도 넘으면 어댑터가 자른다
+
+
 def publish(job: Job, sv: Services) -> None:
     """완성 영상을 채널 업로드 공급자로 비공개로 올린다. 실패하면 failed로 남겨 다시 올릴 수 있게 한다.
     대체 경로(스튜디오 화면 등)는 공급자 안에서 고른다."""
@@ -214,9 +239,7 @@ def publish(job: Job, sv: Services) -> None:
     job.update(upload=upload_state("running"))
     job.log(f"{p.label} 업로드 시작")
     s = job.doc("script.json")
-    meta = {k: s[k] for k in ("title", "description", "tags")}
-    if foot := sv.channel.publish.footer:   # 스튜디오 대체 업로드도 같은 meta를 쓴다
-        meta["description"] = f"{meta['description'].rstrip()}\n\n{foot}"
+    meta = {k: s[k] for k in ("title", "description", "tags")} | {"description": description(job, sv.channel)}
     try:
         video_id = p.upload(job.dir / "final.mp4", meta, job.log)
     except BaseException as e:   # Ctrl+C도 실패로 남긴다

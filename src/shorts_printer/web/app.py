@@ -459,7 +459,11 @@ def job_page(request: Request, job_id: str):
     job = _load(Job, job_id)
     ch = _channel(job.data.get("channel"))
     s, thumb, ko, cues = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json"), job.doc("cues.json")
+    facts = (job.doc("facts.json") or {}).get("facts", [])
     return _page(request, "job.html", {
+        # 조사 없이 만든 예전 작업은 근거 검사를 하지 않는다(모든 숫자 문장이 걸린다)
+        "facts": facts, "unverified": script.unverified(s, facts) if s and facts else [],
+        "desc": pipeline.description(job, ch) if s else "",
         "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
         "script": s, "clips": job.doc("clips.json"),
         "cues": cues, "has_thumb": (job.dir / "thumbnail.jpg").exists(),
@@ -573,7 +577,7 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
         shots = [_clean(x) for x in prompts]
         if len(shots) != len(lines) or not all(shots) or any(len(x) > 1000 for x in shots):
             raise HTTPException(400, "장면 프롬프트는 장면 수만큼, 비우지 않고 1000자 안으로 적어 주세요")
-        files["script.json"]["prompts"] = shots
+        files["script.json"] |= {"prompts": shots, "prompts_ko": script.keep_ko(old, shots)}
     fields, steps = {"voice": voice}, set()
     if lines != old["sentences"] or voice != was:
         steps |= {"voice", "subtitles", "render"}

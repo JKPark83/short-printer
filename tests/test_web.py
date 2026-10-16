@@ -96,6 +96,24 @@ def test_job_page_api_and_retry_rules():
     assert client.get("/jobs/..%2Fetc").status_code == 404 and client.get("/api/jobs/nope").status_code == 404
 
 
+def test_job_page_shows_facts_refs_unverified_and_description_preview():
+    job = done_job()
+    job.edit("script.json", lambda s: s | {"sentences": ["물은 100도", "2배 비싸다"], "fact_ids": [["F1"], []],
+                                           "prompts_ko": ["끓는 냄비", "가격 비교"]})
+    job.put("facts.json", {"facts": [
+        {"id": "F1", "text": "물은 100도에서 끓는다", "url": "https://a.go.kr/1", "title": "", "site": "a.go.kr",
+         "kind": "official", "retrieved_at": "2026-10-16T09:00:00+09:00"},
+        {"id": "F2", "text": "값이 올랐다", "url": "https://news.kr/2", "title": "", "site": "news.kr",
+         "kind": "news", "retrieved_at": "2026-10-16T09:00:00+09:00"}]})
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'id="fact-F1"' in html and "물은 100도에서 끓는다" in html and "2026-10-16 확인" in html
+    assert 'class="chip chip-news">보도<' in html and 'href="#fact-F1">F1<' in html
+    assert "근거 없는 문장 1개" in html and "2번 문장" in html and 'class="unv"' in html
+    assert "설명란 미리보기" in html and '<pre class="desc-preview">설명</pre>' in html
+    job.update(status="waiting", review=True)   # 확정 전: 영어 프롬프트 아래 한국어 한 줄
+    assert '<p class="prompt-ko" lang="ko">끓는 냄비</p>' in client.get(f"/jobs/{job.id}").text
+
+
 def test_lifespan_migrates_legacy_folder(tmp_path, monkeypatch):
     """예전 폴더(job.json·script.json·log.txt)만 있는 작업도 켤 때 DB로 옮겨져 화면에 뜬다."""
     job = done_job()
@@ -233,6 +251,7 @@ def test_sensitive_banner_and_confirm(monkeypatch):
 
 def test_review_edit_saves_and_confirm_starts(monkeypatch):
     job = scene_job()
+    job.put("script.json", job.doc("script.json") | {"prompts_ko": ["가", "나"]})
     job.update(review=True)
     html = client.get(f"/jobs/{job.id}").text
     assert "대본·음성·자막을 확인해 주세요" in html and "대본 확인" in html and "대본을 확정하면 시작해요" in html
@@ -247,6 +266,7 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     assert client.post(url, data=form).status_code == 200
     s, d = job.doc("script.json"), job.data
     assert s["sentences"] == ["하나", "셋"] and s["prompts"] == ["p1", "p3"] and d["voice"] == "elevenlabs"
+    assert s["prompts_ko"] == ["가", ""]   # 바꾼 프롬프트의 한국어 풀이는 낡아서 비운다
     assert d["status"] == "queued" and d["steps"]["voice"]["status"] == "pending"   # 음성·자막만 다시
     assert d["steps"]["render"]["status"] == "pending" and web.q._q.get_nowait() == ("run", job.id)
     job.update(status="waiting")

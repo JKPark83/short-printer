@@ -236,8 +236,8 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
     assert job.data["brief"] == "질문으로 시작" and job.data["source"] == {"trend": "t1", "pick": 0}
     seen = []
 
-    def write(llm, ch, topic, brief=None, recent=()):
-        seen.append((ch.id, topic, brief, recent))
+    def write(llm, ch, topic, brief=None, recent=(), facts=()):
+        seen.append((ch.id, topic, brief, recent, facts))
         raise RuntimeError("여기까지만")
     monkeypatch.setattr(pipeline.script, "write", write)
     with pytest.raises(RuntimeError):
@@ -245,9 +245,11 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
     for cid, title in ((CH, "라면의 진짜 이유"), ("en-other", "Other channel title")):
         other = Job.create(cid, "예전", "v")
         other.put("script.json", {"title": title, "sentences": ["x"]})
+    fact = {"id": "F1", "text": "가", "url": "https://a.go.kr/1", "kind": "official"}
+    job.put("facts.json", {"queries": [], "facts": [fact]})   # 자료 조사 결과를 대본에 넘긴다
     with pytest.raises(RuntimeError):
         pipeline.step_script(job, services())
-    assert seen == [(CH, "주제", "질문으로 시작", []), (CH, "주제", "질문으로 시작", ["라면의 진짜 이유"])]
+    assert seen == [(CH, "주제", "질문으로 시작", [], []), (CH, "주제", "질문으로 시작", ["라면의 진짜 이유"], [fact])]
 
 
 def test_script_step_revises_when_note(monkeypatch):
@@ -287,6 +289,39 @@ def test_publish_appends_channel_footer_to_description():
     sv = services(channel=ch.model_copy(update={"publish": ch.publish.model_copy(update={"footer": "※AI 이미지"})}))
     pipeline.publish(job, sv)
     assert sv.publisher.sent[0][1]["description"] == "설명\n\n※AI 이미지"
+
+
+def test_description_lists_used_sources_in_order_and_fits_5000_bytes():
+    job = scene_job(*STEPS)
+    job.put("script.json", {"title": "t", "description": "설명\n", "tags": [], "sentences": ["a", "b", "c"],
+                            "fact_ids": [["F2"], ["F1", "F2"], ["F9"]]})
+    job.put("facts.json", {"facts": [{"id": f"F{i}", "url": f"https://a.go.kr/{i}"} for i in (1, 2, 3)]})
+    ch = channel.load(CH)
+
+    def with_(**kw):
+        return ch.model_copy(update={"publish": ch.publish.model_copy(update=kw)})
+
+    # 쓴 것만, 등장 순, 중복 없이. 쓰지 않은 F3·시트에 없는 F9는 빠진다
+    assert pipeline.description(job, with_(sources_heading="출처", footer="※AI")) == \
+        "설명\n\n출처\nhttps://a.go.kr/2\nhttps://a.go.kr/1\n\n※AI"
+    assert pipeline.description(job, with_(sources_heading="", footer="")) == "설명"
+    job.edit("script.json", lambda s: s | {"description": "가" * 1653})   # 4959바이트: URL 하나만 들어간다
+    out = pipeline.description(job, with_(sources_heading="출처", footer=""))
+    assert out.endswith("출처\nhttps://a.go.kr/2") and len(out.encode()) <= 5000
+    job.put("facts.json", None)
+    job.edit("script.json", lambda s: s | {"description": "설명"})
+    assert pipeline.description(job, with_(sources_heading="출처", footer="※AI")) == "설명\n\n※AI"   # 예전 작업
+
+
+def test_publish_sends_description_with_sources():
+    job = scene_job(*STEPS)
+    job.put("script.json", {"title": "t", "description": "설명", "tags": [], "sentences": ["a"], "fact_ids": [["F1"]]})
+    job.put("facts.json", {"facts": [{"id": "F1", "url": "https://a.go.kr/1"}]})
+    ch = channel.load(CH)
+    sv = services(channel=ch.model_copy(update={"publish": ch.publish.model_copy(update={"sources_heading": "출처"})}))
+    pipeline.publish(job, sv)
+    assert sv.publisher.sent[0][1]["description"] == pipeline.description(job, sv.channel) == \
+        "설명\n\n출처\nhttps://a.go.kr/1"
 
 
 def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):

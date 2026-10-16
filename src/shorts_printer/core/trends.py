@@ -405,7 +405,7 @@ class PicksOut(BaseModel):
 def system_pick(ch: Channel) -> str:
     """prompts/trend_pick.md에 채널 분야·제작 방식·언어·채널 규칙(trends.md)을 채운다."""
     return prompts.render("trend_pick", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
-                          channel_rules=ch.text("trends.md"))
+                          channel_rules=ch.text("trends.md"), duration=ch.script.duration, scenes=ch.script.scenes)
 
 
 def percentile(videos: list[dict], vid: str) -> float:
@@ -433,7 +433,7 @@ def finish_picks(out: PicksOut, videos: list[dict], weights: dict[str, int]) -> 
 class IdeaOut(BaseModel):
     topic: str = Field(description="작업 주제로 그대로 쓸 한 줄. 80자 이내")
     angle: str = Field(description="훅과 전개 방향. 대본 작가에게 넘길 참고. 200자 이내")
-    content: str = Field(description="간략한 내용: 핵심 답과 사실 2~3문장. 300자 이내")
+    content: str = Field(description="핵심 답 한 문장 + 확인할 주장 3~5개(끝에 출처 기관). 500자 이내")
     format: Format
     why_now: str = Field(description="왜 지금, 왜 사람들이 궁금해하는지 한두 문장")
     scores: Scores
@@ -449,7 +449,8 @@ def system_idea(ch: Channel) -> str:
     """prompts/trend_idea.md에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
     rules = ch.text("ideas.md") if (ch.dir / "ideas.md").exists() else ""
     return prompts.render("trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
-                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N)
+                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
+                          duration=ch.script.duration, scenes=ch.script.scenes)
 
 
 def idea_weights(weights: dict[str, int]) -> dict[str, int]:
@@ -465,7 +466,7 @@ def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
     for p in out.picks:
         scores = {k: min(5, max(1, v)) for k, v in p.scores.model_dump().items()}
         total = round(100 * sum(w[k] * (scores[k] - 1) / 4 for k in w) / sum(w.values()))
-        picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:300],
+        picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:500],
                       "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": [],
                       "search_terms": p.search_terms})
     picks.sort(key=lambda p: p["total"], reverse=True)
