@@ -42,7 +42,7 @@
         <div class="card-head">
           <h2 id="h-rec">{{ icon('sparkles', 16, 'h-icon') }}지금 만들 만한 주제</h2>
           {% if rec and not ch %}<span class="badge b-ch">{{ channels[rec.trend.channel].name }}</span>{% endif %}
-          {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">{{ '아이디어 보기 · ' ~ (rec.trend.created_at|hm) if rec.trend.mode == 'idea' else '근거 보기 · ' ~ (rec.trend.created_at|hm) ~ ' 분석' }}{{ icon('chevron', 14) }}</a>{% endif %}
+          {% if rec %}<a class="more" href="/trends/{{ rec.trend.id }}">추천 보기 · {{ rec.trend.created_at|hm }}{{ icon('chevron', 14) }}</a>{% endif %}
         </div>
         {% if rec %}
         <ol class="rec-list">
@@ -65,7 +65,7 @@
           {% endfor %}
         </ol>
         {% else %}
-        <p class="empty">아직 추천이 없어요. <a href="/trends">주제 찾기</a>에서 지금 인기 있는 쇼츠를 분석하면 여기에 상위 3개가 떠요.</p>
+        <p class="empty">아직 추천이 없어요. <a href="/trends">주제 찾기</a>에서 추천을 받으면 여기에 상위 3개가 떠요.</p>
         {% endif %}
       </section>
       <section id="jobs" class="card" data-active="{{ 1 if active else 0 }}" data-list="stats jobs" aria-labelledby="h-jobs">

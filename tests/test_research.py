@@ -1,3 +1,4 @@
+import contextlib
 from types import SimpleNamespace as NS
 
 import anthropic
@@ -17,6 +18,13 @@ def _usage(inp, out, searches):
 
 def _cite(**kw):
     return NS(**kw)
+
+
+def _client(create):
+    """messages.stream(...)을 with로 열면 get_final_message가 create(**kw) 결과를 돌려주는 가짜."""
+    def stream(**kw):
+        return contextlib.nullcontext(NS(get_final_message=lambda: create(**kw)))
+    return NS(beta=NS(messages=NS(stream=stream)))
 
 
 def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
@@ -39,7 +47,7 @@ def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
         calls.append(kw | {"messages": list(kw["messages"])})
         return resps.pop(0)
 
-    client = NS(beta=NS(messages=NS(create=create)))
+    client = _client(create)
     monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
     monkeypatch.setattr(config, "CLAUDE_MODEL", "claude-opus-5-5")
     facts, usage = ClaudeResearch().gather("지시", "주제: 물", domains=["a.go.kr", "b.go.kr"], queries=3, max_pages=4)
@@ -58,12 +66,13 @@ def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
     search, fetch = calls[0]["tools"]
     assert search["allowed_domains"] == fetch["allowed_domains"] == ["a.go.kr", "b.go.kr"]
     assert search["max_uses"] == 3 and fetch["max_uses"] == 4 and fetch["citations"] == {"enabled": True}
+    assert calls[0]["max_tokens"] == 128000 and calls[0]["fallbacks"] == "default"
     assert "output_format" not in calls[0] and len(calls[1]["messages"]) == 2   # pause_turn이면 이어 부른다
 
 
 def test_claude_research_refusal(monkeypatch):
     resp = NS(stop_reason="refusal", model="claude-opus-5-5", usage=_usage(1, 1, 0), content=[])
-    monkeypatch.setattr(anthropic, "Anthropic", lambda: NS(beta=NS(messages=NS(create=lambda **kw: resp))))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: _client(lambda **kw: resp))
     with pytest.raises(RuntimeError, match="거절"):
         ClaudeResearch().gather("s", "t", domains=["a.kr"], queries=1, max_pages=1)
 
@@ -76,7 +85,7 @@ def test_claude_research_without_domains_has_no_allowed_domains(monkeypatch):
            content=NS(type="web_fetch_tool_result_error", error_code="url_not_accessible")),
     ])
     monkeypatch.setattr(anthropic, "Anthropic",
-                        lambda: NS(beta=NS(messages=NS(create=lambda **kw: calls.append(kw) or resp))))
+                        lambda: _client(lambda **kw: calls.append(kw) or resp))
     facts, _ = ClaudeResearch().gather("s", "t", domains=[], queries=1, max_pages=1)
     assert all("allowed_domains" not in t for t in calls[0]["tools"])
     # 도구 오류가 메모로 남아 못 찾은 이유를 알 수 있다

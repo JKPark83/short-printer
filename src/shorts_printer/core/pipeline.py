@@ -1,4 +1,4 @@
-"""일곱 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
+"""여덟 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
 화면에서 만든 작업은 대본·음성·자막 뒤 확정 전까지, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
 from typing import ClassVar
@@ -10,9 +10,10 @@ from .channel import Channel
 from .services import Services
 
 # 사람을 기다리는 영상 소스는 뒤로
-STEPS = ("research", "script", "voice", "subtitles", "footage", "thumbnail", "render")
-LABELS = {"research": "자료 조사", "script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막",
-          "thumbnail": "썸네일", "render": "렌더"}
+STEPS = ("research", "script", "proofread", "voice", "subtitles", "footage", "thumbnail", "render")
+LABELS = {"research": "자료 조사", "script": "대본", "proofread": "대본 검수", "footage": "영상 소스",
+          "voice": "음성", "subtitles": "자막", "thumbnail": "썸네일", "render": "렌더"}
+PROOFREAD_TRIES = 3   # 검수 → 지적한 문장만 고치기를 돌아 이만큼 검수하고도 떨어지면 실패(한국어는 사람 확인으로 멈춤)
 
 
 class Job(Record):
@@ -26,6 +27,9 @@ class Job(Record):
         # 자료 조사 단계가 생기기 전 작업: 대본이 이미 있으면 조사 없이 그대로 연다
         d["steps"].setdefault("research", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
                                            "engine": None, "sec": None})
+        # 원어민 검수 단계가 생기기 전 작업: 대본이 있으면 검수 없이 그대로 쓴다
+        d["steps"].setdefault("proofread", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
+                                            "engine": None, "sec": None})
         return d
 
     @classmethod
@@ -76,17 +80,69 @@ def step_script(job: Job, sv: Services) -> str:
         job.log(f"대본 고침: {note}")
         translate(job, sv)
         return usage["model"]
-    # 최근 제목은 같은 채널 안에서만 피한다
-    recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
-              and (t := (j.doc("script.json") or {}).get("title"))][-15:]
-    # 예전 job.json엔 brief가 없다
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent, facts=facts)
+    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv), facts=facts)
     job.put("script.json", s.flat())
-    job.update(usage=usage)
+    job.update(usage=add_usage(job.data.get("usage"), usage))
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
     if s.sensitive and sv.channel.sensitive_gate:
         job.log(f"민감 분야({s.sensitive}): 대본을 확인한 뒤 [확인하고 계속]을 눌러야 장면을 만들어요")
     translate(job, sv)
+    return usage["model"]
+
+
+def _recent(job: Job, sv: Services) -> list[str]:
+    """최근 제목은 같은 채널 안에서만 피한다."""
+    return [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
+            and (t := (j.doc("script.json") or {}).get("title"))][-15:]
+
+
+def step_proofread(job: Job, sv: Services) -> str:
+    """대본을 원어민 편집자 눈으로 검수한다. 떨어지면 지적받은 곳만 고치고 또 검수한다.
+    처음부터 다시 쓰면 새 문장에서 새 지적이 나와 끝나지 않는다.
+    문장 사이 흐름까지 보고, 흐름을 고치느라 앞뒤 장면도 바뀌니 바뀐 장면은 영상 프롬프트도 새로 쓴다.
+    끝내 떨어지면 실패 대신 사람 확인으로 멈춘다(운영자가 읽고 고칠 수 있다)."""
+    facts = (job.doc("facts.json") or {}).get("facts", [])
+    s, changed = job.doc("script.json"), None
+    for n in range(1, PROOFREAD_TRIES + 1):
+        verdict, usage = script.proofread(sv.llm, sv.channel, s, sv.splitter,
+                                          sv.channel.style.subtitle_limit or sv.splitter.limit, facts=facts)
+        job.update(usage=add_usage(job.data["usage"], usage))
+        if changed is not None:   # 다시 볼 때마다 먼 장면에서 새 흠을 찾아 끝나지 않는다: 고친 장면과 그 앞뒤만 본다
+            near = {j for i in changed for j in (i - 1, i, i + 1)}   # 고친 말이 옆 장면과 부딪히면 옆도 고친다
+            kept = [i for i in verdict.issues if i.scene in near]
+            if len(kept) < len(verdict.issues):
+                job.log(f"고친 곳에서 먼 장면 지적 {len(verdict.issues) - len(kept)}개는 넘김")
+            verdict = script.Verdict(passed=not kept, issues=kept)
+        if verdict.passed:
+            job.log(f"통과({n}번째 대본)")
+            break
+        feedback = verdict.lines(s["sentences"])
+        job.log(f"불통과({n}/{PROOFREAD_TRIES}), 지적 {len(feedback)}개:\n" + "\n".join(feedback))
+        if n == PROOFREAD_TRIES:
+            job.update(review=True)   # 확정 전엔 장면 영상을 만들지 않는다(스케줄 작업도 여기서 멈춘다)
+            job.log(f"대본 검수를 {PROOFREAD_TRIES}번 통과하지 못했어요. "
+                    "위 지적을 보고 대본을 고치거나 그대로 확정해 주세요")
+            break
+        old = s
+        note = script.FIX_NOTE + "\n".join(f"- {x}" for x in feedback)
+        s, u = script.revise(sv.llm, sv.channel, s, note, draft=True, facts=facts)
+        changed = {i for i, (a, b) in enumerate(zip(old["sentences"], s["sentences"], strict=False), 1) if a != b}
+        # 문장이 그대로인 장면은 프롬프트·근거도 그대로 둔다(검수는 말만 본다)
+        for k in ("prompts", "prompts_ko", "fact_ids"):
+            s[k] = [x if i in changed else o for i, (o, x) in enumerate(zip(old[k], s[k], strict=True), 1)]
+        # 무엇이 바뀌었는지 로그로 남긴다(운영자가 검수가 고친 말을 원문과 맞대 본다)
+        diff = [f"장면 {i}: {old['sentences'][i - 1]}\n  → {s['sentences'][i - 1]}" for i in sorted(changed)]
+        if old["title"] != s["title"]:
+            diff.insert(0, f"제목: {old['title']}\n  → {s['title']}")
+        if old.get("description") != s.get("description"):
+            diff.append("설명도 고침")
+        if (old["title"], old.get("description")) != (s["title"], s.get("description")):
+            changed.add(0)
+        job.put("script.json", s)   # 떨어져도 마지막 대본은 화면에서 보게 남긴다
+        job.update(usage=add_usage(job.data["usage"], u))
+        job.log(f"지적한 곳 고침 {len(diff)}곳:\n" + "\n".join(diff) if diff
+                else "지적을 고쳐 썼지만 바뀐 문장이 없어요")
+    translate(job, sv)   # 대본이 바뀌었으면 한국어 뜻도 새로 붙는다
     return usage["model"]
 
 
@@ -177,7 +233,8 @@ def step_render(job: Job, sv: Services) -> str:
     return "ffmpeg"
 
 
-RUN = {"research": step_research, "script": step_script, "footage": step_footage, "voice": step_voice,
+RUN = {"research": step_research, "script": step_script, "proofread": step_proofread, "footage": step_footage,
+       "voice": step_voice,
        "subtitles": step_subtitles, "thumbnail": step_thumbnail, "render": step_render}
 
 

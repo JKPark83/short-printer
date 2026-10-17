@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from shorts_printer import config
-from shorts_printer.core import pipeline, schedule, trends
+from shorts_printer.core import channel, pipeline, schedule, trends
 from shorts_printer.core.pipeline import Job
 from shorts_printer.core.schedule import GRACE, Schedule, When
 from shorts_printer.core.trends import Trend
@@ -11,6 +11,7 @@ from shorts_printer.infra.store import upload_state
 from shorts_printer.infra.worker import LocalQueue
 
 CH = "ko-40sec-facts"
+NAME = channel.load(CH).name   # 채널 이름이 바뀌어도 알림 문구 테스트가 돈다
 KST = timezone(timedelta(hours=9))
 FRI = date(2026, 10, 16)   # 금요일
 
@@ -107,6 +108,19 @@ def test_fire_trend_marks_trend_and_skips_overlap(q, sent):
     assert not schedule.busy(s.data)
 
 
+def test_trend_schedule_keeps_request_without_period(q, sent):
+    when = {"kind": "times", "times": ["09:00"]}
+    s = Schedule.create(CH, "추천", "trend", "", when, keyword=" 겨울 위주로\n짧게 ")
+    assert s.data["keyword"] == "겨울 위주로\n짧게" and "period" not in s.data
+    long = Schedule.create(CH, "긴 요청", "trend", "", when, keyword="가" * (trends.MAX_REQUEST + 5))
+    assert long.data["keyword"] == "가" * trends.MAX_REQUEST
+    s.update(period="3d")   # 예전 스케줄에 남은 기간 값
+    assert s.change(name="추천 2")["name"] == "추천 2"
+    run = schedule.fire(s, q, sent.append, at(FRI, "09:00"))
+    t = Trend.load(run["trend"]).data
+    assert t["keyword"] == "겨울 위주로\n짧게" and "period" not in t and run["result"] == "started"
+
+
 def test_list_job_busy_until_upload_finishes(q, sent):
     s = make()
     job = Job.load(schedule.fire(s, q, sent.append, at(FRI, "09:00"))["job"])
@@ -122,7 +136,7 @@ def test_empty_list_disables_and_notifies(q, sent):
     Job.load(s.data["runs"][-1]["job"]).update(status="failed")
     run = schedule.fire(s, q, sent.append, at(FRI, "18:00"))
     assert run["result"] == "failed" and not s.data["enabled"]
-    assert "[실패] 40초 상식 · 아침 상식" in sent[0] and f"{config.URL}/schedules/{s.id}" in sent[0]
+    assert f"[실패] {NAME} · 아침 상식" in sent[0] and f"{config.URL}/schedules/{s.id}" in sent[0]
 
 
 def test_change_validates_and_resets_last_slot():
@@ -173,10 +187,10 @@ def test_after_trend_failure_notifies(q, sent):
     s = make("trend", topics=())
     run = schedule.fire(s, q, sent.append, at(FRI, "09:00"))
     t = Trend.load(run["trend"])
-    t.update(status="failed", error={"step": "collect", "message": "할당량을 다 썼어요"})
+    t.update(status="failed", error={"step": "pick", "message": "요청 한도에 걸렸어요"})
     schedule.after_trend(t, q, sent.append)
-    assert s.data["runs"][-1]["result"] == "failed" and "할당량" in s.data["runs"][-1]["note"]
-    assert "주제 찾기 실패: 할당량을 다 썼어요" in sent[0] and f"/trends/{t.id}" in sent[0]
+    assert s.data["runs"][-1]["result"] == "failed" and "한도" in s.data["runs"][-1]["note"]
+    assert "주제 찾기 실패: 요청 한도에 걸렸어요" in sent[0] and f"/trends/{t.id}" in sent[0]
 
 
 def test_after_job_uploads_and_notifies(q, sent):
@@ -186,11 +200,12 @@ def test_after_job_uploads_and_notifies(q, sent):
     job.put("script.json", {"title": "커피의 비밀", "sensitive": None})
     job.update(status="done")
     schedule.after_job(job, "run", q, sent.append)
-    assert job.data["upload"]["status"] == "queued" and q._q.get_nowait() == ("upload", job.id) and not sent
+    assert job.data["upload"]["status"] == "queued" and q._q.get_nowait() == ("upload", job.id)
+    assert sent == [f"[제작 완료] {NAME} · 아침 상식\n커피의 비밀\n작업: {config.URL}/jobs/{job.id}"]
 
     job.update(upload=upload_state("done", video_id="VID"))
     schedule.after_job(job, "upload", q, sent.append)
-    assert sent[-1].startswith("[업로드 완료] 40초 상식 · 아침 상식\n커피의 비밀 (비공개)")
+    assert sent[-1].startswith(f"[업로드 완료] {NAME} · 아침 상식\n커피의 비밀 (비공개)")
     assert "https://studio.youtube.com/video/VID/edit" in sent[-1] and f"{config.URL}/jobs/{job.id}" in sent[-1]
 
     job.update(upload=upload_state("failed", error="토큰이 없어요"))
@@ -199,11 +214,11 @@ def test_after_job_uploads_and_notifies(q, sent):
 
     job.update(upload=None, uploaded_before={"status": "done"})   # 올린 뒤 고쳐 다시 만든 것은 사람이 올린다
     schedule.after_job(job, "run", q, sent.append)
-    assert job.data["upload"] is None and q._q.empty()
+    assert job.data["upload"] is None and q._q.empty() and sent[-1].startswith("[제작 완료]")
 
     job.update(status="failed", error={"step": "voice", "message": "ElevenLabs 401"})
     schedule.after_job(job, "run", q, sent.append)
-    assert "제작 실패(음성): ElevenLabs 401" in sent[-1] and len(sent) == 3
+    assert "제작 실패(음성): ElevenLabs 401" in sent[-1] and len(sent) == 5
 
 
 def test_after_job_review_wait_once(q, sent):
@@ -213,7 +228,7 @@ def test_after_job_review_wait_once(q, sent):
     job.put("script.json", {"title": "약 먹는 법", "sensitive": "건강"})
     job.update(status="waiting")
     schedule.after_job(job, "run", q, sent.append)
-    assert len(sent) == 1 and sent[-1].startswith("[검수 필요] 40초 상식 · 아침 상식")   # 민감 대기와 겹쳐도 하나
+    assert len(sent) == 1 and sent[-1].startswith(f"[검수 필요] {NAME} · 아침 상식")   # 민감 대기와 겹쳐도 하나
     assert "민감 분야(건강)" in sent[-1] and f"{config.URL}/jobs/{job.id}" in sent[-1]
     job.update(confirmed=True)   # 확인 뒤 클립 대기는 알리지 않는다
     schedule.after_job(job, "run", q, sent.append)
@@ -229,14 +244,29 @@ def test_after_job_sensitive_wait_without_review(q, sent):
     assert sent[-1].startswith("[확인 필요]") and "민감 분야(건강)" in sent[-1]
 
 
-def test_manual_job_is_left_alone(q, sent):
+def test_manual_job_notifies_done_and_failure(q, sent):
+    """손으로 만든 작업도 완성·실패를 알린다(Flow가 장면을 거절해 멈춘 것도 바로 알게). 업로드는 사람이 한다."""
     job = Job.create(CH, "커피", "v")
-    for status in ("done", "failed"):
-        job.update(status=status)
-        schedule.after_job(job, "run", q, sent.append)
+    job.update(status="done")
+    schedule.after_job(job, "run", q, sent.append)
+    job.update(status="failed", error={"step": "footage", "message": "Flow가 장면 1을 못 만들었어요"})
+    schedule.after_job(job, "run", q, sent.append)
     job.update(upload=upload_state("done", video_id="VID"))
     schedule.after_job(job, "upload", q, sent.append)
-    assert not sent and q._q.empty() and job.data["upload"]["status"] == "done"
+    head, link = f"{NAME} · 직접 만든 작업", f"작업: {config.URL}/jobs/{job.id}"
+    assert sent == [f"[제작 완료] {head}\n커피\n{link}",
+                    f"[실패] {head}\n제작 실패(영상 소스): Flow가 장면 1을 못 만들었어요\n커피\n{link}"]
+    assert q._q.empty() and job.data["upload"]["status"] == "done"   # 업로드는 사람이 한다
+
+
+def test_manual_job_notifies_review(q, sent):
+    """손으로 만든 작업도 대본 검수가 준비되면 알린다. 업로드 문구는 빠진다."""
+    job = Job.create(CH, "커피", "v")
+    job.update(status="waiting", review=True)
+    schedule.after_job(job, "run", q, sent.append)
+    assert sent == [f"[검수 필요] {NAME} · 직접 만든 작업\n"
+                    f"대본을 확인하고 [확인하고 계속]을 누르면 영상 제작이 이어져요.\n"
+                    f"커피\n작업: {config.URL}/jobs/{job.id}"]
 
 
 def test_worker_runs_hooks_and_swallows_errors(monkeypatch, sent):

@@ -5,6 +5,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 
 import anthropic
+import pydantic
 
 from .. import config
 
@@ -21,9 +22,8 @@ def cost(model: str, inp: int, out: int) -> float | None:
     return round((inp * price[0] + out * price[1]) / 1e6, 4) if price else None
 
 
-def fallback(model: str) -> dict:
-    """안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다. haiku는 대상이 아니라 뺀다."""
-    return {} if "haiku" in model else {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
+# 안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다
+FALLBACK = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
 
 
 @contextmanager
@@ -43,6 +43,8 @@ def errors() -> Iterator[None]:
         raise RuntimeError(f"Claude API 오류({e.status_code}): {e.message}") from None
     except anthropic.APIConnectionError:
         raise RuntimeError("Claude API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
+    except pydantic.ValidationError:   # 구조화 출력이라 모양이 틀리는 건 응답이 max_tokens에서 끊겼을 때뿐이다
+        raise RuntimeError("Claude 응답이 너무 길어 중간에 끊겼어요. 다시 시도하세요.") from None
 
 
 def with_sites(request, tools: list[dict] | None):
@@ -68,6 +70,12 @@ def _image(img: bytes | str) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
 
+def stream(**kw):
+    """스트리밍으로 부른다. 비스트리밍은 SDK가 max_tokens를 2만 남짓으로 막는다(10분 넘을 요청)."""
+    with anthropic.Anthropic().beta.messages.stream(**kw) as s:
+        return s.get_final_message()
+
+
 class Claude:
     label = "Claude"
 
@@ -90,16 +98,17 @@ class Claude:
         """Claude 한 번 부르고 (구조화 결과, 사용량)을 돌려준다. 오류는 한국어 RuntimeError로."""
         model = self.model
         content = [*map(_image, images), {"type": "text", "text": text}] if images else text
-        extra = fallback(model)
+        extra = FALLBACK
         # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
         tools = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}] if web else None
         messages = [{"role": "user", "content": content}]
         inp = out = searches = 0
         with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp, tools = with_sites(lambda t: anthropic.Anthropic().beta.messages.parse(
+                resp, tools = with_sites(lambda t: stream(
                     model=model,
-                    max_tokens=16000,
+                    # 생각 토큰도 여기서 빠진다. 대본은 생각만 1만 토큰을 넘기도 한다
+                    max_tokens=128000,   # Opus 5.5 상한
                     system=system,
                     messages=messages,
                     output_format=schema,

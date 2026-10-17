@@ -15,13 +15,13 @@
 |---|---|
 | `channel.toml` | 값(아래 표) |
 | `script.md` | 대본 규칙: 훅, 말투(존댓말·반말), 사실 확인, 마지막 문장, 제목 꼴. 채널 언어로 써도 된다 |
-| `video_style.md` | 장면 영상 규칙: 화풍, 사람 표현, 원리 보여 주는 법 |
+| `video_style.md` | 장면 영상 규칙: 화풍, 물체 디테일·빛, 사람 표현, 원리 보여 주는 법 |
 | `thumbnail.md` | 썸네일 문구 규칙: 줄 수, 강조, 호기심 꼴, 하지 않는 것 |
 | `trends.md` | 추천 주제를 고를 때 먼저 볼 것(계절, 시청자가 바로 써먹는 것 등) |
-| `ideas.md` | 선택. 주제 찾기 아이디어 모드(영상 분석 없이 바로 추천)의 주제 기준. 없으면 `concept` 안에서 고른다 |
+| `ideas.md` | 선택. 주제 찾기의 주제 기준. 없으면 `concept` 안에서 고른다 |
 
 글 파일은 부를 때마다 읽으므로 고치면 다음 작업부터 바로 반영된다. 맨 앞 `--- … ---` 머리말은 빠진다.
-이 글들은 공통 지시문 `prompts/*.md`(대본 뼈대·고쳐 쓰기·썸네일·쇼츠 분석·주제 고르기)의 `${channel_…}` 자리에 들어간다. 모든 채널에 걸리는 규칙은 `prompts/`를 고친다.
+이 글들은 공통 지시문 `prompts/*.md`(대본 뼈대·고쳐 쓰기·썸네일·주제 고르기)의 `${channel_…}` 자리에 들어간다. 모든 채널에 걸리는 규칙은 `prompts/`를 고친다.
 
 ## channel.toml 키
 
@@ -51,10 +51,8 @@
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |
 | `[publish]` `footer` | 업로드할 때 설명 맨 끝에 빈 줄 하나 두고 붙는 문구(AI 표시 등). 비우면 안 붙는다 |
 | `[publish]` `sources_heading` | 설명란 출처 머리말(`출처`·`出典`). 비우면 출처를 붙이지 않는다 |
-| `[trends]` `region` / `language` | 추천 수집 지역 코드 / 언어(비우면 `language`) |
-| `[trends]` `keywords` | 키워드 없이 찾을 때 OR로 묶어 검색할 낱말들 |
-| `[trends]` `production` | 우리 제작 방식 한 단락(분석·선정 지시문에 들어간다) |
-| `[trends]` `weights` | `trend`·`fit`·`fresh`·`safe` 네 개, 합 100 |
+| `[trends]` `production` | 우리 제작 방식 한 단락(주제 찾기 지시문에 들어간다) |
+| `[trends]` `weights` | `fit`·`fresh`·`safe` 세 개, 합 100 |
 | `[research]` `provider` | registry `RESEARCHERS` 이름(`claude`) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |

@@ -11,6 +11,9 @@ from . import subtitles
 from .channel import Channel
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
+THUMB_FLASH = 0.1   # 영상 맨 앞에 썸네일을 그대로 보이는 길이(초)
+THUMB_FADE = 0.4    # 그 뒤 썸네일이 영상으로 녹아 사라지는 길이(초)
+XFADE = 0.5   # 장면 클립 사이 겹침(초). 8초마다 딱 끊기지 않게 경계를 가운데 두고 녹아든다
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 채널 강조색. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
 # 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 아래 띠 맨 위에(subtitles MarginV)
@@ -67,14 +70,26 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     args, chains, fx = [], [], []
     if clips:
         same = bool(starts) and len(clips) == len(starts)   # 장면 클립: 짧으면 마지막 화면에서 멈춤
-        for i, (c, k) in enumerate(zip(clips, frames(starts or [0], dur, len(clips)), strict=True)):
+        ks, n = frames(starts or [0], dur, len(clips)), len(clips)
+        # 겹침은 경계를 가운데 둔다: 다음 장면이 pre 프레임 먼저 들어오고 앞 장면이 post 프레임 더 남는다
+        pre = round(XFADE * 30 / 2)
+        post = round(XFADE * 30) - pre
+        for i, (c, k) in enumerate(zip(clips, ks, strict=True)):
+            ext = k + (post if i < n - 1 else 0) + (pre if i else 0)   # 겹침만큼 길게 자른다
             args += ([] if same else ["-stream_loop", "-1"]) + ["-i", f"clips/{c}"]   # 예전 스톡 작업은 반복
-            pad = f"tpad=stop_mode=clone:stop_duration={k / 30 + 0.1:.2f}," if same else ""
-            chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={k},setpts=PTS-STARTPTS[v{i}]")
+            pad = f"tpad=stop_mode=clone:stop_duration={ext / 30 + 0.1:.2f}," if same else ""
+            chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={ext},setpts=PTS-STARTPTS[v{i}]")
             if same:   # 효과음은 장면 클립만(스톡은 배경 음악일 수 있다). 소리 없는 클립 자리는 무음
                 src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
                 fx.append(f"{src}apad,atrim=end={k / 30:.3f},asetpts=PTS-STARTPTS[s{i}]")
-        chains.append("".join(f"[v{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[bg]")
+        prev, cum = "[v0]", 0
+        for i in range(1, n):   # xfade offset은 앞 입력(누적 결과) 기준 = 최종 시간축. 경계 pre 프레임 전에 시작
+            cum += ks[i - 1]
+            out = "[bg]" if i == n - 1 else f"[x{i}]"
+            chains.append(f"{prev}[v{i}]xfade=transition=fade:duration={XFADE}:offset={(cum - pre) / 30:.3f}{out}")
+            prev = out
+        if n == 1:
+            chains.append("[v0]null[bg]")
         if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 목소리만
             chains += fx + ["".join(f"[s{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[fx]"]
         else:
@@ -85,13 +100,20 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     n = len(clips) or 1
     if title:
         caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
-    # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
+    # 썸네일을 첫 THUMB_FLASH초(3프레임)에 그대로 얹고 THUMB_FADE초 동안 투명해지게 한다: 올린 뒤 유튜브 앱은 영상
+    # 프레임 중에서만 썸네일을 고르게 하므로 그 프레임을 고르면 된다. 뚝 끊기지 않고 영상으로 넘어간다
+    thumb = (job_dir / "thumbnail.jpg").exists()
+    tail = ["-loop", "1", "-framerate", "30", "-i", "thumbnail.jpg"] if thumb else []   # voice.wav 다음 입력(n+1)
     # 효과음을 더하면 겹치는 곳이 넘칠 수 있어 리미터로 막는다
     voice = VOICE.format(ch.style.voice_lufs) if ch.style.voice_lufs else ""
     voice_a = f"[{n}:a]{voice}apad" + ("[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
                                        if fx else "[a]")
-    chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", voice_a]
-    ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
+    frame = f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass"
+    if thumb:
+        chains.append(f"[{n + 1}:v]format=yuva420p,fade=t=out:st={THUMB_FLASH}:d={THUMB_FADE}:alpha=1[th]")
+        frame += f"[f];[f][th]overlay=enable='lt(t,{THUMB_FLASH + THUMB_FADE})':shortest=1"
+    chains += [frame + "[v]", voice_a]
+    ffmpeg.run([*args, "-i", "voice.wav", *tail, "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
     os.replace(job_dir / "final.tmp.mp4", job_dir / "final.mp4")

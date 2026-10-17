@@ -6,13 +6,14 @@ requires-python = ">=3.12"
 dependencies = [
     "anthropic",
     "fastapi",
+    "fugashi>=1.5.2",
     "jinja2",
     "kiwipiepy>=0.24.0",
     "playwright>=1.64.0",
     "pydantic",
     "python-multipart>=0.0.32",
+    "unidic-lite>=1.0.8",
     "uvicorn",
-    "yt-dlp>=2026.8.19",
 ]
 
 [project.scripts]
@@ -40,6 +41,6 @@ select = ["E", "F", "W", "I", "B", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 # 옮겨 온 코드의 긴 한국어 프롬프트·문구·ASS 서식 줄(한글은 폭 2로 센다). 프롬프트 내용을 바꾸지 않으려 그대로 둔다
-"src/shorts_printer/core/{script,trends,subtitles,render,voice}.py" = ["E501"]
+"src/shorts_printer/core/{script,subtitles,render,voice}.py" = ["E501"]
 "src/shorts_printer/adapters/{flow_auto,youtube,youtube_studio}.py" = ["E501"]
 "tests/test_{trends,voice_render,youtube}.py" = ["E501"]

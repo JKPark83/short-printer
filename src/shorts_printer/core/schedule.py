@@ -13,7 +13,7 @@ from ..infra.store import Record, redact
 from ..ports.queue import Queue
 from . import channel, trends
 from .pipeline import LABELS, Job, in_review
-from .trends import DEFAULT_PERIOD, PERIODS, Trend
+from .trends import Trend
 
 GRACE = timedelta(minutes=5)   # 이보다 늦게 알아챈 시각은 놓친 것으로 본다(사용자 결정: 건너뛰기)
 MAX_RUNS = 50
@@ -24,7 +24,7 @@ DAYS = "월화수목금토일"
 MAX_TIMES = 12
 MAX_NAME = 50
 MAX_TOPICS = 200
-KEYS = ("name", "source", "voice", "when", "keyword", "period", "topics", "enabled")   # 고칠 수 있는 값
+KEYS = ("name", "source", "voice", "when", "keyword", "topics", "enabled")   # 고칠 수 있는 값
 LOOKAHEAD = 8   # next_runs가 찾는 날 수
 Notify = Callable[[str], object]
 
@@ -109,8 +109,6 @@ def _clean(channel_id: str, d: dict) -> dict:
         raise ValueError(f"이름을 1~{MAX_NAME}자로 적어 주세요")
     if d["source"] not in SOURCES:
         raise ValueError("주제 출처는 추천·주제 목록 가운데 하나예요")
-    if d["period"] not in PERIODS:
-        raise ValueError(f"기간은 {', '.join(PERIODS)} 가운데 하나예요")
     topics = [t.strip()[:200] for t in d["topics"] if t.strip()]
     if d["source"] == "list" and d["enabled"] and not topics:   # 끈 스케줄은 목록이 비어도 고칠 수 있게
         raise ValueError("주제를 한 줄에 하나씩 넣어 주세요")
@@ -119,7 +117,7 @@ def _clean(channel_id: str, d: dict) -> dict:
     voice = d["voice"] or ch.tts.default
     if voice not in ch.tts.voices:
         raise ValueError(f"이 채널에 없는 목소리예요: {voice}")
-    return {"name": name, "source": d["source"], "keyword": d["keyword"].strip()[:50], "period": d["period"],
+    return {"name": name, "source": d["source"], "keyword": d["keyword"].strip()[:trends.MAX_REQUEST],
             "topics": topics, "voice": voice, "enabled": bool(d["enabled"]), "when": parse_when(d["when"]).model_dump()}
 
 
@@ -133,14 +131,14 @@ class Schedule(Record):
 
     @classmethod
     def create(cls, channel: str, name: str, source: str, voice: str, when: When | dict, keyword: str = "",
-               period: str = DEFAULT_PERIOD, topics: Iterable[str] = ()) -> "Schedule":
+               topics: Iterable[str] = ()) -> "Schedule":
         """voice가 비면 채널 기본 목소리. last_slot은 지금(지난 시각이 바로 돌지 않게)."""
         fields = _clean(channel, {"name": name, "source": source, "voice": voice, "when": when, "keyword": keyword,
-                                  "period": period, "topics": list(topics), "enabled": True})
+                                  "topics": list(topics), "enabled": True})
         return cls._new((), channel=channel, **fields, last_slot=_iso(_now()), runs=[])
 
     def change(self, **fields) -> dict:
-        """고치기·켜고 끄기(name·source·voice·when·keyword·period·topics·enabled). 채널은 바꾸지 않는다.
+        """고치기·켜고 끄기(name·source·voice·when·keyword·topics·enabled). 채널은 바꾸지 않는다.
         시각을 바꾸거나 켜면 last_slot을 지금으로. 웹은 q.lock 안에서 부른다(회차 기록과 겹치지 않게)."""
         d = self.data
         new = _clean(d["channel"], {k: d[k] for k in KEYS} | fields)
@@ -248,7 +246,7 @@ def fire(s: Schedule, q: Queue, notify: Notify, at: datetime, slot: datetime | N
         if busy(d):
             run = _run(at, slot, "skipped", note="이전 회차가 아직 안 끝났어요")
         elif d["source"] == "trend":
-            t = Trend.create(d["channel"], d["keyword"], d["period"])
+            t = Trend.create(d["channel"], d["keyword"])
             t.update(schedule=s.id)
             q.enqueue_trend(t.id)
             run = _run(at, slot, "started", trend=t.id)
@@ -327,14 +325,30 @@ def _sensitive_wait(job: Job) -> str | None:
 
 
 def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
-    """스케줄 작업(source.schedule)만: 완성 → 업로드 넣기, 실패·중단·검수 대기·민감 대기·업로드 완료/실패 → 알림.
-    kind는 큐 종류(run·upload). 손으로 만든 작업은 아무것도 하지 않는다."""
+    """완성·실패·검수 대기·민감 대기 → 알림(모든 작업). 스케줄 작업(source.schedule)은 거기에 더해
+    완성 → 업로드 넣기, 중단·업로드 완료/실패 → 알림. kind는 큐 종류(run·upload)."""
     d = job.data
-    if not (s := _schedule((d.get("source") or {}).get("schedule"))):
-        return
-    sd = s.data
+    s = _schedule((d.get("source") or {}).get("schedule"))
     title = (job.doc("script.json") or {}).get("title") or d["topic"]
     link = f"작업: {_link('jobs', job.id)}"
+    who = s.data if s else {"channel": d["channel"], "name": "직접 만든 작업"}
+    then = "영상 제작·업로드까지 이어져요." if s else "영상 제작이 이어져요."   # 손으로 만든 작업은 사람이 올린다
+    if kind == "run" and d["status"] == "done":   # 손으로 만든 작업도 영상이 다 되면 알린다
+        notify(_msg(who, "제작 완료", title, link))
+    elif kind == "run" and d["status"] == "failed":   # 실패도 모든 작업
+        err = d.get("error") or {}
+        step = LABELS.get(err.get("step"), "")
+        notify(_msg(who, "실패", f"제작 실패{f'({step})' if step else ''}: {err.get('message')}", d["topic"], link))
+    elif kind == "run" and in_review(d):   # 검수 확정이 민감 확인도 겸하므로 알림은 이것 하나
+        area = (job.doc("script.json") or {}).get("sensitive")
+        notify(_msg(who, "검수 필요", f"대본을 확인하고 [확인하고 계속]을 누르면 {then}",
+                    *filter(None, [area and f"민감 분야({area}) 대본이에요."]), d["topic"], link))
+    elif kind == "run" and (area := _sensitive_wait(job)):
+        notify(_msg(who, "확인 필요", f"민감 분야({area}) 대본이에요. 대본을 보고 [확인하고 계속]을 누르면 {then}",
+                    title, link))
+    if not s:
+        return
+    sd = s.data
     if kind == "upload":
         up = d.get("upload") or {}
         if up.get("status") == "done":
@@ -347,16 +361,5 @@ def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
         # 처음 완성될 때만 올린다. 올린 뒤 상세 화면에서 고쳐 다시 만든 것(uploaded_before)은 사람이 올린다
         if d.get("upload") is None and not d.get("uploaded_before"):
             q.enqueue_upload(job.id)
-    elif d["status"] == "failed":
-        err = d.get("error") or {}
-        step = LABELS.get(err.get("step"), "")
-        notify(_msg(sd, "실패", f"제작 실패{f'({step})' if step else ''}: {err.get('message')}", d["topic"], link))
     elif d["status"] == "interrupted":   # 앱이 켜질 때 recover()가 넘긴다
         notify(_msg(sd, "실패", "제작 중단: 서버가 꺼져 멈췄어요. 작업 화면에서 다시 시도하세요.", d["topic"], link))
-    elif in_review(d):   # 검수 확정이 민감 확인도 겸하므로 알림은 이것 하나
-        area = (job.doc("script.json") or {}).get("sensitive")
-        notify(_msg(sd, "검수 필요", "대본을 확인하고 [확인하고 계속]을 누르면 영상 제작·업로드까지 이어져요.",
-                    *filter(None, [area and f"민감 분야({area}) 대본이에요."]), d["topic"], link))
-    elif area := _sensitive_wait(job):
-        notify(_msg(sd, "확인 필요", f"민감 분야({area}) 대본이에요. 대본을 보고 [확인하고 계속]을 누르면 "
-                    "제작·업로드까지 이어져요.", title, link))

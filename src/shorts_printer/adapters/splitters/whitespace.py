@@ -11,15 +11,15 @@ def width(text: str) -> float:
 
 def balance(pieces: list[str], sep: str, cut: list[float], limit: int) -> list[str]:
     """pieces를 sep로 이어 limit자 이하 덩어리로 나눈다. cut[k]는 pieces[k]와 [k+1] 사이를 끊는 값(작을수록 자연스럽다).
-    덩어리 수 + 짧은 덩어리 벌점 + 끊는 값이 가장 작게. limit보다 긴 조각은 그대로 한 덩어리다."""
+    덩어리 수 + 짧은 덩어리 벌점 + 끊는 값이 가장 작게. 넘치면 글자마다 벌점 16(끊을 데가 없을 때만)."""
     n, short = len(pieces), limit * 9 // 16
     best, back = [0.0] + [float("inf")] * n, [0] * (n + 1)
     for j in range(1, n + 1):
         for i in range(j - 1, -1, -1):
             size = len(sep.join(pieces[i:j]))
-            if size > limit and j - i > 1:
+            if size > limit + 3 and j - i > 1:
                 break
-            v = best[i] + 4 + max(0, short - size) + (cut[j - 1] if j < n else 0)
+            v = best[i] + 4 + max(0, short - size) + max(0, size - limit) * 16 + (cut[j - 1] if j < n else 0)
             if v < best[j]:
                 best[j], back[j] = v, i
     out, j = [], n

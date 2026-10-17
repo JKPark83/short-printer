@@ -33,22 +33,12 @@
             <label for="src-list">{{ icon('list', 16) }}주제 목록</label>
           </div>
           <div class="panel p-trend">
-            <p class="help-under">회차마다 요즘 뜨는 쇼츠를 분석해, 이 채널에서 아직 안 만든 1순위 주제로 만들어요. 한 번에 YouTube 할당량 {{ QUOTA_PER_RUN }}유닛과 AI 분석 비용이 들어요.</p>
-            {% if not trend_ok %}<p class="hint">{{ icon('alert', 14) }}YouTube Data API 키가 없어 추천을 쓸 수 없어요(.env의 YOUTUBE_API_KEY)</p>{% endif %}
-            <div class="row2">
-              <div class="field">
-                <label for="keyword">키워드 <span class="opt">선택</span></label>
-                <input id="keyword" name="keyword" type="text" maxlength="50" autocomplete="off" value="{{ s.keyword }}"
-                       placeholder="비우면 {{ ch.trends.region }} 전체" aria-describedby="keyword-count">
-                <span id="keyword-count" class="counter" data-for="keyword">0/50</span>
-              </div>
-              <div class="field">
-                <label for="period">기간</label>
-                <select id="period" name="period">
-                  {% for key, label in trends.PERIODS.items() %}<option value="{{ key }}"{{ ' selected' if key == s.period }}>최근 {{ label }}</option>{% endfor %}
-                </select>
-              </div>
-            </div>
+            <p class="help-under">회차마다 채널 기본 추천 기준으로 주제를 골라, 이 채널에서 아직 안 만든 1순위 주제로 만들어요. 한 번에 AI 추천 비용이 들어요.</p>
+            <label for="keyword">추가 요청 <span class="opt">선택</span></label>
+            <textarea id="keyword" name="keyword" rows="4" maxlength="{{ trends.MAX_REQUEST }}"
+                      aria-describedby="keyword-count keyword-help">{{ s.keyword }}</textarea>
+            <span id="keyword-count" class="counter" data-for="keyword">0/{{ trends.MAX_REQUEST }}</span>
+            <small id="keyword-help" class="help">비우면 채널 기본 추천 기준으로 골라요</small>
           </div>
           <div class="panel p-list">
             <label for="topics">주제 목록 <span class="opt">한 줄에 하나</span></label>

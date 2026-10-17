@@ -15,7 +15,7 @@ from shorts_printer.web import app as web
 client = TestClient(web.app, base_url="http://127.0.0.1")
 CH = "ko-40sec-facts"
 VOICE = "LKOcTG4J4tYTPR9DnLeM"
-FORM = {"channel": CH, "name": "아침 상식", "source": "list", "voice": VOICE, "keyword": "", "period": "3d",
+FORM = {"channel": CH, "name": "아침 상식", "source": "list", "voice": VOICE, "keyword": "",
         "topics": "커피\n\n우유 ", "kind": "times", "times": ["18:00", "09:00", ""], "every": "6", "start": "09:00",
         "end": "23:00", "days": ["0", "1", "2", "3", "4"]}
 
@@ -67,6 +67,8 @@ def test_empty_state_and_forms():
     assert 'action="/schedules"' in html and 'id="src-trend" name="source" value="trend" checked' in html
     assert 'name="channel" value="ko-40sec-facts"' in html
     assert html.count('class="mono"') == 5   # 서버가 그린 첫 미리 보기 다섯 번
+    assert 'name="period"' not in html and "YOUTUBE_API_KEY" not in html
+    assert '<textarea' in html and 'name="keyword"' in html and f'maxlength="{trends.MAX_REQUEST}"' in html
     html = client.get("/schedules/new?channel=all").text
     assert "채널을 먼저 골라 주세요" in html and 'id="sched-form"' not in html
 
@@ -81,7 +83,6 @@ def test_empty_state_and_forms():
     ({"kind": "every", "start": "22:00", "end": "08:00"}, "끝 시각"),
     ({"voice": "nope"}, "없는 목소리"),
     ({"source": "x"}, "주제 출처"),
-    ({"period": "9y"}, "기간은"),
     ({"channel": "nope"}, "채널이 없어요"),
 ])
 def test_create_rejects_in_korean(change, msg):
@@ -104,6 +105,7 @@ def test_edit_keeps_channel_and_history():
     d = s.data
     assert (d["name"], d["source"], d["keyword"], d["channel"], d["when"]["kind"], d["when"]["every"]) == \
         ("저녁", "trend", "우주", CH, "every", 3)
+    assert "period" not in d
     assert len(d["runs"]) == 1   # 회차 기록은 그대로
     r = client.post(f"/api/schedules/{s.id}", data=FORM | {"days": ["9"]})
     assert r.status_code == 400 and "요일" in r.json()["detail"]
@@ -116,7 +118,7 @@ def test_preview_returns_summary_and_next_runs():
     j = r.json()
     assert r.status_code == 200 and j["summary"] == "주말 07:30"
     labels = [t["label"][-9:] for t in j["next"]]
-    assert set(labels) == {"(토) 07:30", "(일) 07:30"} and 2 <= len(labels) <= 3   # 8일 안의 것만(요일 따라 2~3개)
+    assert set(labels) == {"(토) 07:30", "(일) 07:30"} and 2 <= len(labels) <= 4   # 8일 안의 것만(요일·시각 따라 2~4개)
     assert j["next"][0]["rel"].endswith(("뒤", "곧"))
     r = client.post("/api/schedules/preview", data=FORM | {"kind": "every", "every": "0"})
     assert r.status_code == 400 and "1~24시간" in r.json()["detail"]
@@ -149,15 +151,21 @@ def test_toggle_run_delete(queued):
     assert client.post(f"/api/schedules/{s.id}/delete").status_code == 404
 
 
-def test_run_trend_needs_key(queued, monkeypatch):
-    s = make(source="trend")
-    monkeypatch.setattr(trends, "ready", lambda: False)
-    r = client.post(f"/api/schedules/{s.id}/run")
-    assert r.status_code == 400 and "YOUTUBE_API_KEY" in r.json()["detail"] and queued["trend"] == []
-    monkeypatch.setattr(trends, "ready", lambda: True)
+def test_run_trend_without_youtube_key(queued, monkeypatch):
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+    s = make(source="trend", keyword=" 겨울 위주로\n짧게 ")
+    assert s.data["keyword"] == "겨울 위주로\n짧게"
     j = client.post(f"/api/schedules/{s.id}/run").json()
     assert j["result"] == "started" and len(queued["trend"]) == 1
+    assert Trend.load(queued["trend"][0]).data["keyword"] == "겨울 위주로\n짧게"
     assert "주제 찾는 중" in client.get("/schedules").text
+
+
+def test_trend_summary_shows_request_or_default():
+    make(name="요청 있음", source="trend", keyword="겨울 위주로")
+    make(name="요청 없음", source="trend")
+    html = client.get("/schedules").text
+    assert "“겨울 위주로”" in html and "기본 기준" in html
 
 
 def test_toggle_on_with_empty_list_is_rejected(queued):

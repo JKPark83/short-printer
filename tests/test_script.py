@@ -1,11 +1,14 @@
+import contextlib
 from types import SimpleNamespace
 
 import anthropic
 import httpx
+import pydantic
 import pytest
 
 from shorts_printer import config
 from shorts_printer.adapters import claude
+from shorts_printer.adapters.splitters.ja import Japanese
 from shorts_printer.core import channel, prompts, script
 
 OK = script.Script(title="t", description="d", tags=["a"], sensitive="",
@@ -57,7 +60,8 @@ def test_ko_system_keeps_every_old_rule(ko):
                  "photoreal", "주인공·장소·시대·옷차림", "앞 5초", "No on-screen text, no numbers, no logos.",
                  "실존 인물의 얼굴", "No dialogue, no voices, no music.",
                  "훅", "존댓말", "사실 시트", "fact_ids", "prompt_ko",
-                 "여기까진 다들 아시죠?", "오늘도 상식 하나 챙기셨네요?", "질문형",
+                 "그런데 몸 안을 들여다보면 이야기가 달라집니다.", "내 몸이 더 궁금하다면 구독, 좋아요 눌러 주세요!",
+                 "질문형",
                  "3D 애니메이션", "단면도", "한국어"]:
         assert rule in sys, rule
 
@@ -73,7 +77,7 @@ def test_brief_channel_and_recent_titles_are_appended(ko):
     llm = FakeLLM()
     script.write(llm, ko, "커피", "첫 문장은 질문으로", recent=["라면이 꼬불꼬불한 진짜 이유"])
     text = llm.calls[0]["text"]
-    assert text.startswith("주제: 커피\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:"
+    assert text.startswith("주제: 커피\n\n참고(추천 주제 방향). 방향·내용은 따르되 문장을 베끼지 않는다:"
                            "\n첫 문장은 질문으로")
     assert f"채널 분야: {ko.concept}" in text and "최근 제목(이 틀을 피한다):\n- 라면이 꼬불꼬불한 진짜 이유" in text
 
@@ -101,8 +105,12 @@ def test_draft_revise_rewrites_prompts_too(ko):
     out = script.Draft(title="t", description="d", tags=[], sentences=["하나", "셋"], prompts=[" p1 ", "p3"])
     llm = FakeLLM(out)
     new, _ = script.revise(llm, ko, s, "둘을 셋으로", draft=True)
-    assert new["sentences"] == ["하나", "셋"] and new["prompts"] == ["p1", "p3"]
+    # write처럼 채널 머리말을 붙인다. 이미 붙어 돌아온 프롬프트엔 또 붙이지 않는다
+    style = ko.video.style
+    assert new["sentences"] == ["하나", "셋"] and new["prompts"] == [f"{style} p1", f"{style} p3"]
     assert llm.calls[0]["system"].endswith(prompts.render("script_revise_draft"))
+    again, _ = script.revise(FakeLLM(out.model_copy(update={"prompts": new["prompts"]})), ko, s, "그대로", draft=True)
+    assert again["prompts"] == new["prompts"]
     with pytest.raises(RuntimeError, match="장면 수"):
         script.revise(FakeLLM(out.model_copy(update={"prompts": ["p1"]})), ko, s, "줄여 줘", draft=True)
 
@@ -177,9 +185,15 @@ def fake_client(monkeypatch, resp=None, exc=None):
             raise exc
         return resps.pop(0) if len(resps) > 1 else resps[0]
 
-    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=parse)))
-    monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: streaming(parse))
     return calls
+
+
+def streaming(parse):
+    """messages.stream(...)을 with로 열면 get_final_message가 parse(**kw) 결과를 돌려주는 가짜."""
+    def stream(**kw):
+        return contextlib.nullcontext(SimpleNamespace(get_final_message=lambda: parse(**kw)))
+    return SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(stream=stream)))
 
 
 def resp(**kw):
@@ -198,6 +212,7 @@ def test_claude_returns_result_and_cost(monkeypatch):
     assert out is OK
     assert usage == {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 2000, "cost_usd": 0.044}
     assert calls[0]["output_format"] is script.Script and calls[0]["fallbacks"] == "default"
+    assert calls[0]["max_tokens"] == 128000
     assert calls[0]["messages"][0]["content"] == "글" and calls[0]["system"] == "sys" and "tools" not in calls[0]
 
 
@@ -231,8 +246,7 @@ def test_claude_drops_sites_that_block_the_crawler_and_retries(monkeypatch):
         if len(calls) == 1:
             raise err
         return resp()
-    client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=parse)))
-    monkeypatch.setattr(anthropic, "Anthropic", lambda: client)
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: streaming(parse))
     ask(web=["kma.go.kr", "fnn.jp", "yna.co.kr"])
     assert [c["tools"][0]["allowed_domains"] for c in calls] == [["kma.go.kr", "fnn.jp", "yna.co.kr"], ["kma.go.kr"]]
 
@@ -246,19 +260,18 @@ def test_claude_puts_images_before_text(monkeypatch):
     assert content[1]["source"] == {"type": "url", "url": "https://i.ytimg.com/x.jpg"}
 
 
-def test_haiku_skips_fallback(monkeypatch):
-    monkeypatch.setattr(config, "CLAUDE_MODEL", "claude-haiku-4-5")
-    calls = fake_client(monkeypatch, resp(model="claude-haiku-4-5"))
-    ask()
-    assert calls[0]["model"] == "claude-haiku-4-5" and "fallbacks" not in calls[0] and "betas" not in calls[0]
-
-
 def test_refusal_and_missing_key_become_korean_errors(monkeypatch):
     fake_client(monkeypatch, resp(stop_reason="refusal", parsed_output=None))
     with pytest.raises(RuntimeError, match="주제를 바꿔"):
         ask()
     fake_client(monkeypatch, resp(parsed_output=None, stop_reason="max_tokens"))
     with pytest.raises(RuntimeError, match="대본을 받지 못했어요"):
+        ask()
+    bad = pydantic.TypeAdapter(script.Script)
+    with pytest.raises(pydantic.ValidationError) as cut:
+        bad.validate_json('{"title":"끊긴')
+    fake_client(monkeypatch, exc=cut.value)
+    with pytest.raises(RuntimeError, match="중간에 끊겼어요"):
         ask()
     fake_client(monkeypatch, exc=TypeError('Could not resolve authentication method. Expected api_key'))
     with pytest.raises(RuntimeError, match="ANTHROPIC_API_KEY"):
@@ -283,3 +296,18 @@ def test_live_claude_writes_korean_script(ko):
     s, usage = script.write(claude.Claude(), ko, "커피를 처음 마신 사람들")
     assert 6 <= len(s.scenes) <= 7 and all("No on-screen text" in x.prompt for x in s.scenes)
     assert usage["output_tokens"] > 0
+
+
+def test_proofread_shows_subtitle_cuts_and_lists_issues_with_source(tmp_path):
+    ch = make_channel(tmp_path, language="ja")
+    s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一", "二"]}
+    verdict = script.Verdict(passed=False, issues=[script.Issue(scene=2, problem="번역투", fix="三にする")])
+    llm = FakeLLM(verdict)
+    out, _ = script.proofread(llm, ch, s, Japanese(), 10)
+    call = llm.calls[0]
+    assert out is verdict and call["schema"] is script.Verdict and "한 줄 10자" in call["system"]
+    assert "1. 一\n2. 二" in call["text"]
+    # 자막 단계와 같은 자리에 /를 넣어 보여 준다. 문장 끝(。)에서는 자막처럼 따로 나눈다
+    script.proofread(llm, ch, s | {"sentences": ["今日は天気がいいですね。散歩に行きましょう。"]}, Japanese(), 10)
+    assert "1. 今日は天気が / いいですね。 / 散歩に行きましょう。" in llm.calls[1]["text"]
+    assert verdict.lines(s["sentences"]) == ["장면 2「二」: 번역투 → 三にする"]

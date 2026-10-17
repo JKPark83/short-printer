@@ -47,10 +47,14 @@ def _word_starts(parts: list[str], words: list[dict], end: float) -> list[float]
 SENTENCE_END = re.compile(r"(?<=[.?!])\s+|(?<=[。？！])\s*")
 
 
+def _parts(text: str, splitter: Splitter, limit: int) -> list[str]:
+    return [p for t in SENTENCE_END.split(text) if t.strip() for p in splitter.chunks(t, limit)]
+
+
 def cues(timing: list[dict], splitter: Splitter, limit: int) -> list[dict]:
     out = []
     for s in timing:
-        parts = [p for t in SENTENCE_END.split(s["text"]) if t.strip() for p in splitter.chunks(t, limit)]
+        parts = _parts(s["text"], splitter, limit)
         if not parts:
             continue
         if words := s.get("words"):
@@ -62,6 +66,20 @@ def cues(timing: list[dict], splitter: Splitter, limit: int) -> list[dict]:
         # 다음 덩어리가 나올 때까지 띄워 깜빡이지 않게 한다
         out += [{"start": round(a, 2), "end": round(b, 2), "text": p}
                 for p, a, b in zip(parts, starts, starts[1:] + [s["end"]], strict=True)]
+    return out
+
+
+def sentences(lines: list[str], texts: list[str], splitter: Splitter, limit: int) -> list[str]:
+    """손으로 고친 자막 줄 → 문장. 자막이 처음 나뉜 그대로인 문장은 원문을 두고, 줄이 바뀐 문장만 그 줄들을 이어
+    다시 짓는다(음성은 문장으로 만들므로 고친 자막대로 다시 읽게). 문장마다 줄 수는 같은 나누기로 다시 센다."""
+    out, k = [], 0
+    for line in lines:
+        auto = _parts(line, splitter, limit)
+        mine, k = texts[k:k + len(auto)], k + len(auto)
+        sep = " " if " " in line else ""   # ponytail: 띄어쓰기 없는 문장(일본어)은 붙여 잇는다. 언어 규칙이 더 필요하면 Splitter에 join을
+        out.append(line if mine == auto else sep.join(mine))
+    if k != len(texts):
+        raise RuntimeError("자막 줄 수가 대본과 달라요. 새로고침한 뒤 다시 고쳐 주세요")
     return out
 
 

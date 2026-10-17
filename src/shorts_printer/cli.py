@@ -1,4 +1,4 @@
-"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends [키워드] [--idea]: 주제 찾기 /
+"""sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends ["추가 요청"]: 주제 찾기 /
 sp youtube-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기 / sp channels: 채널 목록 /
 sp migrate: 예전 폴더(json·log.txt)를 DB로."""
 import argparse
@@ -33,10 +33,8 @@ def main() -> None:
     run = sub.add_parser("run", help="주제 하나로 쇼츠 한 편을 만든다")
     run.add_argument("topic")
     run.add_argument("--voice", help="채널 channel.toml [tts.voices]의 키. 비우면 채널 기본 목소리")
-    tr = sub.add_parser("trends", help="인기 쇼츠를 분석해 주제를 추천한다")
-    tr.add_argument("keyword", nargs="?", default="")
-    tr.add_argument("--period", default=trends.DEFAULT_PERIOD, choices=trends.PERIODS)
-    tr.add_argument("--idea", action="store_true", help="영상 분석 없이 채널 기준(ideas.md)으로 주제와 내용을 받는다")
+    tr = sub.add_parser("trends", help="채널 기본 추천 기준(+추가 요청)으로 주제를 추천한다")
+    tr.add_argument("keyword", nargs="?", default="", help="기본 기준에 더해 따를 추가 요청(선택)")
     login = sub.add_parser("youtube-login", help="채널 업로드 권한을 받는다")
     for sp in (run, tr, login):
         sp.add_argument("--channel", help="채널 id(channels/ 폴더 이름). 채널이 하나뿐이면 빼도 된다")
@@ -60,8 +58,8 @@ def main() -> None:
     if a.cmd == "trends":
         ch = _channel(a.channel)
         sv = registry.services(ch.id)
-        t = trends.Trend.create(ch.id, a.keyword, a.period, "idea" if a.idea else "trend")
-        print(f"분석 폴더: {t.dir}")
+        t = trends.Trend.create(ch.id, a.keyword)
+        print(f"추천 기록: {t.id}")
         try:
             trends.run(t, sv)
         except Exception:  # noqa: BLE001 — 키를 가린 오류만 보여 준다
