@@ -1,79 +1,68 @@
-"""일본어 자막 나누기. 띄어쓰기가 없어 문장부호·조사 뒤에서 끊는다(형태소 분석기 없이).
-원칙은 자막 실무 규칙과 같다: 문절 안에서 끊지 않고, 조사·활용어미가 줄 머리에 오지 않게 한다."""
+"""일본어 자막 나누기. 띄어쓰기가 없어 형태소 분석기(fugashi + unidic-lite)로 낱말 경계를 찾고 그 경계에서만 끊는다.
+원칙은 자막 실무 규칙과 같다: 문절 안에서 끊지 않고, 조사·조동사·접미사가 줄 머리에 오지 않게 한다."""
+from functools import cache
+
+import fugashi
+
 from .whitespace import balance, width
 
-SMALL = "ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶーん"
-CLOSE = "」』）)】〕〉》'\"、。，．,.！？!?・…‥:;"   # 이 앞에서는 끊지 않는다
+ATTACH = ("助詞", "助動詞", "接尾辞")   # 앞 낱말에 붙는다: 줄 머리에 오지 않는다
 OPEN = "「『（(【〔〈《"   # 이 뒤에서는 끊지 않는다
-PUNCT = "、。，．,.！？!?・…‥」』）)】〕〉》"
-PARTICLES = "はがをにでともへのや"
-LONG_PARTICLES = ("から", "まで", "より", "など", "だけ", "ほど")
-# 조사가 아니라 낱말의 첫 글자인 경우: 조사 뒤 글자로 가른다(です·でしょう·できる·という·として·もう·もの)
-FUSED = {"で": "すしきはも", "と": "いしきこて", "も": "うのっしら"}
-PAIR = "はがをにでも"   # 조사 뒤에 또 붙는 조사(のが·ので·では·にも): 사이를 가르지 않는다
+LONG_PARTICLES = ("から", "まで", "より", "など", "だけ", "ほど", "くらい", "ぐらい")
+FORMAL = ("とき", "ため", "よう", "こと", "もの", "ほう", "まま")   # の 뒤에 붙어 한 덩어리(医療トラブルのとき)
+DO = ("為る", "出来る")   # 注意する·相談できる: サ変 명사와 가르지 않는다
 
 
-def _kind(c: str) -> str:
-    if "぀" <= c <= "ゟ":
-        return "hira"
-    if "゠" <= c <= "ヿ" and c != "・":
-        return "kata"
-    if "一" <= c <= "鿿" or c in "々〆":
-        return "kanji"
-    return "alnum" if c.isalnum() else "other"
+@cache
+def _tagger() -> fugashi.Tagger:
+    return fugashi.Tagger()   # 사전을 읽는 데 잠깐 걸려 처음 쓸 때 한 번만 연다
 
 
-def _cut(text: str, k: int) -> float | None:
-    """text[k-1]과 text[k] 사이를 끊는 값. None이면 못 끊는다."""
-    a, b = text[k - 1], text[k]
-    ka, kb = _kind(a), _kind(b)
-    if b in SMALL or b in CLOSE or a in OPEN or (ka == kb and ka in ("kata", "kanji", "alnum")):
-        return None
-    if a in PUNCT or a.isspace():
+def _cut(p, n) -> float | None:
+    """낱말 p와 n 사이를 끊는 값(작을수록 자연스럽다). None이면 못 끊는다."""
+    a, b = p.feature, n.feature
+    if b.pos1 in ATTACH or b.pos1 == "補助記号" and n.surface not in OPEN or p.surface in OPEN:
+        return None   # 保険/が, 勘違いしや/すい는 아예 경계가 아니다
+    if a.pos1 in ("接頭辞", "連体詞") or a.pos2 == "数詞" and (b.pos2 == "数詞" or b.pos3 == "助数詞可能"):
+        return None   # お/金, その/保険, 4千/ウォン
+    if a.pos3 == "サ変可能" and b.lemma in DO or p.surface == "の" and n.surface in FORMAL:
+        return None   # 注意/したい, の/とき
+    if a.pos2 == "接続助詞" and b.pos2 == "非自立可能" and b.lemma != "下さる":
+        return None   # 切れて/いる·つないで/もらう (チェックして/ください는 가른다)
+    if b.lemma == "無い" and b.pos2 == "非自立可能" or b.lemma == "無し":
+        return None   # では/なく, 手数料/なし
+    if a.pos1 == b.pos1 == "動詞" and b.pos2 == "非自立可能":
+        return None   # 복합동사: 使い/きれる·食べ/すぎる
+    if a.pos1 == "補助記号" or n.white_space:
         return -1
-    if ka == "alnum" and b not in PUNCT:
-        return None   # 220ボルト·43分·6号線: 숫자와 단위를 가르지 않는다
-    if ka != "hira" and kb == "hira":
-        return None   # 寒い·行き·ソンスは: 送り仮名·조사는 앞 낱말에 붙인다
-    if kb == "kanji" and (a in "おご" or text[k - 2:k] == "もう"
-                          or (k > 1 and _kind(text[k - 2]) in ("kanji", "alnum") and a not in PARTICLES)):
-        return None   # お店·ご飯, もう一度, 飲み物·乗り場·引き出し, 10か所·3つ目
-    if kb == "hira" and (b in PAIR and a in PARTICLES or text[k - 2:k] in ("この", "その", "あの", "どの")):
-        return None   # ので·では, そのまま
-    if text[:k].endswith(LONG_PARTICLES):
+    if p.surface in LONG_PARTICLES:
         return 1
-    if a in PARTICLES and kb != "hira":
+    if a.pos1 == "助詞":
         return 2
-    if ka == "hira" and kb != "hira":
-        return 3   # 送り仮名 뒤 새 낱말
-    if ka != "hira" or kb != "hira":
-        return 9
-    if a in PARTICLES and b not in FUSED.get(a, ""):
-        # ことは·駅で처럼 조사가 분명하면 끊고, なしで·あっても처럼 히라가나 사이면 넘칠 때만.
-        # と·や는 히라가나 사이면 まとめて·わかりやすく처럼 낱말 속일 때가 많아 조사로 안 본다
-        if a in "はがを" or _kind(text[k - 2]) in ("kanji", "kata", "alnum"):
-            return 2
-        if a in "にでもへの":
-            return 12
-    if a == "て":
-        return 8   # 持ってきて / ください: て형 뒤
-    return 30   # 활용 중간(わかりや/すく): 한 줄이 크게 넘칠 때만
+    if a.pos1 == "名詞" and b.pos1 == "名詞":
+        return 35   # 복합명사(医療/紛争): 두 자 넘치는 것(32)보다 비싸게. 12자까지는 화면 안에 든다
+    if a.pos1 in ("動詞", "助動詞", "形容詞") and n.surface in FORMAL:
+        return 12   # 꾸미는 말과 형식명사(言われた/こと·おいしい/もの)는 되도록 같은 줄에
+    if a.pos1 == "副詞":
+        return 9   # 부사는 꾸미는 말과 같은 줄에(もう/一度)
+    return 3
 
 
 class Japanese:
     limit = 10   # 84px에서 10자가 한 줄
 
     def chunks(self, text: str, limit: int) -> list[str]:
-        # ponytail: 못 끊는 조각(긴 가타카나+조사)이 limit을 넘으면 한 줄이 넘친다. 형태소 분석기(budoux)로 바꾸면 해결
-        text, pieces, cut = text.strip(), [], []
-        for k, c in enumerate(text):
-            v = _cut(text, k) if k else None
+        # ponytail: 못 끊는 덩어리(긴 복합명사+조사)가 limit을 넘으면 한 줄이 넘친다. 문장을 고쳐 쓰는 수밖에 없다
+        words, pieces, cut = list(_tagger()(text.strip())), [], []
+        for i, w in enumerate(words):
+            v = _cut(words[i - 1], w) if i else None
             if v is None and pieces:
-                pieces[-1] += c
+                pieces[-1] += w.white_space + w.surface
             else:
                 if pieces:
+                    pieces[-1] += w.white_space   # 띄어쓰기는 앞 줄 끝에 붙여 줄 머리가 비지 않게
                     cut.append(v)
-                pieces.append(c)
+                pieces.append(w.surface)
         return balance(pieces, "", cut, limit)
 
     def width(self, text: str) -> float:

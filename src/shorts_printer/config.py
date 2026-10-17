@@ -18,9 +18,9 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
 load_dotenv()
 
 FFMPEG = os.environ.get("SP_FFMPEG") or "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"   # 빈 값이면 기본값
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL") or "claude-opus-5-5"
+CLAUDE_MODEL = "claude-opus-5-5"   # 대본·검수·조사 모두 이 모델로 고정한다(출력 상한 128000)
 JOBS_DIR = ROOT / "jobs"
-TRENDS_DIR = ROOT / "trends"   # 주제 찾기(인기 쇼츠 분석) 결과
+TRENDS_DIR = ROOT / "trends"   # 주제 찾기(추천) 기록 폴더
 SCHEDULES_DIR = ROOT / "schedules"   # 정해진 시각에 만들어 올리는 스케줄
 DB = ROOT / "shorts.db"   # 상태·로그·JSON 결과물(SQLite). 미디어는 위 폴더에 남는다
 CHANNELS_DIR = ROOT / "channels"   # 채널 설정. 폴더 하나 = 채널 하나

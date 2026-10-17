@@ -1,5 +1,5 @@
 // 목록 화면(대시보드·주제 찾기): 글자 수·제출 스피너, 진행 중인 것이 있으면 3초마다 목록 조각만 다시 받는다.
-// 상세 화면(작업·주제 분석): 1.5초마다 상태 API로 로그를 바꾸고, sig가 바뀌면 data-swap에 적힌 조각만 바꾼다.
+// 상세 화면(작업·주제 찾기): 1.5초마다 상태 API로 로그를 바꾸고, sig가 바뀌면 data-swap에 적힌 조각만 바꾼다.
 const $ = (sel, el = document) => el.querySelector(sel);
 const page = $('#page');
 
@@ -23,7 +23,6 @@ async function swap(url, ids) {
   const a = document.activeElement, key = a && a !== document.body && keyOf(a);
   for (const id of ids) {
     const cur = document.getElementById(id), fresh = doc.getElementById(id);
-    if (cur?.querySelector('iframe')) continue;   // 재생 중인 미리보기는 끊지 않는다(수집이 끝난 뒤라 내용도 그대로다)
     if (!cur || !fresh) continue;
     if (cur.querySelector('.changed')) continue;   // 저장하지 않은 고친 칸이 있으면 지우지 않는다
     // 펼쳐 둔 프롬프트는 새 조각에도 펼친 채로 둔다(이것만 다르면 바꾸지 않는다)
@@ -49,7 +48,7 @@ async function swap(url, ids) {
 // 뒤로 가기로 돌아오면(bfcache) 비활성화된 버튼이 남지 않게 새로 그린다
 addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
 
-// ── 글자 수(주제·키워드)
+// ── 글자 수(주제·추가 요청)
 for (const count of document.querySelectorAll('[data-for]')) {
   const input = document.getElementById(count.dataset.for);
   const upd = () => { count.textContent = `${input.value.length}/${input.maxLength}`; };
@@ -57,7 +56,7 @@ for (const count of document.querySelectorAll('[data-for]')) {
   upd();
 }
 
-// ── 제출 스피너(만들기·분석 시작·이 주제로 만들기)
+// ── 제출 스피너(만들기·추천 받기·이 주제로 만들기)
 document.addEventListener('submit', e => {
   const b = $('button[type=submit]', e.target);
   if (!b?.dataset.busy) return;
@@ -89,7 +88,7 @@ function kickList() {
 }
 kickList();
 
-// ── 상세 화면(작업·주제 분석)
+// ── 상세 화면(작업·주제 찾기)
 const api = page?.dataset.api;
 let tick = () => {};
 if (api) {
@@ -184,7 +183,7 @@ function dirty() {
   const redo = new Set(changed.flatMap(el => el.dataset.regen?.split('·') ?? []));
   const stages = STAGES.filter(s => redo.has(s));
   // 문장·목소리가 바뀌면 자막을 새로 나누므로 손으로 고친 자막 줄은 남지 않는다
-  const lost = redo.has('음성') && changed.some(el => el.name === 'cues');
+  const lost = changed.some(el => ['sentences', 'voice'].includes(el.name)) && changed.some(el => el.name === 'cues');
   $('#savebar').hidden = !changed.length;
   $('#sb-count').textContent = `${changed.length}곳 바뀜`;
   $('#sb-hint').textContent = (stages.length ? `${stages.join('·')}를 다시 만들어요` : '') + (lost ? ' (고친 자막 줄은 새 자막으로 바뀌어요)' : '');
@@ -216,20 +215,9 @@ document.addEventListener('play', e => {
 }, true);   // 미디어 이벤트는 버블링하지 않는다
 for (const t of ['seeked', 'ended']) document.addEventListener(t, e => { const m = media(e); if (m) follow(m); }, true);
 
-// ── 복사·미리보기·다시 시도·업로드 (조각이 바뀌어도 동작하게 위임)
+// ── 복사·다시 시도·업로드 (조각이 바뀌어도 동작하게 위임)
 let sample;   // 미리 듣기 중인 견본(새로 누르면 앞의 것을 멈춘다)
 document.addEventListener('click', async e => {
-  const emb = e.target.closest('[data-embed]');
-  if (emb) {   // 누를 때만 YouTube를 불러온다(쿠키 없는 주소)
-    const f = document.createElement('iframe');
-    f.className = 'v-frame';
-    f.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(emb.dataset.embed)}?autoplay=1&playsinline=1&rel=0`;
-    f.title = emb.getAttribute('aria-label').replace(/ 미리보기 재생$/, '');
-    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
-    emb.replaceWith(f);
-    f.focus();
-    return;
-  }
   const del = e.target.closest('[data-delete]');
   if (del) {
     if (!confirm(`'${del.dataset.topic}' 작업을 지울까요?\n영상·대본 파일이 모두 사라지고 되돌릴 수 없어요. YouTube에 올린 영상은 그대로 남아요.`)) return;

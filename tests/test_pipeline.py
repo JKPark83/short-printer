@@ -270,7 +270,8 @@ def test_publish_uses_channel_publisher():
     (job.dir / "thumbnail.jpg").write_bytes(b"JPG")
     sv = services()
     pipeline.publish(job, sv)
-    assert sv.publisher.sent == [("final.mp4", meta)]
+    footer = "\n\n" + channel.load(CH).publish.footer
+    assert sv.publisher.sent == [("final.mp4", meta | {"description": "설명" + footer})]
     assert sv.publisher.thumbs == [("VID", "thumbnail.jpg")]
     up = job.data["upload"]
     assert up["status"] == "done" and up["video_id"] == "VID" and up["note"] is None
@@ -322,10 +323,11 @@ def test_publish_sends_description_with_sources():
     sv = services(channel=ch.model_copy(update={"publish": ch.publish.model_copy(update={"sources_heading": "출처"})}))
     pipeline.publish(job, sv)
     assert sv.publisher.sent[0][1]["description"] == pipeline.description(job, sv.channel) == \
-        "설명\n\n출처\nhttps://a.go.kr/1"
+        "설명\n\n출처\nhttps://a.go.kr/1\n\n" + ch.publish.footer
 
 
 def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
+    """실패는 5분 뒤 한 번만 더, 정책 거절은 다시 하지 않는다. 끝내 못 만든 장면이 있으면 실패로 던진다."""
     from unittest.mock import MagicMock
 
     import playwright.sync_api
@@ -338,18 +340,23 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
     monkeypatch.setattr(fa.time, "sleep", slept.append)
     tries = []
 
-    def gen(page, prompt, path):   # 장면 a는 계속, b는 처음 한 번만 실패
+    def gen(page, prompt, path):   # 장면 a는 계속, b는 처음 한 번만 실패, d는 거절
         tries.append(prompt)
+        if prompt == "d":
+            raise fa.Refused("미성년자 정책")
         if prompt == "a" or (prompt == "b" and tries.count("b") == 1):
             raise RuntimeError("화면이 바뀜")
 
     monkeypatch.setattr(fa, "_generate", gen)
-    todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abc")]
-    logs = []
-    got = [c["file"] for c in fa.FlowAuto().make(todo, tmp_path, logs.append)]
-    assert tries == ["a", "b", "c", "a", "b"]   # 실패한 장면만 딱 한 번 더
+    todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abcd")]
+    logs, got = [], []
+    with pytest.raises(RuntimeError, match="장면 1, 4을 못 만들었어요"):
+        for c in fa.FlowAuto().make(todo, tmp_path, logs.append):
+            got.append(c["file"])
+    assert tries == ["a", "b", "c", "d", "a", "b"]   # 실패한 장면만 딱 한 번 더, 거절된 d는 빼고
     assert got == ["c.mp4", "b.mp4"] and len(slept) == 2 and 0 < slept[0] <= fa.RETRY_AFTER
-    assert "직접 올려 주세요" in logs[-2] and "다시 시도해 완료" in logs[-1]
+    assert "장면 4 거절됨(미성년자 정책)" in logs[4]
+    assert "다시 해도 못 만듦" in logs[-2] and "다시 시도해 완료" in logs[-1]
 
 
 def test_translate_only_non_korean_when_source_changed_and_never_fails_job(monkeypatch):
@@ -416,49 +423,90 @@ def test_step_research_without_facts_keeps_notes_and_usage():
     assert job.data["research_usage"]["cost_usd"] == 0.01 and "조사 메모: 확인 못 함" in job.tail()[-1]
 
 
-def test_proofread_step_rewrites_with_feedback_until_it_passes(monkeypatch):
+def test_proofread_step_fixes_only_flagged_scenes_until_it_passes(monkeypatch):
     ja = channel.load("ja-korea-trip")
     monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
-    fed, verdicts = [], iter([
-        script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="번역투", fix="こう")]),
-        script_mod.Verdict(passed=True)])
+    verdicts = iter([script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="번역투", fix="こう")]),
+                     # 두 번째부터는 고친 장면과 그 앞뒤만 본다: 옆 장면 2는 고치고 먼 장면 3의 새 지적은 넘긴다
+                     script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=2, problem="부딪힘", fix="ああ"),
+                                                              script_mod.Issue(scene=3, problem="새 흠", fix="x")]),
+                     script_mod.Verdict(passed=True)])
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
+    notes = []
 
-    def write(llm, ch, topic, brief=None, recent=(), facts=(), feedback=()):
-        fed.append(list(feedback))
-        return script_mod.Script(title=f"t{len(fed)}", description="d", tags=["a"], sensitive="",
-                                 scenes=[script_mod.Scene(sentence="一", prompt="p")]), usage
-    monkeypatch.setattr(pipeline.script, "write", write)
-    monkeypatch.setattr(pipeline.script, "proofread", lambda llm, ch, s, splitter, limit: (next(verdicts), usage))
+    def revise(llm, ch, s, note, draft=False, facts=()):
+        notes.append(note)
+        return s | {"title": "t2", "sentences": ["こう", "ああ" if len(notes) > 1 else "二", "三"],
+                    "prompts": ["P", "Q", "R"], "prompts_ko": ["", "", ""], "fact_ids": [[], [], []]}, usage
+    monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
+        title="t1", description="d", tags=["a"], sensitive="",
+        scenes=[script_mod.Scene(sentence=t, prompt=p) for t, p in zip("一二三", "pqr", strict=True)]), usage))
+    monkeypatch.setattr(pipeline.script, "revise", revise)
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (next(verdicts), usage))
     job = Job.create("ja-korea-trip", "주제", "v")
     sv = services(channel=ja)
-    assert pipeline.step_script(job, sv) == "m" and fed == [[]]   # 대본 단계는 한 번만 쓴다
+    pipeline.step_script(job, sv)
     assert pipeline.step_proofread(job, sv) == "m"
-    assert fed == [[], ["장면 1「一」: 번역투 → こう"]]   # 지적이 원문과 함께 다시 쓰기에 넘어간다
-    assert job.doc("script.json")["title"] == "t2" and job.data["usage"]["cost_usd"] == 0.04   # 쓰기 2 + 검수 2
+    # 처음부터 다시 쓰지 않고 지적(원문과 함께)만 넘겨 그 장면만 고친다
+    assert notes == [script_mod.FIX_NOTE + "- 장면 1「一」: 번역투 → こう",
+                     script_mod.FIX_NOTE + "- 장면 2「二」: 부딪힘 → ああ"]
+    s = job.doc("script.json")
+    # 바뀐 장면만 영상 프롬프트를 새로 쓴다(일본어도 한국어처럼 확정 전 대본으로 고친다)
+    assert s["title"] == "t2" and s["sentences"] == ["こう", "ああ", "三"] and s["prompts"] == ["P", "Q", "r"]
+    assert job.data["usage"]["cost_usd"] == 0.06   # 쓰기 1 + 검수 3 + 고치기 2
     logs = "\n".join(job.tail())
-    assert "불통과(1/3)" in logs and "번역투 → こう" in logs and "다시 씀: t2" in logs and "통과(2번째 대본)" in logs
-    # 한국어 채널은 검수하지 않는다
-    monkeypatch.setattr(pipeline.script, "proofread", lambda *a: pytest.fail("ko는 검수 안 함"))
-    assert pipeline.step_proofread(Job.create(CH, "주제", "v"), services()) == "건너뜀"
+    assert "불통과(1/3)" in logs and "번역투 → こう" in logs
+    assert "지적한 곳 고침 2곳:\n제목: t1\n  → t2\n장면 1: 一\n  → こう" in logs   # 바뀐 말을 원문과 함께 남긴다
+    assert "지적한 곳 고침 1곳:\n장면 2: 二\n  → ああ" in logs and "통과(3번째 대본)" in logs
+    assert "고친 곳에서 먼 장면 지적 1개는 넘김" in logs
 
 
-def test_script_that_never_passes_proofread_fails_with_last_draft_kept(monkeypatch):
+def test_korean_proofread_rewrites_prompts_only_for_changed_scenes_and_waits_for_a_human(monkeypatch):
+    usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
+    calls = []
+
+    def revise(llm, ch, s, note, draft=False, facts=()):
+        calls.append((note, draft))   # 모델이 안 바꾼 장면 프롬프트까지 고쳐 써도 되돌린다
+        n = len(calls)   # 매번 첫 장면을 고쳐 다음 검수도 그 장면을 본다
+        return s | {"sentences": [f"가{n}", "나2", "다"], "prompts": ["P", "Q", "R"], "prompts_ko": ["ㄱ", "ㄴ", "ㄷ"],
+                    "fact_ids": [["F1"], [], ["F9"]]}, usage
+    monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
+        title="t", description="d", tags=["a"], sensitive="",
+        scenes=[script_mod.Scene(sentence=t, prompt=p) for t, p in zip("가나다", "pqr", strict=True)]), usage))
+    monkeypatch.setattr(pipeline.script, "revise", revise)
+    bad = script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="반전이 아님", fix="가2")])
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (bad, usage))
+    job = Job.create(CH, "주제", "v")
+    sv = services()
+    pipeline.step_script(job, sv)
+    pipeline.step_proofread(job, sv)   # 끝내 떨어져도 실패하지 않는다
+    assert calls[0][0].startswith(script_mod.FIX_NOTE) and calls[0][1] is True
+    s = job.doc("script.json")
+    assert s["sentences"] == ["가2", "나2", "다"] and len(calls) == 2
+    assert s["prompts"] == ["P", "Q", "r"] and s["prompts_ko"] == ["ㄱ", "ㄴ", ""] and s["fact_ids"][2] == []
+    # 장면을 만들기 전에 사람 확인으로 멈춘다(스케줄 작업도)
+    assert job.data["review"] is True and "대본 검수를 3번 통과하지 못했어요" in job.tail()[-1]
+
+
+def test_japanese_script_that_never_passes_proofread_waits_for_a_human_with_last_draft_kept(monkeypatch):
     ja = channel.load("ja-korea-trip")
     monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
     monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
         title="t", description="d", tags=["a"], sensitive="", scenes=[script_mod.Scene(sentence="一", prompt="p")]),
         usage))
+    monkeypatch.setattr(pipeline.script, "revise",
+                        lambda llm, ch, s, note, draft=False, facts=():
+                        (s | {"title": s["title"] + "2", "prompts_ko": [""], "fact_ids": [[]]}, usage))
     bad = script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=0, problem="제목", fix="x")])
-    monkeypatch.setattr(pipeline.script, "proofread", lambda *a: (bad, usage))
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (bad, usage))
     job = Job.create("ja-korea-trip", "주제", "v")
     sv = services(channel=ja)
     pipeline.step_script(job, sv)
-    with pytest.raises(RuntimeError, match="3번 통과하지 못했어요"):
-        pipeline.step_proofread(job, sv)
-    assert job.doc("script.json")["title"] == "t"
-    assert sum("불통과" in line for line in job.tail()) == 3 and sum("다시 씀" in line for line in job.tail()) == 2
+    pipeline.step_proofread(job, sv)   # 끝내 떨어져도 실패하지 않고 사람 확인으로 멈춘다
+    assert job.data["review"] is True
+    assert job.doc("script.json")["title"] == "t22"
+    assert sum("불통과" in line for line in job.tail()) == 3 and sum("고침" in line for line in job.tail()) == 2
 
 
 def test_old_job_without_proofread_step_is_filled_from_script(db):

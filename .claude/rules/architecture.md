@@ -17,7 +17,7 @@
 
 ## 규칙
 
-- core는 `adapters`·`registry`·`web`·`cli`를 import하지 않는다. `anthropic`·`kiwipiepy`·`playwright`도 직접 부르지 않는다. 예외는 `core/trends.py`의 `yt_dlp` 하나(쇼츠를 내려받아 분석하는 기능 자체라서).
+- core는 `adapters`·`registry`·`web`·`cli`를 import하지 않는다. `anthropic`·`kiwipiepy`·`playwright`·`yt_dlp`도 직접 부르지 않는다. 예외는 없다.
 - core 함수는 필요한 구현을 인자로 받는다: `Services`(`channel`·`llm`·`tts`·`video`·`publisher`·`splitter`) 또는 그중 하나. 전역 등록부를 찾아가지 않는다.
 - 저장소도 registry가 고른다: `STORE = SQLiteStore(config.DB)` → `infra.store.use(STORE)`. Record는 걸린 저장소만 쓴다.
 - 구현을 고르는 곳은 `registry.py` 하나뿐이다(web·cli의 로그인·Chrome 명령만 예외). 채널 값(`channel.toml`)으로 고르고 환경 변수로 고르지 않는다.

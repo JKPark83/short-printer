@@ -42,7 +42,7 @@ def two_channels(tmp_path, monkeypatch):
     shutil.copytree(root / CH, en)
     toml = (en / "channel.toml").read_text(encoding="utf-8")
     head, voices = toml.split("[tts.voices]")
-    head = head.replace('name = "40초 상식"', 'name = "Space Facts"').replace('language = "ko"', 'language = "en"')
+    head = re.sub(r'(?m)^name = ".*"', 'name = "Space Facts"', head).replace('language = "ko"', 'language = "en"')
     head = re.sub(r'(?m)^default = ".*"', 'default = "enVoice1"', head)
     head = head.replace("daily_goal = 1", "daily_goal = 2")
     voices = '\nenVoice1 = "Adam"\n\n[video]' + voices.split("[video]", 1)[1]
@@ -109,7 +109,7 @@ def test_job_page_shows_facts_refs_unverified_and_description_preview():
     assert 'id="fact-F1"' in html and "물은 100도에서 끓는다" in html and "2026-10-16 확인" in html
     assert 'class="chip chip-news">보도<' in html and 'href="#fact-F1">F1<' in html
     assert "근거 없는 문장 1개" in html and "2번 문장" in html and 'class="unv"' in html
-    assert "설명란 미리보기" in html and '<pre class="desc-preview">설명\n\n출처\nhttps://a.go.kr/1</pre>' in html
+    assert "설명란 미리보기" in html and '<pre class="desc-preview">설명\n\n출처\nhttps://a.go.kr/1\n\n' in html
     job.update(status="waiting", review=True)   # 확정 전: 영어 프롬프트 아래 한국어 한 줄
     assert '<p class="prompt-ko" lang="ko">끓는 냄비</p>' in client.get(f"/jobs/{job.id}").text
 
@@ -249,6 +249,16 @@ def test_sensitive_banner_and_confirm(monkeypatch):
     assert "민감 분야" not in client.get(f"/jobs/{job.id}").text
 
 
+def test_review_edit_keeps_long_styled_prompts():
+    """저장된 프롬프트엔 채널 스타일 머리말이 붙어 1000자를 넘기도 한다: 그대로 다시 보내도 저장돼야 한다."""
+    job = scene_job()
+    job.update(review=True)
+    url, form = f"/api/jobs/{job.id}/edit", {"title": "t", "sentences": ["하나", "둘"], "voice": "elevenlabs"}
+    assert client.post(url, data=form | {"prompts": ["x" * 2001, "p2"]}).status_code == 400
+    assert client.post(url, data=form | {"prompts": ["x" * 1500, "p2"]}).status_code == 200
+    assert job.doc("script.json")["prompts"][0] == "x" * 1500 and web.q._q.get_nowait() == ("run", job.id)
+
+
 def test_review_edit_saves_and_confirm_starts(monkeypatch):
     job = scene_job()
     job.put("script.json", job.doc("script.json") | {"prompts_ko": ["가", "나"]})
@@ -307,6 +317,7 @@ def test_checks_list_providers():
     research = next(c for c in web._checks(CH) if c[1] == "조사 · Claude 조사")
     assert "[research] domains" not in research[2]   # 채널에 허용 사이트가 있다
     assert "YouTube 업로드" in labels and labels == [c[1] for c in web._checks("all")]   # 전체는 첫 채널
+    assert "YouTube Data API 키" not in labels   # 주제 찾기는 YouTube 키를 쓰지 않는다
     html = client.get("/").text   # 대시보드 카드가 아니라 상단바의 점 하나 + 펼침
     assert 'popovertarget="env-pop"' in html and "Claude API 키" in html and 'id="h-env"' not in html
 
@@ -384,11 +395,12 @@ def test_edit_subtitles_and_thumbnail_by_hand(monkeypatch):
     edit = form | {"cues": ["하나", "둘"], "thumb": ["물 양", "비밀"], "accent": "비밀"}
     assert client.post(url, data=edit).json()["msg"] == "저장했어요"   # 그대로면 저장만
     assert client.post(url, data=edit | {"cues": ["하나"]}).status_code == 400
-    # 자막 줄만 → 렌더만(시각은 그대로)
-    assert client.post(url, data=edit | {"cues": ["하나!", "둘"]}).json()["msg"] == "저장했어요. 렌더를 다시 해요"
-    assert job.doc("cues.json")[0] == {"start": 0, "end": 1, "text": "하나!"}
-    assert [s for s in STEPS if job.data["steps"][s]["status"] == "pending"] == ["render"]
+    # 자막 줄 → 그 문장을 고친 줄대로 바꾸고 음성부터 다시(목소리가 고친 자막대로 읽게)
+    r = client.post(url, data=edit | {"cues": ["하나!", "둘"]}).json()["msg"]
+    assert r == "저장했어요. 음성·자막·렌더를 다시 해요" and job.doc("script.json")["sentences"] == ["하나!", "둘"]
+    assert [s for s in STEPS if job.data["steps"][s]["status"] == "pending"] == ["voice", "subtitles", "render"]
     web.q._q.get_nowait()
+    job.update(status="done")
     # 썸네일 문구 → 썸네일·렌더, 문구에 없는 강조는 뺀다
     job.update(status="done")
     assert client.post(url, data=edit | {"thumb": ["가" * 16, ""]}).status_code == 400

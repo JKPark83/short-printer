@@ -12,7 +12,7 @@
 
 {% macro source_text(s) %}
 {%- if s.source == 'trend' -%}
-추천 · {{ ('“' ~ s.keyword ~ '”') if s.keyword else '키워드 없음' }} · 최근 {{ trends.PERIODS.get(s.period, s.period) }}
+추천 · {{ ('“' ~ s.keyword|truncate(30) ~ '”') if s.keyword else '기본 기준' }}
 {%- else -%}
 목록 · 남은 주제 {{ s.topics|length }}개{% if s.topics %} · 다음 “{{ s.topics[0] }}”{% endif %}
 {%- endif -%}

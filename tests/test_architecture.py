@@ -12,7 +12,7 @@ ALLOWED = {
     "infra": {"infra", "ports", "core", "config"},
 }
 VENDORS = {"anthropic", "kiwipiepy", "playwright", "yt_dlp"}   # core가 직접 부르면 안 되는 외부 SDK
-EXCEPT = {("core.trends", "yt_dlp")}   # 트렌드 분석은 YouTube 쇼츠를 내려받는 기능 자체라 예외
+EXCEPT: set[tuple[str, str]] = set()   # core가 외부 SDK를 직접 부르는 예외(지금은 없다)
 
 
 def _imports(path: Path) -> tuple[str, set[str]]:

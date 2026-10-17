@@ -89,16 +89,13 @@ class ResearchCfg(BaseModel):
 
 
 class TrendsCfg(BaseModel):
-    region: str = "KR"
-    language: str = ""   # 비우면 채널 language
-    keywords: list[str] = []   # 키워드 없이 찾을 때 OR로 묶어 검색
     production: str   # 우리 제작 방식 한 단락
-    weights: dict[str, int] = {"trend": 35, "fit": 35, "fresh": 15, "safe": 15}
+    weights: dict[str, int] = {"fit": 54, "fresh": 23, "safe": 23}   # 추천 점수 가중치
 
     @model_validator(mode="after")
     def _weights(self):
-        if set(self.weights) != {"trend", "fit", "fresh", "safe"} or sum(self.weights.values()) != 100:
-            raise ValueError("trends.weights는 trend·fit·fresh·safe 네 개, 합 100이어야 해요")
+        if set(self.weights) != {"fit", "fresh", "safe"} or sum(self.weights.values()) != 100:
+            raise ValueError("trends.weights는 fit·fresh·safe 세 개, 합 100이어야 해요")
         return self
 
 
@@ -128,10 +125,6 @@ class Channel(BaseModel):
     @property
     def font(self) -> str:
         return self.style.font or FONTS.get(self.language, DEFAULT_FONT)
-
-    @property
-    def trend_language(self) -> str:
-        return self.trends.language or self.language
 
     def text(self, name: str) -> str:
         """글 파일 본문. 부를 때마다 읽어 고치면 바로 반영된다. 앞머리(--- … ---)가 있으면 뺀다."""

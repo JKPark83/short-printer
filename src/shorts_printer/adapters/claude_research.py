@@ -1,8 +1,7 @@
 """자료 조사 구현: Claude web_search·web_fetch에 인용을 켜고, 인용이 붙은 문장만 사실로 모은다."""
-import anthropic
 
 from .. import config
-from .claude import SEARCH_USD, cost, errors, fallback, with_sites
+from .claude import FALLBACK, SEARCH_USD, cost, errors, stream, with_sites
 
 REFUSAL = "Claude가 이 주제의 조사를 거절했어요. 주제를 바꿔 보세요."
 
@@ -87,8 +86,8 @@ class ClaudeResearch:
         contents, inp, out, searches = [], 0, 0, 0
         with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp, tools = with_sites(lambda t: anthropic.Anthropic().beta.messages.create(
-                    model=model, max_tokens=8000, system=system, messages=messages, tools=t, **fallback(model)), tools)
+                resp, tools = with_sites(lambda t: stream(   # Opus 5.5 상한. 스트리밍이라야 SDK가 막지 않는다
+                    model=model, max_tokens=128000, system=system, messages=messages, tools=t, **FALLBACK), tools)
                 u = resp.usage
                 inp, out = inp + u.input_tokens, out + u.output_tokens
                 searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0

@@ -14,6 +14,8 @@ from .subtitles import SENTENCE_END
 
 
 class Scene(BaseModel):
+    # 문장보다 먼저 받는다: 앞 장면과의 관계를 정하고 쓰면 접속어·반전이 내용과 어긋나지 않는다(저장하지 않는다)
+    link: str = Field("", description="쓰기 전에 정하는 앞 장면과의 관계 한 줄(규칙은 지시문의 장면 잇기)")
     sentence: str = Field(description="장면 하나의 내레이션(짧은 문장 1~2개)")
     prompt: str = Field(description="이 장면 동안 보일 한 장면의 영어 영상 생성 프롬프트, 스타일 머리말 없이")
     fact_ids: list[str] = Field(default_factory=list,
@@ -26,7 +28,10 @@ class Script(BaseModel):
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
     scenes: list[Scene] = Field(description="장면 목록. 장면 하나 = 문장 하나, 읽는 순서")
-    sensitive: str = Field(description="건강·의료, 법률, 금융·투자, 정치 주제면 그 분야 이름. 아니면 빈 문자열")
+    sensitive: str = Field(
+        description="진단·치료·약·식품 효능·투자·법률 조언이 들어가거나 정치 주제면 그 분야 이름(건강·의료, 법률, 금융·투자, 정치). "
+        "몸의 원리 설명만이면 빈 문자열"
+    )
 
     def flat(self) -> dict:
         """script.json 형식: 장면을 같은 개수의 배열들로 푼다(다른 단계는 sentences를 읽는다).
@@ -115,6 +120,8 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False,
             new["fact_ids"] = refs
         if len(new["prompts_ko"]) != n:
             new["prompts_ko"] = keep_ko(s, new["prompts"])
+        if style := ch.video.style:   # write처럼 머리말을 붙인다. 받은 프롬프트를 그대로 돌려준 장면엔 이미 있다
+            new["prompts"] = [p if p.startswith(style) else f"{style} {p}" for p in new["prompts"]]
     else:   # 문장만 바뀌어 근거는 그대로 잇는다
         new["fact_ids"] = refs
     return s | new, usage
@@ -170,34 +177,40 @@ class Verdict(BaseModel):
                 + f": {i.problem} → {i.fix}" for i in self.issues]
 
 
-def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int) -> tuple[Verdict, dict]:
-    """한국어가 아닌 채널: 대본(script.json 꼴)이 그 말로 자연스러운지, 자막으로 끊었을 때 잘 읽히는지 검수한다.
+FIX_NOTE = ("검수 지적이다. 지적받은 장면(0은 제목·설명)을 fix를 따라 고치고 괄호 안 한국어 뜻은 넣지 않는다. "
+            "고친 문장이 바로 앞뒤 장면과 이어지지 않으면 그 앞뒤 장면까지만 같이 고친다. "
+            "그 밖의 장면은 한 글자도 바꾸지 않는다:\n")
+
+
+def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int,
+              facts: Sequence[dict] = ()) -> tuple[Verdict, dict]:
+    """대본(script.json 꼴)이 그 말로 자연스러운지, 자막으로 끊었을 때 잘 읽히는지 검수한다.
+    문장마다 따로가 아니라 앞 문장들에 비춰 흐름부터 본다. 사실 시트를 붙여 고칠 말이 사실을 벗어나지 않게 한다.
     문장마다 자막 단계와 같은 규칙으로 끊은 자리를 " / "로 보여 준다(끊는 규칙은 못 고치니 문장을 고치게).
-    통과하지 못하면 호출한 쪽이 Verdict.lines()를 write(feedback=)로 넘겨 다시 쓴다."""
+    통과하지 못하면 호출한 쪽이 FIX_NOTE + Verdict.lines()를 revise()로 넘겨 지적한 곳만 고친다."""
     def cut(t: str) -> str:
         return " / ".join(p for part in SENTENCE_END.split(t) if part.strip() for p in splitter.chunks(part, limit))
     scenes = "\n".join(f"{i}. {cut(t)}" for i, t in enumerate(s["sentences"], 1))
     text = f"제목: {s['title']}\n설명: {s['description']}\n장면 {len(s['sentences'])}개(자막 끊는 자리는 /):\n{scenes}"
-    return llm.ask(prompts.render("script_proofread", lang=ch.lang_name, limit=limit), text, Verdict,
+    if facts:
+        text += "\n\n" + sheet_block(facts)
+    name = "script_proofread_ko" if ch.language == "ko" else "script_proofread"
+    return llm.ask(prompts.render(name, lang=ch.lang_name, limit=limit), text, Verdict,
                    refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
 
 
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: Sequence[str] = (),
-          facts: Sequence[dict] = (), feedback: Sequence[str] = ()) -> tuple[Script, dict]:
+          facts: Sequence[dict] = ()) -> tuple[Script, dict]:
     """brief: 추천 주제에서 왔으면 훅·전개 방향 참고. recent: 최근 작업 제목(같은 틀을 피한다).
-    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다.
-    feedback: 앞 대본이 검수에서 받은 지적(Verdict.lines). 같은 실수를 되풀이하지 않게 함께 넘긴다."""
+    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다."""
     text = f"주제: {topic}"
     if brief:
-        text += f"\n\n참고(최근 인기 쇼츠 분석). 훅·전개·속도는 따르되 문장을 베끼지 않는다:\n{brief}"
+        text += f"\n\n참고(추천 주제 방향). 방향·내용은 따르되 문장을 베끼지 않는다:\n{brief}"
     text += f"\n\n채널 분야: {ch.concept}. 이 분야를 즐겨 보는 시청자에게 맞는 각도로 쓴다."
     if recent:
         text += "\n\n최근 제목(이 틀을 피한다):\n" + "\n".join(f"- {t}" for t in recent)
     if facts:
         text += "\n\n" + sheet_block(facts)
-    if feedback:
-        text += ("\n\n앞서 쓴 대본이 원어민 검수에서 아래 지적을 받았다. 지적받은 문장은 고친 대로 쓰고, "
-                 "같은 종류의 문제가 다른 문장에도 없게 처음부터 다시 쓴다:\n" + "\n".join(f"- {x}" for x in feedback))
     refusal = f"{llm.label}가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요."
     script, usage = llm.ask(system(ch), text, Script, refusal=refusal, what="대본")
     if not script.scenes:

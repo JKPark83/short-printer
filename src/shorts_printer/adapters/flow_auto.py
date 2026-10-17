@@ -14,6 +14,10 @@ RETRY_AFTER = 300   # 초. 실패한 장면은 이만큼 뒤 한 번만 다시
 TILE = '.container:has(button[aria-label="프롬프트 재사용"])'
 
 
+class Refused(RuntimeError):
+    """Flow가 정책으로 거절했다. 같은 프롬프트로 다시 해도 또 거절되므로 다시 시도하지 않는다."""
+
+
 def _settings(page) -> None:
     # 에이전트 모드(새 로그인 첫 기본값)면 설정 버튼이 숨는다. 끄면 Flow가 기억한다
     chip = page.locator("button.agent-mode-chip").first
@@ -46,8 +50,11 @@ def _generate(page, prompt: str, path: Path) -> None:
     page.locator('button[aria-label="생성 시작"]').click()
     tile = page.locator(f"{TILE}:not([data-sp])").first
     tile.wait_for(timeout=30_000)
-    # 끝난 타일에만 옵션 메뉴가 붙는다
-    tile.locator('button[aria-label="옵션 더보기"]').wait_for(state="attached", timeout=GEN_TIMEOUT * 1000)
+    # 끝난 타일에만 옵션 메뉴가 붙는다. 거절은 몇 초 만에 오류 타일로 뜨니 기다리지 않고 바로 던진다
+    menu, error = tile.locator('button[aria-label="옵션 더보기"]'), tile.locator(".error-message-text")
+    menu.or_(error).first.wait_for(state="attached", timeout=GEN_TIMEOUT * 1000)
+    if error.count():
+        raise Refused(" ".join(error.inner_text().split()) or "Flow가 이 프롬프트를 거절했어요")
     tile.hover()
     with page.expect_download(timeout=60_000) as d:
         tile.locator('button[aria-label="옵션 더보기"]').click()
@@ -55,6 +62,9 @@ def _generate(page, prompt: str, path: Path) -> None:
         page.locator('[role="menuitem"]', has_text="원본 크기").first.click()
     tmp = path.with_suffix(".tmp.mp4")
     d.value.save_as(tmp)
+    if not tmp.stat().st_size:   # 다운로드가 끊기면 0바이트가 남는다. 완료로 치지 않고 다시 받게 던진다
+        tmp.unlink()
+        raise RuntimeError(f"Flow 다운로드가 비었어요({d.value.failure() or '0바이트'})")
     os.replace(tmp, path)
 
 
@@ -87,11 +97,15 @@ class FlowAuto:
                 _settings(page)
                 log(f"Flow 프로젝트: {page.url}")
                 # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
-                failed = []
+                failed, left = [], []
                 for s in scenes:
                     t0 = time.monotonic()
                     try:
                         _generate(page, s["prompt"], out / s["file"])
+                    except Refused as e:
+                        log(f"Flow: 장면 {s['i'] + 1} 거절됨({str(e)[:120]})")
+                        left.append(s["i"] + 1)
+                        continue
                     except Exception as e:  # noqa: BLE001 — 나머지 장면을 먼저 만들고 나중에 한 번 더
                         log(f"Flow: 장면 {s['i'] + 1} 못 만듦({type(e).__name__}: {str(e)[:120]}) → {RETRY_AFTER // 60}분 뒤 한 번 더")
                         failed.append((s, time.monotonic()))
@@ -103,10 +117,14 @@ class FlowAuto:
                     t0 = time.monotonic()
                     try:
                         _generate(page, s["prompt"], out / s["file"])
-                    except Exception as e:  # noqa: BLE001 — 그 장면만 직접 올리게 남긴다
-                        log(f"Flow: 장면 {s['i'] + 1} 다시 해도 못 만듦({type(e).__name__}: {str(e)[:120]}) → 직접 올려 주세요")
+                    except Exception as e:  # noqa: BLE001 — 그 장면만 남기고 끝에 실패로 알린다
+                        log(f"Flow: 장면 {s['i'] + 1} 다시 해도 못 만듦({type(e).__name__}: {str(e)[:120]})")
+                        left.append(s["i"] + 1)
                         continue
                     log(f"Flow: 장면 {s['i'] + 1} 다시 시도해 완료 ({time.monotonic() - t0:.0f}s)")
                     yield {"file": s["file"], "source": self.label, "url": page.url}
+                if left:   # 만든 장면은 위에서 기록됐다. 못 만든 장면은 대기로 두지 않고 실패로 알린다
+                    raise RuntimeError(f"Flow가 장면 {', '.join(map(str, sorted(left)))}을 못 만들었어요. "
+                                       "로그의 사유를 보고 프롬프트를 고쳐 다시 시도하거나 클립을 직접 올려 주세요")
             finally:
                 page.close()

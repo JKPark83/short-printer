@@ -30,6 +30,6 @@ class Discord:
         return bool(config.secret("DISCORD_WEBHOOK_URL"))
 
     def send(self, text: str) -> None:
-        # 주제·제목은 수집한 쇼츠에서 오므로 @everyone 같은 멘션이 울리지 않게 막는다
+        # 주제·제목은 LLM·웹 검색·사용자 글에서 오므로 @everyone 같은 멘션이 울리지 않게 막는다
         body = {"content": text[:MAX], "allowed_mentions": {"parse": []}}
         post(config.secret("DISCORD_WEBHOOK_URL"), body, self.label)

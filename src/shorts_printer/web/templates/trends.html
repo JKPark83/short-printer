@@ -8,52 +8,28 @@
       <section class="card" aria-labelledby="h-new">
         <h2 id="h-new">새로 찾기{% if ch %} · {{ ch.name }}{% endif %}</h2>
         {% if ch %}
-        <p class="lead">{{ ch.trends.region }}에서 요즘 조회수가 빨리 오르는 {{ LANGS.get(ch.trend_language, ch.trend_language) }} 쇼츠 {{ trends.TOP_N }}개를 모아 AI가 영상을 보고, 지금 만들 만한 주제를 골라 줘요. 아이디어는 영상 없이 채널 기준으로 Claude가 바로 주제 {{ trends.IDEA_N }}개와 간략한 내용을 정리해요.</p>
+        <p class="lead">채널 기본 추천 기준(<code>ideas.md</code>·<code>trends.md</code>)으로 Claude가 웹을 찾아 지금 만들 만한 주제 {{ trends.IDEA_N }}개와 간략한 내용을 골라 줘요. 추가 요청을 적으면 기본 기준에 더해 따라요.</p>
         <form class="form" method="post" action="/trends">
           <input type="hidden" name="channel" value="{{ ch.id }}">
-          <label for="mode">방식</label>
-          <select id="mode" name="mode">
-            <option value="trend"{% if ready %} selected{% else %} disabled{% endif %}>인기 쇼츠 분석</option>
-            <option value="idea"{% if not ready %} selected{% endif %}>아이디어(분석 없이)</option>
-          </select>
-          <label for="keyword">키워드 <span class="opt">선택</span></label>
-          <input id="keyword" name="keyword" type="text" maxlength="50" autocomplete="off"
-                 placeholder="비우면 채널 분야로" aria-describedby="keyword-count keyword-help">
-          <span id="keyword-count" class="counter" data-for="keyword">0/50</span>
-          <small id="keyword-help" class="help">넣으면 그 낱말이 들어간 쇼츠만 찾아요. 비우면 채널 분야 검색어로 찾아요. 아이디어는 그 안에서 주제를 골라요(예: 겨울, 주방).</small>
-          <label for="period">기간 <span class="opt">인기 쇼츠 분석만</span></label>
-          <select id="period" name="period">
-            {% for key, label in trends.PERIODS.items() %}<option value="{{ key }}"{% if key == trends.DEFAULT_PERIOD %} selected{% endif %}>최근 {{ label }}</option>{% endfor %}
-          </select>
-          <p class="cost">인기 쇼츠 분석: 한 번에 YouTube 할당량 <strong>{{ QUOTA_PER_RUN }}유닛</strong>(하루 무료 {{ '{:,}'.format(QUOTA_DAY) }})
-            {%- if est is not none %} · AI 약 <strong>${{ '%.2f'|format(est) }}</strong>{% endif %} · 몇 분 걸려요<br>아이디어: 할당량 없이 AI 한 번</p>
-          <button class="btn btn-primary" type="submit" data-busy="시작하는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>시작</span></button>
+          <label for="keyword">추가 요청 <span class="opt">선택</span></label>
+          <textarea id="keyword" name="keyword" rows="4" maxlength="{{ trends.MAX_REQUEST }}"
+                    aria-describedby="keyword-count keyword-help"></textarea>
+          <span id="keyword-count" class="counter" data-for="keyword">0/{{ trends.MAX_REQUEST }}</span>
+          <small id="keyword-help" class="help">비우면 채널 기본 추천 기준만으로 주제 {{ trends.IDEA_N }}개를 골라요. 적으면 기본 기준에 더해 따라요. 예: 겨울철에 맞는 주제 위주로, 초등학생도 알아들을 소재</small>
+          <p class="cost">AI 한 번 · 1~2분</p>
+          <button class="btn btn-primary" type="submit" data-busy="시작하는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>추천 받기</span></button>
           {% if not llm_ok %}<p class="hint">{{ icon('alert', 14) }}{{ checks[0][1] }}가 없어 AI 단계에서 멈춰요</p>{% endif %}
         </form>
         {% else %}
-        <p class="empty">분석은 채널을 하나 고른 뒤 시작할 수 있어요. 위 채널 목록에서 골라 주세요.</p>
-        {% endif %}
-        {% if not ready %}
-        <div class="banner banner-warn setup">{{ icon('alert', 18) }}
-          <div><strong>인기 쇼츠 분석에는 YouTube Data API 키가 필요해요</strong>
-            <ol class="steps-help">
-              <li><a href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud 콘솔</a>에서 프로젝트를 고르거나 만들어요</li>
-              <li>API 및 서비스 → 라이브러리에서 <strong>YouTube Data API v3</strong>를 사용 설정해요</li>
-              <li>사용자 인증 정보 → 사용자 인증 정보 만들기 → <strong>API 키</strong></li>
-              <li><code>.env</code>의 <code>YOUTUBE_API_KEY=</code> 뒤에 붙여 넣고 서버를 다시 켜요</li>
-            </ol>
-            <p class="muted">무료예요. 하루 {{ "{:,}".format(QUOTA_DAY) }}유닛이라 하루 {{ QUOTA_DAY // QUOTA_PER_RUN }}번쯤 돌릴 수 있어요.</p>
-          </div>
-        </div>
+        <p class="empty">추천은 채널을 하나 고른 뒤 받을 수 있어요. 위 채널 목록에서 골라 주세요.</p>
         {% endif %}
       </section>
       <section class="card" aria-labelledby="h-how">
         <h2 id="h-how">어떻게 고르나</h2>
         <ol class="how">
-          <li><strong>수집</strong> YouTube에서 채널 언어·지역의 쇼츠를 조회수 순으로 모아 <em>시간당 조회수</em>가 높은 {{ trends.TOP_N }}개를 남겨요</li>
-          <li><strong>분석</strong> 영상을 받아 컷을 나누고 장면을 뽑아 AI가 주제·포맷·영상 소스·훅을 봐요</li>
-          <li><strong>선정</strong> 화제성·제작 적합도·차별화·안전성으로 점수를 매겨 3~5개를 추천해요</li>
-          <li><strong>아이디어</strong> 수집·분석을 건너뛰고 채널 기준(ideas.md)으로 주제 {{ trends.IDEA_N }}개와 간략한 내용을 받아요. 화제성은 빼고 점수를 매겨요</li>
+          <li><strong>기본 기준</strong> 채널 분야와 추천 규칙(<code>ideas.md</code>·<code>trends.md</code>)으로 Claude가 웹을 찾아 주제 {{ trends.IDEA_N }}개를 골라요. 이 채널에서 이미 만든 주제는 빼요</li>
+          <li><strong>추가 요청</strong> 적은 것이 있으면 기본 기준에 더해 따라요. 사실 확인·안전 규칙은 그대로 지켜요</li>
+          <li><strong>점수</strong> 제작 적합도·차별화·안전성을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 줄 세워요</li>
         </ol>
         <p class="muted small">마음에 드는 추천에서 [이 주제로 만들기]를 누르면 대본부터 렌더까지 바로 만들어요. 자동으로 만들지는 않아요.</p>
       </section>
@@ -61,7 +37,7 @@
     <div class="col">
       <section id="trend-list" class="card" data-active="{{ 1 if active else 0 }}" data-list="trend-list" aria-labelledby="h-list">
         <div class="card-head">
-          <h2 id="h-list">지난 분석</h2>
+          <h2 id="h-list">지난 추천</h2>
           {% if active %}<span class="live">갱신 중</span>{% endif %}
         </div>
         {% if items %}
@@ -70,8 +46,8 @@
           {% set tc = channels.get(t.channel) %}
           <li><a class="job-row" href="/trends/{{ t.id }}">
             <span class="jr-main">
-              <span class="jr-topic">{% if t.mode == 'idea' %}아이디어 · {{ t.keyword or '전체' }}{% else %}{{ t.keyword or '채널 분야' }} · 최근 {{ trends.PERIODS.get(t.period, t.period) }}{% endif %}</span>
-              <span class="jr-meta">{% if not ch and tc %}<span class="badge b-ch">{{ tc.name }}</span> {% endif %}{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}{% if t.quota %} · {{ t.quota }}유닛{% endif %}</span>
+              <span class="jr-topic">{{ t.keyword|truncate(40) if t.keyword else '기본 기준' }}</span>
+              <span class="jr-meta">{% if not ch and tc %}<span class="badge b-ch">{{ tc.name }}</span> {% endif %}{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}</span>
             </span>
             <span class="dots" role="img" aria-label="{% for s in trends.STEPS %}{{ trends.LABELS[s] }} {{ STATE[t.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">
               {%- for s in trends.STEPS %}<span class="d d-{{ t.steps[s].status }}"></span>{% endfor -%}
@@ -82,7 +58,7 @@
           {% endfor %}
         </ul>
         {% else %}
-        <p class="empty">아직 분석이 없어요. 왼쪽에서 [시작]을 누르면 지금 뜨는 쇼츠를 모아 와요.</p>
+        <p class="empty">아직 추천이 없어요. 왼쪽에서 [추천 받기]를 누르면 주제를 골라 와요.</p>
         {% endif %}
       </section>
     </div>

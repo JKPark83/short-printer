@@ -11,6 +11,8 @@ from . import subtitles
 from .channel import Channel
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
+THUMB_FLASH = 0.1   # 영상 맨 앞에 썸네일을 그대로 보이는 길이(초)
+THUMB_FADE = 0.4    # 그 뒤 썸네일이 영상으로 녹아 사라지는 길이(초)
 XFADE = 0.5   # 장면 클립 사이 겹침(초). 8초마다 딱 끊기지 않게 경계를 가운데 두고 녹아든다
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 채널 강조색. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
@@ -98,13 +100,20 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
     n = len(clips) or 1
     if title:
         caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
-    # 썸네일을 첫 화면에 얹지 않는다: 쇼츠 피드는 첫 1~2초 움직임으로 넘길지 정한다. 썸네일은 업로드 때 따로 붙인다
+    # 썸네일을 첫 THUMB_FLASH초(3프레임)에 그대로 얹고 THUMB_FADE초 동안 투명해지게 한다: 올린 뒤 유튜브 앱은 영상
+    # 프레임 중에서만 썸네일을 고르게 하므로 그 프레임을 고르면 된다. 뚝 끊기지 않고 영상으로 넘어간다
+    thumb = (job_dir / "thumbnail.jpg").exists()
+    tail = ["-loop", "1", "-framerate", "30", "-i", "thumbnail.jpg"] if thumb else []   # voice.wav 다음 입력(n+1)
     # 효과음을 더하면 겹치는 곳이 넘칠 수 있어 리미터로 막는다
     voice = VOICE.format(ch.style.voice_lufs) if ch.style.voice_lufs else ""
     voice_a = f"[{n}:a]{voice}apad" + ("[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
                                        if fx else "[a]")
-    chains += [f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass[v]", voice_a]
-    ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
+    frame = f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass"
+    if thumb:
+        chains.append(f"[{n + 1}:v]format=yuva420p,fade=t=out:st={THUMB_FLASH}:d={THUMB_FADE}:alpha=1[th]")
+        frame += f"[f];[f][th]overlay=enable='lt(t,{THUMB_FLASH + THUMB_FADE})':shortest=1"
+    chains += [frame + "[v]", voice_a]
+    ffmpeg.run([*args, "-i", "voice.wav", *tail, "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
     os.replace(job_dir / "final.tmp.mp4", job_dir / "final.mp4")

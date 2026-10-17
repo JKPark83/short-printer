@@ -70,11 +70,11 @@
       {% elif review and script %}
       <div class="banner banner-warn" role="alert">{{ icon('pencil', 18) }}
         <div><strong>대본·음성·자막을 확인해 주세요</strong><p class="muted">문장·목소리·자막을 바로 고치거나 Claude에게 수정 요청을 할 수 있어요(문장·목소리를 바꾸면 음성·자막을 다시 만들어요). 확정하면 장면 영상·썸네일을 차례로 만들어요(이때부터 영상 크레딧이 들어요).</p>
-          {% if script.sensitive %}<p class="muted"><strong>민감 분야({{ script.sensitive }}) 대본이에요.</strong> YouTube는 건강·법률·금융·정치를 AI가 전문가처럼 설명하는 영상을 수익화하지 않고, 틀린 정보는 신고·삭제될 수 있어요. 사실관계를 확인한 뒤에만 확정하세요.</p>{% endif %}
+          {% if script.sensitive %}<p class="muted"><strong>민감 분야({{ script.sensitive }}) 대본이에요.</strong> YouTube는 보건당국 지침과 어긋나는 치료·예방 정보와 틀에 박힌 대량 생산 콘텐츠를 제재해요. 틀린 정보는 신고·삭제될 수 있어요. 사실관계를 확인한 뒤에만 확정하세요.</p>{% endif %}
           <button id="confirm" class="btn btn-primary" type="button" data-retry="confirm" data-done="대본을 확정했어요. 영상을 만들어요">{{ icon('check') }}대본 확정하고 영상 만들기</button></div></div>
       {% elif job.status == 'waiting' and script and script.sensitive and not job.confirmed %}
       <div class="banner banner-warn" role="alert">{{ icon('alert', 18) }}
-        <div><strong>민감 분야({{ script.sensitive }}) 대본이에요</strong><p class="muted">YouTube는 건강·법률·금융·정치를 AI가 전문가처럼 설명하는 영상을 수익화하지 않고, 틀린 정보는 신고·삭제될 수 있어요. 대본의 사실관계를 확인한 뒤에만 계속하세요.</p>
+        <div><strong>민감 분야({{ script.sensitive }}) 대본이에요</strong><p class="muted">YouTube는 보건당국 지침과 어긋나는 치료·예방 정보와 틀에 박힌 대량 생산 콘텐츠를 제재해요. 틀린 정보는 신고·삭제될 수 있어요. 대본의 사실관계를 확인한 뒤에만 계속하세요.</p>
           <button class="btn btn-secondary" type="button" data-retry="confirm">확인하고 계속</button></div></div>
       {% elif job.status == 'waiting' %}
       <div class="banner banner-warn">{{ icon('upload', 18) }}
@@ -111,8 +111,9 @@
             <dd><ol class="sentences">{% for s in script.sentences %}
               <li{% if loop.index0 in unverified %} class="unv"{% endif %}><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea>
                 {% set fid = script.fact_ids[loop.index0] if script.fact_ids else [] %}{% if fid %}<span class="refs">{% for f in fid %}<a class="chip" href="#fact-{{ f }}">{{ f }}</a>{% endfor %}</span>{% endif %}
-                {% if review and script.prompts %}<textarea class="ie ie-prompt" name="prompts" rows="1" maxlength="1000" required lang="en" aria-label="장면 {{ loop.index }} 영상 프롬프트">{{ script.prompts[loop.index0] }}</textarea>
-                {% if script.prompts_ko and script.prompts_ko[loop.index0] %}<p class="prompt-ko" lang="ko">{{ script.prompts_ko[loop.index0] }}</p>{% endif %}{% endif %}</li>{% endfor %}
+                {# 영상 프롬프트는 길어서 기본으로 접는다. 닫혀 있어도 폼 값은 같이 간다 #}
+                {% if review and script.prompts %}<details class="prompt-fold"><summary>영상 프롬프트</summary><textarea class="ie ie-prompt" name="prompts" rows="1" maxlength="2000" required lang="en" aria-label="장면 {{ loop.index }} 영상 프롬프트">{{ script.prompts[loop.index0] }}</textarea>
+                {% if script.prompts_ko and script.prompts_ko[loop.index0] %}<p class="prompt-ko" lang="ko">{{ script.prompts_ko[loop.index0] }}</p>{% endif %}</details>{% endif %}</li>{% endfor %}
             </ol></dd>
           </dl>
           {% if review %}<p class="muted ie-tip">제목·설명·태그·문장·목소리·자막과 문장 아래 장면 영상 프롬프트(영어)를 눌러 바로 고치고 아래 막대에서 저장한 뒤 [대본 확정]을 눌러요.</p>
@@ -218,7 +219,7 @@
         <ol class="cues" tabindex="0" aria-label="자막 목록">
           {% for c in cues %}<li data-start="{{ c.start }}"><time>{{ c.start|cue_ts }}</time>
             {%- if ko_cues %}<div>{% endif %}
-            {%- if editable %}<input class="ie" name="cues" form="edit" value="{{ c.text }}" maxlength="40" required data-regen="렌더" aria-label="자막 {{ loop.index }}">
+            {%- if editable %}<input class="ie" name="cues" form="edit" value="{{ c.text }}" maxlength="40" required data-regen="음성·자막·렌더" aria-label="자막 {{ loop.index }}">
             {%- else %}<span>{{ c.text }}</span>{% endif %}
             {%- if ko_cues %}<small class="cue-ko">({{ ko_cues[loop.index0] }})</small></div>{% endif %}</li>{% endfor %}
         </ol>

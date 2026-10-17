@@ -1,7 +1,7 @@
 # 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
-name = "40초 상식"
-description = "생활 속 \"왜 그렇지?\"에 근거를 갖고 2분 안에 답해 드려요. 영상에 쓴 자료는 설명란에 적어 둡니다."
-concept = "사람들에게 실제로 도움이 되는 상식"
+name = "알쓸몸잡"
+description = "알쓸몸잡: 알고 보면 쓸데있는 몸에 대한 잡학지식. 하품은 왜 옮을까? 관절은 왜 소리가 날까? 누구나 매일 겪지만 그냥 넘어갔던 몸의 순간, 그때 몸 안에서 무슨 일이 일어나는지 3D 단면으로 2분 안에 보여 드려요. 병원 교과서와 논문을 근거로 쓰고, 영상에 쓴 자료는 설명란에 적어 둡니다. 진단·치료·약·음식 효능은 말하지 않습니다. 몸이 왜 그렇게 움직이는지 원리만 설명합니다. 영상은 AI로 만든 3D 애니메이션입니다."
+concept = "누구나 매일 겪는 몸 현상이 왜 일어나는지, 몸속 원리로 풀어 주는 인체 상식"
 language = "ko"
 daily_goal = 1
 sensitive_gate = true
@@ -16,7 +16,7 @@ duration = "100~110초"
 [tts]
 provider = "elevenlabs"
 default = "PDoCXqBQFGsvfO0hNkEs"
-sample = "안녕하세요. 오늘 알려 드릴 생활 꿀팁, 끝까지 보면 분명 도움이 될 거예요."
+sample = "안녕하세요. 오늘은 매일 겪는 몸 현상, 그때 몸 안에서 무슨 일이 일어나는지 보여 드릴게요."
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
 PDoCXqBQFGsvfO0hNkEs = "크리스"
@@ -27,7 +27,7 @@ elevenlabs = "미스터최"
 
 [video]
 provider = "flow-auto"
-style = "Stylized 3D animated explainer. Smooth matte materials, simple rounded shapes, one clear subject large in frame, limited palette of deep teal, cream, coral and mustard yellow, clean uncluttered sets, no readable text anywhere, signs and screens plain and blank."
+style = "Polished stylized 3D animated explainer with feature-animation quality. Soft matte and satin materials with fine surface texture, one richly detailed hero subject large in frame, soft global illumination, gentle depth of field against a softly detailed background, limited palette of deep teal, cream, coral and mustard yellow, no readable text anywhere, signs and screens plain and blank, anatomy shown as clean stylized educational models and cutaways, organs and cells stylized with visible folds, grooves and fibers, no blood, no gore, no realistic wounds."
 
 [style]
 accent = "#FFE500"
@@ -40,19 +40,21 @@ max_total = 22
 
 [publish]
 provider = "youtube"
-category = "22"
+category = "27"
+footer = "※ 의학적 진단·치료 조언이 아닌 일반 정보입니다. 영상은 AI로 만든 이미지입니다."
 sources_heading = "출처"
 
 [research]
-domains = ["kdca.go.kr", "health.kdca.go.kr", "mfds.go.kr", "korean.go.kr", "encykorea.aks.ac.kr", "khs.go.kr",
-           "scent.kisti.re.kr", "kasi.re.kr", "weather.go.kr", "kostat.go.kr", "mods.go.kr",
-           "pubmed.ncbi.nlm.nih.gov", "nih.gov", "nasa.gov", "noaa.gov", "who.int"]
+domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "kdca.go.kr", "mfds.go.kr",
+           "pubmed.ncbi.nlm.nih.gov", "nih.gov", "medlineplus.gov", "my.clevelandclinic.org", "health.harvard.edu",
+           "nhs.uk", "who.int", "korean.go.kr"]
 news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
         "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
-        "bbc.com", "nature.com", "science.org", "nationalgeographic.com"]
+        "bbc.com", "nationalgeographic.com", "sciencetimes.co.kr", "livescience.com", "britannica.com"]
+languages = ["ko", "en"]
+queries_per_topic = 7
+max_pages = 10
 
 [trends]
-region = "KR"
-keywords = []
-production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 45초(100~110초), 13장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(건축·과학 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제는 못 만든다."
-weights = { trend = 35, fit = 35, fresh = 15, safe = 15 }
+production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 45초(100~110초), 13장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(몸속 단면·장기·세포를 보여 주는 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제와 치료·약·식품 효능을 말해야 답이 되는 주제는 못 만든다."
+weights = { fit = 54, fresh = 23, safe = 23 }

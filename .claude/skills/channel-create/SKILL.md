@@ -26,7 +26,7 @@ shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬
 3라운드
 - 목소리: 성별·나이대·느낌(ID는 나중에 사용자가 고른다)
 - 썸네일 톤: 경고·반전·숫자형 등, 강조색
-- 추천: 수집 지역(KR·US·JP…), 검색 키워드(없어도 됨)
+- 추천: 먼저 볼 주제·계절, 점수 가중치(제작 적합도·차별화·안전성)
 - 하루 목표 편수, 민감 주제 확인(건강·법률·금융·정치를 다루면 켜 둔다)
 
 ## 2. 제안
@@ -52,7 +52,7 @@ shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬
   - `[style]` accent·background(언어 기본 글꼴이면 `font`는 적지 않는다)
   - `[thumbnail]` max_line·max_total(ko 9·16을 기준으로 언어 폭에 맞춘다. en은 단어가 길어 14·24쯤)
   - `[publish]` provider `youtube`, category(교육 27, 그 밖 22), channel_id는 비워 둔다
-  - `[trends]` region·keywords·production(우리 제작 방식 한 단락: 대본·TTS·자막·장면 화풍·못 쓰는 것)·weights(합 100)
+  - `[trends]` production(우리 제작 방식 한 단락: 대본·TTS·자막·장면 화풍·못 쓰는 것)·weights(`fit`·`fresh`·`safe` 세 개, 합 100)
 - `script.md`·`video_style.md`·`thumbnail.md`·`trends.md`: 2단계에서 정한 규칙. 제목 `# …` 한 줄 + 짧은 목록. 지시문은 한국어로 써도 되고, 대본에 그대로 나올 예시 문구는 채널 언어로.
 - 비밀(키·토큰·비밀번호·이메일)은 어떤 파일에도 넣지 않는다.
 

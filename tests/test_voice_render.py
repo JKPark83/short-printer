@@ -67,6 +67,12 @@ def test_render_gradient_with_subtitles(tmp_path, ch):
     assert "Style: Cap,Apple SD Gothic Neo,150," in ass   # min(150, 1400 // 7자): 예전과 같은 크기
     render.render(tmp_path, [], timing[-1]["end"], ch, KO, (["커피 상식"], "상식"))
     assert "{\\c" in (tmp_path / "title.ass").read_text() and ",2,80,80,1390," in (tmp_path / "title.ass").read_text()
+    # 썸네일이 있으면 첫 프레임은 썸네일(문구 있음), 0.3초는 녹아 사라지는 중, 0.6초 뒤는 영상 자체
+    def frame(sec):
+        return subprocess.run([config.FFMPEG, "-v", "error", "-ss", str(sec), "-i", tmp_path / "final.mp4", "-vf",
+                               "crop=1080:400:0:1300", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+                              capture_output=True).stdout
+    assert frame(0) != frame(0.3) != frame(0.6) and frame(0) != frame(0.6)
 
 
 def test_elevenlabs_word_times_shift_by_sentence_start(tmp_path, ch):

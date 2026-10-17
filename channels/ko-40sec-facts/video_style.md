@@ -1,14 +1,27 @@
 # 장면 영상 규칙
 
-- 화풍은 실사가 아니라 건축·과학 해설 채널 같은 깔끔한 3D 애니메이션이다. 화풍은 앱이 머리말로 붙이므로 prompt에는 쓰지 않는다.
-- 사람이 필요하면 아래 마스코트 문장을 글자 그대로 넣는다. 영상마다 새 주인공을 만들지 않는다. 다른 사람은 얼굴을 단순화한 3D 캐릭터로, 옷 색 하나만 정해 짧게 쓴다.
-  - Dot, the channel's guide character: a small round-headed 3D figure with dot eyes, a mustard-yellow knit sweater and teal trousers.
+- 화풍은 실사가 아니라 과학 해설 채널 같은 깔끔한 3D 애니메이션이다. 화풍은 앱이 머리말로 붙이므로 prompt에는 쓰지 않는다.
+- 주인공 물체는 자세히 그린다. 단순한 덩어리로 두지 말고, 보이는 부분 3~4개를 구체적으로 쓴다: 생김새, 겉면 결(주름·홈·섬유·알갱이), 광택(satin sheen, soft glow), 빛을 받는 곳. 디테일은 아래 몸속 규칙의 한도 안에서만 올린다. 단어는 소품을 늘어놓는 데가 아니라 주인공 묘사에 쓴다. 배경 소품은 둘까지.
+- 주인공이 화면을 크게 채우는 medium close-up이나 close-up을 기본으로 한다. 작은 물체가 여럿 보이는 wide shot은 뭉개지므로 훅·마지막 장면의 pull-back에만 쓴다.
+- 빛은 시간대에 광원 방향을 붙인다(예: soft key light from the upper left, warm window light from the right). 그림자와 하이라이트가 주인공의 결을 드러내게 한다.
+- 동작은 무엇이 어떻게 움직이고 맞닿는지 쓴다(예: food pieces tumble and break apart as the folds squeeze).
+- 사람이 필요하면 아래 마스코트 문장을 글자 그대로 넣는다. 영상마다 새 주인공을 만들지 않는다. 다른 사람은 얼굴을 단순화한 어른 3D 캐릭터로, 옷 색 하나만 정해 짧게 쓴다. 아이·아기·학생은 쓰지 않는다(필터가 아동 장면을 막는다).
+  - Dot, the channel's guide character: a tall slender adult 3D figure with grown-up proportions, a smooth round head with dot eyes, a mustard-yellow knit sweater and teal trousers.
+  - Dot을 small·little·tiny·cute로 꾸미지 않는다. 동그란 머리 인형 같은 생김새가 아이로 읽혀 Flow가 미성년자 정책으로 막는다.
+  - Dot이 자기 몸을 문지르거나 누르거나 쓰다듬는 장면은 쓰지 않는다(rub, press, massage, stroke, caress). 아이로 읽힌 인물 + 몸 접촉이면 거절된다. 이런 동작은 떠 있는 교육용 몸 모형과 큰 마네킹 손으로 보여 준다(a large smooth cream mannequin hand rubs slow circles over a floating stylized educational model of an adult lower leg). Dot은 바라보거나 가리키는 역할만 한다.
 - 눈에 안 보이는 원리나 수치는 숫자 대신 단면도(cutaway)와 선·화살표, 크기·길이·높이 차이로 보여 준다. 선과 화살표는 glowing coral 하나로 쓴다(흐름·원인). 비교는 같은 물건 두 개의 크기 차이로 보여 준다.
+- 몸속은 이렇게 그린다. 필터는 프롬프트와 만들어진 영상 둘 다 보므로, 디테일은 교육용 모형 수준까지만 올린다.
+  - 장기 하나를 보여 줄 때는 몸 밖에 떠 있는 교육용 모형으로 쓴다(a floating stylized educational model of a stomach). 사람 몸을 열거나 자르는 장면은 쓰지 않는다.
+  - 몸 전체가 필요하면 옷 입은 Dot을 반투명하게 투시해 속을 보여 준다(Dot shown semi-transparent like frosted glass, organs glowing softly inside).
+  - 장기·뼈·근육·신경은 색으로 나누고, 양식화하되 결이 보이게 쓴다(each tissue in its own color). 예: 위 soft inner folds, 뇌 rounded grooves, 근육 fine parallel fibers, 뼈 a porous honeycomb interior, 혈관 a smooth translucent tube.
+  - 세포·분자는 크게 키운 둥근 알갱이로 쓰고, 겉면 결 하나를 붙인다(예: a red blood cell as a glossy dimpled disc).
+  - 디테일 한도: 결·생김새·광택·빛까지만 자세히 쓰고, 실감 나는 살·체액 표현은 하지 않는다. wet, raw, slimy, moist, bloody, flesh, meat, gore, veins on skin, pores는 쓰지 않는다. 결은 satin sheen·soft glow로만 보여 준다.
+  - 맨몸 낱말 skin, bare, naked, nude, torso, chest, belly는 쓰지 않는다. 몸은 옷 입은 Dot이나 떠 있는 모형으로만 보여 준다.
+  - 면역·질병 장면에 attack, kill, destroy, burst, explode, stab, invade 같은 폭력 동사를 쓰지 않는다. surround, gently push away, dissolve into sparkles처럼 부드러운 동사로 쓴다.
+  - 신경 신호·혈류는 glowing coral 선 하나로 보여 준다.
+  - 피는 red flowing particles inside a translucent vessel 로만 쓴다.
+- 피, 상처, 수술, 칼, 바늘, 주사, 알약, 병원, 의사는 그리지 않는다. 체액은 도식으로만 보여 준다.
 - 사람 무리·물건 개수로 비율을 보여 주지 않는다. "열 명 중 두세 명"은 많은 무리 가운데 몇몇만 빛나는 장면으로 쓰고, 몇 명인지 적지 않는다.
 - 글자가 들어갈 물건(시계, 달력, 그래프, 간판, 화면, 물음표·X 아이콘)은 쓰지 않는다. 시간 흐름은 해의 위치나 그림자 길이로, 계산·데이터는 빛나는 작은 정육면체 흐름으로 보여 준다.
 - 카메라는 이 넷 중 하나를 쓴다: slow push-in, sideways truck, top-down crane, slow pull-back. 훅과 5·10번째 장면은 pull-back이나 reveal로 화면이 바뀌게 한다.
-- 한국 생활 물건은 이름 뒤에 생김새를 붙여 쓴다.
-  - 온돌: a cutaway of a Korean ondol floor, warm air flowing through channels under flat stone slabs beneath a living room floor
-  - 김치냉장고: a plain white chest-style kimchi refrigerator with a top lid
-  - 교통카드: a plain blank card-sized transit pass tapped on a round reader at a subway gate
-  - 김밥: gimbap, a seaweed-wrapped rice roll sliced into round pieces showing yellow, green, orange and egg fillings
+- 한국 생활 물건이 나오면 이름 뒤에 생김새를 붙여 쓴다(예: 온돌: a cutaway of a Korean ondol floor, warm air flowing through channels under flat stone slabs).
