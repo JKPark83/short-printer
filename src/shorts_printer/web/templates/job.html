@@ -80,6 +80,10 @@
       <div class="banner banner-warn">{{ icon('upload', 18) }}
         <div><strong>장면 클립을 기다려요</strong><p class="muted">빠진 장면 클립을 올려 주세요. Flow 설정: 16:9 · 8초 · 결과 1개 · <a href="#c-footage">장면 목록</a> · 올리기가 끝날 때까지 이 화면에 머물러 주세요</p></div></div>
       {% endif %}
+      {% if unverified %}
+      <div class="banner banner-warn">{{ icon('alert', 18) }}
+        <div><strong>근거 없는 문장 {{ unverified|length }}개</strong><p class="muted">{% for i in unverified %}{{ i + 1 }}{{ ', ' if not loop.last }}{% endfor %}번 문장에 숫자가 있는데 자료(F 번호) 근거가 없어요. 아래 자료와 맞춰 보고 고치세요.</p></div></div>
+      {% endif %}
       {% for n in job.notices %}
       <div class="banner banner-info">{{ icon('info', 18) }}<p>{{ n }}</p></div>
       {% endfor %}
@@ -105,8 +109,10 @@
             {% endfor %}
             <dt>문장</dt>
             <dd><ol class="sentences">{% for s in script.sentences %}
-              <li><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea>
-                {% if review and script.prompts %}<textarea class="ie ie-prompt" name="prompts" rows="1" maxlength="1000" required lang="en" aria-label="장면 {{ loop.index }} 영상 프롬프트">{{ script.prompts[loop.index0] }}</textarea>{% endif %}</li>{% endfor %}
+              <li{% if loop.index0 in unverified %} class="unv"{% endif %}><textarea class="ie" name="sentences" rows="2"{% if ch.script.unit == 'chars' %} maxlength="{{ ch.script.sentence[1] * 2 }}"{% endif %} required data-regen="음성·자막·렌더" aria-label="문장 {{ loop.index }}">{{ s }}</textarea>
+                {% set fid = script.fact_ids[loop.index0] if script.fact_ids else [] %}{% if fid %}<span class="refs">{% for f in fid %}<a class="chip" href="#fact-{{ f }}">{{ f }}</a>{% endfor %}</span>{% endif %}
+                {% if review and script.prompts %}<textarea class="ie ie-prompt" name="prompts" rows="1" maxlength="1000" required lang="en" aria-label="장면 {{ loop.index }} 영상 프롬프트">{{ script.prompts[loop.index0] }}</textarea>
+                {% if script.prompts_ko and script.prompts_ko[loop.index0] %}<p class="prompt-ko" lang="ko">{{ script.prompts_ko[loop.index0] }}</p>{% endif %}{% endif %}</li>{% endfor %}
             </ol></dd>
           </dl>
           {% if review %}<p class="muted ie-tip">제목·설명·태그·문장·목소리·자막과 문장 아래 장면 영상 프롬프트(영어)를 눌러 바로 고치고 아래 막대에서 저장한 뒤 [대본 확정]을 눌러요.</p>
@@ -133,8 +139,25 @@
           <dd><span>{{ value }}</span><button class="btn-icon" type="button" data-copy="{{ value }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
           {% endfor %}
           <dt>문장</dt>
-          <dd><ol class="sentences">{% for s in script.sentences %}<li>{{ s }}</li>{% endfor %}</ol></dd>
+          <dd><ol class="sentences">{% for s in script.sentences %}<li{% if loop.index0 in unverified %} class="unv"{% endif %}><span>{{ s }}</span>{% set fid = script.fact_ids[loop.index0] if script.fact_ids else [] %}{% if fid %}<span class="refs">{% for f in fid %}<a class="chip" href="#fact-{{ f }}">{{ f }}</a>{% endfor %}</span>{% endif %}</li>{% endfor %}</ol></dd>
         </dl>
+        {% endif %}
+        {% if facts %}
+        {# 자료 조사가 모은 사실. 대본은 이것만 쓰고, 문장 옆 F 번호가 근거다 #}
+        <details id="facts" class="script-edit" open>
+          <summary>자료 {{ facts|length }}개</summary>
+          <ol class="facts">{% for f in facts %}
+            <li id="fact-{{ f.id }}"><p><span class="chip">{{ f.id }}</span>{% if f.kind == 'news' %} <span class="chip chip-news">보도</span>{% elif f.kind == 'web' %} <span class="chip chip-news">웹</span>{% endif %} {{ f.text }}</p>
+              <p class="muted fact-src"><a href="{{ f.url }}" target="_blank" rel="noopener" aria-label="{{ f.title or f.site }} (새 창)">{{ icon('external', 14) }}{{ f.site }}</a> · {{ f.retrieved_at[:10] }} 확인</p></li>{% endfor %}
+          </ol>
+        </details>
+        {% endif %}
+        {% if desc and up.status != 'done' %}
+        <details id="desc" class="script-edit">
+          <summary>설명란 미리보기</summary>
+          <pre class="desc-preview">{{ desc }}</pre>
+          <p class="muted">올릴 때 이대로 들어가요(출처 링크·끝 문구는 앱이 붙여요).</p>
+        </details>
         {% endif %}
         {% if ch.language != 'ko' %}
         {# 대본을 쓴 호출과 따로 옮긴 한국어: 운영자가 원문 언어를 몰라도 실제로 적힌 뜻을 확인한다 #}
@@ -210,6 +233,7 @@
             <p class="scene-line"><span class="num">{{ s.i + 1 }}</span><span>{{ s.sentence }}</span>{% if s.sec %}<span class="mono muted">{{ '%.1f'|format(s.sec) }}초</span>{% endif %}</p>
             {% if s.prompt %}
             <details><summary>프롬프트</summary><p class="prompt">{{ s.prompt }}</p></details>
+            {% if script.prompts_ko and script.prompts_ko[s.i] %}<p class="prompt-ko" lang="ko">{{ script.prompts_ko[s.i] }}</p>{% endif %}
             <button class="btn btn-secondary" type="button" data-copy="{{ s.prompt }}" aria-label="장면 {{ s.i + 1 }} 프롬프트 복사">{{ icon('copy') }}프롬프트 복사</button>
             {% else %}<p class="muted">프롬프트가 없는 예전 대본이에요. 문장을 보고 만들어 주세요.</p>{% endif %}
             {% if s.v %}

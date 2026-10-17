@@ -12,7 +12,7 @@ from .. import config
 from ..infra.store import Record, redact
 from ..ports.queue import Queue
 from . import channel, trends
-from .pipeline import LABELS, Job
+from .pipeline import LABELS, Job, in_review
 from .trends import DEFAULT_PERIOD, PERIODS, Trend
 
 GRACE = timedelta(minutes=5)   # 이보다 늦게 알아챈 시각은 놓친 것으로 본다(사용자 결정: 건너뛰기)
@@ -254,7 +254,7 @@ def fire(s: Schedule, q: Queue, notify: Notify, at: datetime, slot: datetime | N
             run = _run(at, slot, "started", trend=t.id)
         elif d["topics"]:
             topic, *rest = d["topics"]
-            job = Job.create(d["channel"], topic, d["voice"], source={"schedule": s.id})
+            job = Job.create(d["channel"], topic, d["voice"], source={"schedule": s.id}, review=True)
             q.enqueue(job.id)
             run = _run(at, slot, "started", job=job.id, topic=topic)
             fields["topics"] = rest
@@ -310,7 +310,7 @@ def after_trend(trend: Trend, q: Queue, notify: Notify) -> None:
     i = next((i for i, p in enumerate(picks) if p["topic"] not in made), 0)
     p = picks[i]
     job = Job.create(d["channel"], p["topic"], sd["voice"], brief=trends.brief(trend, p),
-                     source={"trend": trend.id, "pick": i, "schedule": s.id})
+                     source={"trend": trend.id, "pick": i, "schedule": s.id}, review=True)
     with q.lock:
         # 실패한 주제 찾기를 다시 돌려 끝난 것이면 회차를 다시 진행 중으로(겹침 막기·배지)
         _patch(s, "trend", trend.id, result="started", note=None, job=job.id, topic=p["topic"])
@@ -327,7 +327,7 @@ def _sensitive_wait(job: Job) -> str | None:
 
 
 def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
-    """스케줄 작업(source.schedule)만: 완성 → 업로드 넣기, 실패·중단·민감 대기·업로드 완료/실패 → 알림.
+    """스케줄 작업(source.schedule)만: 완성 → 업로드 넣기, 실패·중단·검수 대기·민감 대기·업로드 완료/실패 → 알림.
     kind는 큐 종류(run·upload). 손으로 만든 작업은 아무것도 하지 않는다."""
     d = job.data
     if not (s := _schedule((d.get("source") or {}).get("schedule"))):
@@ -353,6 +353,10 @@ def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
         notify(_msg(sd, "실패", f"제작 실패{f'({step})' if step else ''}: {err.get('message')}", d["topic"], link))
     elif d["status"] == "interrupted":   # 앱이 켜질 때 recover()가 넘긴다
         notify(_msg(sd, "실패", "제작 중단: 서버가 꺼져 멈췄어요. 작업 화면에서 다시 시도하세요.", d["topic"], link))
+    elif in_review(d):   # 검수 확정이 민감 확인도 겸하므로 알림은 이것 하나
+        area = (job.doc("script.json") or {}).get("sensitive")
+        notify(_msg(sd, "검수 필요", "대본을 확인하고 [확인하고 계속]을 누르면 영상 제작·업로드까지 이어져요.",
+                    *filter(None, [area and f"민감 분야({area}) 대본이에요."]), d["topic"], link))
     elif area := _sensitive_wait(job):
         notify(_msg(sd, "확인 필요", f"민감 분야({area}) 대본이에요. 대본을 보고 [확인하고 계속]을 누르면 "
                     "제작·업로드까지 이어져요.", title, link))

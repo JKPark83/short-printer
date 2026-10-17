@@ -220,6 +220,18 @@ select { cursor: pointer; }
 .sentences li::marker { color: var(--muted-fg); font: 12px var(--mono); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s2); padding-top: 4px; }
 .chip { padding: 1px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--secondary); font: 12px var(--mono); }
+/* 근거: 문장 옆 F 번호, 자료 카드, 근거 없는 숫자 문장 */
+.refs { display: inline-flex; flex-wrap: wrap; gap: var(--s2); margin: var(--s1) 0 0 var(--s2); }
+.refs .chip { color: var(--fg); text-decoration: none; }
+.chip-news { color: #60A5FA; border-color: rgba(96, 165, 250, .5); }
+.sentences li.unv > :first-child { box-shadow: inset 3px 0 0 var(--warn); background: var(--warn-bg); }
+.prompt-ko { margin: var(--s1) 0 0; color: var(--muted-fg); font-size: 12px; }
+.facts { margin: 0; padding: 0; list-style: none; }
+.facts li + li { margin-top: var(--s3); }
+.facts p { margin: 0; overflow-wrap: anywhere; }
+.fact-src { font-size: 12px; }
+.desc-preview { margin: 0; padding: var(--s3); white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); font: 13px/1.5 var(--sans); }
 .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--s4); }
 .clips figure { margin: 0; min-width: 0; }
 .clips img { display: block; width: 100%; height: auto; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 6px; background: var(--muted); }

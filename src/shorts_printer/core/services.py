@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from ..ports.llm import LLM
 from ..ports.publisher import Publisher
+from ..ports.research import Researcher
 from ..ports.splitter import Splitter
 from ..ports.tts import TTS
 from ..ports.video import VideoProvider
@@ -17,3 +18,4 @@ class Services:
     video: VideoProvider
     publisher: Publisher
     splitter: Splitter
+    research: Researcher

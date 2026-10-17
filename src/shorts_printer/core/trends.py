@@ -21,7 +21,7 @@ from .. import config
 from ..infra import ffmpeg
 from ..infra.store import Record
 from ..ports.llm import add_usage
-from . import prompts
+from . import prompts, research
 from .channel import LANGS, Channel
 from .pipeline import Job, run_steps
 from .services import Services
@@ -167,7 +167,7 @@ def search_words(t: Trend, sv: Services) -> str:
     ch = sv.channel
     system = prompts.render("trend_keywords", lang=ch.lang_name, concept=ch.concept, channel_rules=ch.text("trends.md"))
     out, usage = sv.llm.ask(system, f"오늘: {datetime.now():%Y-%m-%d}\n지역: {ch.trends.region}", KeywordsOut,
-                            what="검색어", web=True, refusal=f"{sv.llm.label}가 검색어를 정하지 않았어요. 키워드를 넣어 보세요.")
+                            what="검색어", web=_web(ch), refusal=f"{sv.llm.label}가 검색어를 정하지 않았어요. 키워드를 넣어 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))
     words = [w.strip() for w in out.keywords if w.strip()][:6]
     if not words:
@@ -405,7 +405,7 @@ class PicksOut(BaseModel):
 def system_pick(ch: Channel) -> str:
     """prompts/trend_pick.md에 채널 분야·제작 방식·언어·채널 규칙(trends.md)을 채운다."""
     return prompts.render("trend_pick", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
-                          channel_rules=ch.text("trends.md"))
+                          channel_rules=ch.text("trends.md"), duration=ch.script.duration, scenes=ch.script.scenes)
 
 
 def percentile(videos: list[dict], vid: str) -> float:
@@ -433,7 +433,7 @@ def finish_picks(out: PicksOut, videos: list[dict], weights: dict[str, int]) -> 
 class IdeaOut(BaseModel):
     topic: str = Field(description="작업 주제로 그대로 쓸 한 줄. 80자 이내")
     angle: str = Field(description="훅과 전개 방향. 대본 작가에게 넘길 참고. 200자 이내")
-    content: str = Field(description="간략한 내용: 핵심 답과 사실 2~3문장. 300자 이내")
+    content: str = Field(description="핵심 답 한 문장 + 확인할 주장 3~5개(끝에 출처 기관). 500자 이내")
     format: Format
     why_now: str = Field(description="왜 지금, 왜 사람들이 궁금해하는지 한두 문장")
     scores: Scores
@@ -449,7 +449,8 @@ def system_idea(ch: Channel) -> str:
     """prompts/trend_idea.md에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
     rules = ch.text("ideas.md") if (ch.dir / "ideas.md").exists() else ""
     return prompts.render("trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
-                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N)
+                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
+                          duration=ch.script.duration, scenes=ch.script.scenes)
 
 
 def idea_weights(weights: dict[str, int]) -> dict[str, int]:
@@ -465,17 +466,49 @@ def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
     for p in out.picks:
         scores = {k: min(5, max(1, v)) for k, v in p.scores.model_dump().items()}
         total = round(100 * sum(w[k] * (scores[k] - 1) / 4 for k in w) / sum(w.values()))
-        picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:300],
+        picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:500],
                       "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": [],
                       "search_terms": p.search_terms})
     picks.sort(key=lambda p: p["total"], reverse=True)
     return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
 
 
-def _made(cid: str) -> str:
+def _made(cid: str) -> list[str]:
     """이 채널에서 이미 만든 작업 주제 최근 30개(겹치지 않게 지시문에 넣는다)."""
-    made = [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid][-30:]
-    return "\n".join(f"- {m}" for m in made) or "(없음)"
+    return [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid][-30:]
+
+
+def _shown(t: Trend) -> list[str]:
+    """이 채널에서 앞서 추천했던 주제 최근 50개(새 것 먼저): 이어진 기록(avoid)뿐 아니라 지난 주제 찾기 전부.
+    새로 시작한 주제 찾기도 지난 추천을 되풀이하지 않게."""
+    cid = t.data["channel"]
+    past = [p["topic"] for o in reversed(Trend.all()) if o.id != t.id and o.data.get("channel") == cid
+            for p in (o.doc("picks.json") or {}).get("picks", [])]
+    return list(dict.fromkeys((t.data.get("avoid") or []) + past))[:50]
+
+
+def _bullets(items: list[str]) -> str:
+    return "\n".join(f"- {m}" for m in items) or "(없음)"
+
+
+def _web(ch: Channel) -> bool | list[str]:
+    """추천 단계 검색도 조사와 같은 허용 사이트로 묶는다. 사이트가 없는 채널은 어디서나."""
+    return research.sites(ch) or True
+
+
+def _where(web: bool | list[str]) -> str:
+    return f"허용 사이트 {len(web)}곳에서 검색하며" if isinstance(web, list) else "웹을 검색하며"
+
+
+def _log_picks(t: Trend, picks: dict, titles: dict[str, str]) -> None:
+    """선정 결과를 단계별로 남긴다: 흐름 → 뺀 쇼츠와 이유 → 추천마다 점수 내역."""
+    if picks["summary"]:
+        t.log(f"흐름: {picks['summary']}")
+    for e in picks["excluded"]:
+        t.log(f"뺌: {titles.get(e['video_id'], e['video_id'])[:30]} — {e['reason']}")
+    for i, p in enumerate(picks["picks"], 1):
+        detail = " · ".join(f"{CRITERIA[k][0]} {v}" for k, v in p["scores"].items())
+        t.log(f"추천 {i}: {p['topic']} ({p['total']}점 · {detail})")
 
 
 def _criteria(w: dict[str, int], keys) -> str:
@@ -485,19 +518,21 @@ def _criteria(w: dict[str, int], keys) -> str:
 def pick_ideas(t: Trend, sv: Services) -> str:
     ch = sv.channel
     keys = ("fit", "fresh", "safe")
+    made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     text = (f"오늘: {datetime.now():%Y-%m-%d}\n좁힐 주제: {t.data['keyword'] or '없음'}\n\n"
-            f"점수 기준:\n{_criteria(ch.trends.weights, keys)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}")
-    if avoid := t.data.get("avoid"):
-        text += "\n\n앞서 추천했지만 고르지 않은 주제:\n" + "\n".join(f"- {a}" for a in avoid)
-    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=True,
+            f"점수 기준:\n{_criteria(ch.trends.weights, keys)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
+    if avoid:
+        text += "\n\n앞서 추천했지만 고르지 않은 주제:\n" + _bullets(avoid)
+    t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
+    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,
                             refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 좁힐 주제를 바꿔 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))
+    t.log(f"{usage['model']} 답: 주제 {len(out.picks)}개 → 점수 매기는 중")
     picks = finish_ideas(out, ch.trends.weights)
     if not picks["picks"]:
         raise RuntimeError("추천 주제를 받지 못했어요. 다시 시도해 보세요.")
     t.put("picks.json", picks)
-    for i, p in enumerate(picks["picks"], 1):
-        t.log(f"추천 {i}: {p['topic']} ({p['total']}점)")
+    _log_picks(t, picks, {})
     return usage["model"]
 
 
@@ -510,19 +545,23 @@ def step_pick(t: Trend, sv: Services) -> str:
             | {"shots": found[v["id"]]["shot_count"], "analysis": found[v["id"]]["claude"]}
             for v in videos if found.get(v["id"], {}).get("status") in OK]
     keyword = t.data.get("search") or t.data["keyword"] or f"(없음, {ch.trends.region} 전체)"   # 예전 기록은 search가 없다
+    made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     text = (f"오늘: {datetime.now():%Y-%m-%d}\n검색어: {keyword} · 기간: 최근 {PERIODS[t.data['period']]}\n\n"
-            f"선정 기준:\n{_criteria(w, CRITERIA)}\n\n이미 만든 작업 주제:\n{_made(ch.id)}"
+            f"선정 기준:\n{_criteria(w, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}"
+            f"\n\n앞서 추천했지만 고르지 않은 주제:\n{_bullets(avoid)}"
             "\n\n인기 쇼츠 분석(시간당 조회수 순):\n" + json.dumps(rows, ensure_ascii=False, indent=1))
-    out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제", web=True,
+    t.log(f"{_where(web)} 분석된 쇼츠 {len(rows)}개로 주제 고르는 중 "
+          f"(이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
+    out, usage = sv.llm.ask(system_pick(ch), text, PicksOut, what="추천 주제", web=web,
                             refusal=f"{sv.llm.label}가 이번 쇼츠 목록으로는 주제를 고르지 않았어요. "
                                     "키워드를 바꿔 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))
+    t.log(f"{usage['model']} 답: 주제 {len(out.picks)}개, 뺀 쇼츠 {len(out.excluded)}개 → 화제성 점수 매기는 중")
     picks = finish_picks(out, videos, w)
     if not picks["picks"]:
         raise RuntimeError("추천 주제를 받지 못했어요. 다시 시도해 보세요.")
     t.put("picks.json", picks)
-    for i, p in enumerate(picks["picks"], 1):
-        t.log(f"추천 {i}: {p['topic']} ({p['total']}점)")
+    _log_picks(t, picks, {v["id"]: v["title"] for v in videos})
     return usage["model"]
 
 

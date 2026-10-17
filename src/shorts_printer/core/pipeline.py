@@ -1,16 +1,18 @@
-"""여섯 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
+"""일곱 단계를 차례로 돌린다. 끝난 단계는 건너뛰어, 다시 시도하면 실패한 단계부터 이어서 한다.
 화면에서 만든 작업은 대본·음성·자막 뒤 확정 전까지, 빠진 장면 클립이 있으면 영상 소스에서 waiting으로 멈춘다."""
 import time
 from typing import ClassVar
 
 from ..infra.store import Record, now, redact, upload_state
 from ..ports.llm import add_usage
-from . import render, scenes, script, subtitles, thumbnail, voice
+from . import render, research, scenes, script, subtitles, thumbnail, voice
+from .channel import Channel
 from .services import Services
 
-STEPS = ("script", "voice", "subtitles", "footage", "thumbnail", "render")   # 사람을 기다리는 영상 소스는 뒤로
-LABELS = {"script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막", "thumbnail": "썸네일",
-          "render": "렌더"}
+# 사람을 기다리는 영상 소스는 뒤로
+STEPS = ("research", "script", "voice", "subtitles", "footage", "thumbnail", "render")
+LABELS = {"research": "자료 조사", "script": "대본", "footage": "영상 소스", "voice": "음성", "subtitles": "자막",
+          "thumbnail": "썸네일", "render": "렌더"}
 
 
 class Job(Record):
@@ -21,6 +23,9 @@ class Job(Record):
         # 썸네일 단계가 생기기 전 job.json: 렌더까지 끝났으면 옛 방식 썸네일이 있으니 done으로 본다
         d["steps"].setdefault("thumbnail", {"status": "done" if d["steps"]["render"]["status"] == "done" else "pending",
                                             "engine": None, "sec": None})
+        # 자료 조사 단계가 생기기 전 작업: 대본이 이미 있으면 조사 없이 그대로 연다
+        d["steps"].setdefault("research", {"status": "done" if d["steps"]["script"]["status"] == "done" else "pending",
+                                           "engine": None, "sec": None})
         return d
 
     @classmethod
@@ -47,10 +52,25 @@ def missing_clips(job: Job) -> list[int]:
     return [i for i in range(n) if not (job.dir / "clips" / f"clip{i}.mp4").exists()]
 
 
+def step_research(job: Job, sv: Services) -> str:
+    facts, usage = research.gather(sv.research, sv.channel, job.data["topic"], job.data.get("brief"))
+    job.put("facts.json", facts)
+    job.update(research_usage=usage)
+    for n in facts["notes"]:
+        job.log(f"조사 메모: {n[:200]}")
+    if not facts["facts"]:
+        raise RuntimeError("출처가 붙은 사실을 하나도 찾지 못했어요. "
+                           "로그의 조사 메모를 보고 허용 사이트를 더하거나 주제를 바꿔 주세요.")
+    job.log(f"사실 {len(facts['facts'])}개")
+    return usage["model"]
+
+
 def step_script(job: Job, sv: Services) -> str:
+    facts = (job.doc("facts.json") or {}).get("facts", [])   # 예전 작업엔 없다
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
         draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
-        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft))
+        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft),
+                                  facts=facts)
         job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
@@ -60,7 +80,7 @@ def step_script(job: Job, sv: Services) -> str:
     recent = [t for j in Job.all() if j.id != job.id and j.data.get("channel") == sv.channel.id
               and (t := (j.doc("script.json") or {}).get("title"))][-15:]
     # 예전 job.json엔 brief가 없다
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent)
+    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), recent, facts=facts)
     job.put("script.json", s.flat())
     job.update(usage=usage)
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
@@ -157,7 +177,7 @@ def step_render(job: Job, sv: Services) -> str:
     return "ffmpeg"
 
 
-RUN = {"script": step_script, "footage": step_footage, "voice": step_voice,
+RUN = {"research": step_research, "script": step_script, "footage": step_footage, "voice": step_voice,
        "subtitles": step_subtitles, "thumbnail": step_thumbnail, "render": step_render}
 
 
@@ -195,6 +215,28 @@ def run(job: Job, sv: Services) -> None:
     run_steps(job, STEPS, LABELS, {k: lambda rec, f=f: f(rec, sv) for k, f in RUN.items()}, "완성")
 
 
+MAX_DESC = 5000   # YouTube 설명란 한도(UTF-8 바이트)
+
+
+def description(job: Job, ch: Channel) -> str:
+    """올릴 설명란: LLM 설명 / 출처 머리말 + 대본이 쓴 사실의 URL(등장 순) / footer. 업로드와 검수 화면이 같이 쓴다.
+    넘치면 URL을 뒤에서부터 뺀다. 어댑터가 뒤를 자르면 footer(AI 표시)가 잘리기 때문이다."""
+    s = job.doc("script.json")
+    urls = {f["id"]: f["url"] for f in (job.doc("facts.json") or {}).get("facts", [])}
+    used = list(dict.fromkeys(urls[i] for ids in s.get("fact_ids") or [] for i in ids if i in urls))
+    head, foot = ch.publish.sources_heading, ch.publish.footer
+
+    def join(xs: list[str]) -> str:
+        src = "\n".join([head, *xs]) if head and xs else ""
+        return "\n\n".join(x for x in (s["description"].rstrip(), src, foot) if x)
+
+    out = join(used)
+    while len(out.encode()) > MAX_DESC and used:
+        used.pop()
+        out = join(used)
+    return out   # 그래도 넘으면 어댑터가 자른다
+
+
 def publish(job: Job, sv: Services) -> None:
     """완성 영상을 채널 업로드 공급자로 비공개로 올린다. 실패하면 failed로 남겨 다시 올릴 수 있게 한다.
     대체 경로(스튜디오 화면 등)는 공급자 안에서 고른다."""
@@ -202,9 +244,7 @@ def publish(job: Job, sv: Services) -> None:
     job.update(upload=upload_state("running"))
     job.log(f"{p.label} 업로드 시작")
     s = job.doc("script.json")
-    meta = {k: s[k] for k in ("title", "description", "tags")}
-    if foot := sv.channel.publish.footer:   # 스튜디오 대체 업로드도 같은 meta를 쓴다
-        meta["description"] = f"{meta['description'].rstrip()}\n\n{foot}"
+    meta = {k: s[k] for k in ("title", "description", "tags")} | {"description": description(job, sv.channel)}
     try:
         video_id = p.upload(job.dir / "final.mp4", meta, job.log)
     except BaseException as e:   # Ctrl+C도 실패로 남긴다

@@ -1,17 +1,17 @@
 # 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
 name = "40초 상식"
-description = "생활에 바로 써먹는 상식을 40초 안에 알려 드려요."
+description = "생활 속 \"왜 그렇지?\"에 근거를 갖고 2분 안에 답해 드려요. 영상에 쓴 자료는 설명란에 적어 둡니다."
 concept = "사람들에게 실제로 도움이 되는 상식"
 language = "ko"
-daily_goal = 3
+daily_goal = 1
 sensitive_gate = true
 llm = "claude"
 
 [script]
-scenes = 7
-sentence = [62, 68]   # 미스터킴 기준 초당 약 8.8자: 한 문장이 클립 8초를 거의 다 채운다
+scenes = 13
+sentence = [52, 58]   # 크리스 기준 초당 약 7.1자: 한 장면이 7.3~8.2초, 13장면이 약 99~110초
 unit = "chars"
-duration = "52~56초"
+duration = "100~110초"
 
 [tts]
 provider = "elevenlabs"
@@ -27,7 +27,7 @@ elevenlabs = "미스터최"
 
 [video]
 provider = "flow-auto"
-style = "Stylized 3D animated explainer, clean CGI visualization like an architecture documentary, smooth matte materials, soft even daylight, warm muted colors, same art style in every shot."
+style = "Stylized 3D animated explainer. Smooth matte materials, simple rounded shapes, one clear subject large in frame, limited palette of deep teal, cream, coral and mustard yellow, clean uncluttered sets, no readable text anywhere, signs and screens plain and blank."
 
 [style]
 accent = "#FFE500"
@@ -41,9 +41,18 @@ max_total = 22
 [publish]
 provider = "youtube"
 category = "22"
+sources_heading = "출처"
+
+[research]
+domains = ["kdca.go.kr", "health.kdca.go.kr", "mfds.go.kr", "korean.go.kr", "encykorea.aks.ac.kr", "khs.go.kr",
+           "scent.kisti.re.kr", "kasi.re.kr", "weather.go.kr", "kostat.go.kr", "mods.go.kr",
+           "pubmed.ncbi.nlm.nih.gov", "nih.gov", "nasa.gov", "noaa.gov", "who.int"]
+news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
+        "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
+        "bbc.com", "nature.com", "science.org", "nationalgeographic.com"]
 
 [trends]
 region = "KR"
 keywords = []
-production = "Claude가 쓴 한국어 대본을 TTS가 읽고 번인 자막이 뜬다. 40~50초. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(건축·과학 해설 채널 느낌). 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다."
+production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 45초(100~110초), 13장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(건축·과학 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제는 못 만든다."
 weights = { trend = 35, fit = 35, fresh = 15, safe = 15 }

@@ -43,7 +43,7 @@ STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "d
 TSTATUS = STATUS | {"running": "분석 중", "done": "완료"}
 STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed": "실패"}
 # 상세 화면 단계 묶음: 대본·음성·자막을 확정해야 영상으로 넘어간다
-PHASES = (("대본", ("script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
+PHASES = (("대본", ("research", "script", "voice", "subtitles")), ("영상", ("footage",)), ("썸네일", ("thumbnail",)),
           ("완성", ("render",)))
 # 스케줄 회차 배지(글, 색)
 RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
@@ -206,8 +206,8 @@ def cue_ts(sec: float) -> str:
 
 
 def job_cost(j: dict) -> float | None:
-    """대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
-    costs = [u["cost_usd"] for u in (j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
+    """자료 조사 + 대본 + 썸네일 + 한국어 뜻 Claude 비용. 모두 모르면 None."""
+    costs = [u["cost_usd"] for u in (j.get("research_usage"), j["usage"], j.get("thumb_usage"), j.get("ko_usage"))
              if u and u["cost_usd"] is not None]
     return round(sum(costs), 4) if costs else None
 
@@ -371,6 +371,9 @@ def _checks(cid: str) -> list[tuple[str, str, str]]:
     on = [n.label for n in registry.NOTIFIERS.values() if n.ready()]
     return checks + [
         ("ok" if sv.tts.ready() else "bad", f"음성 · {sv.tts.label}", sv.tts.hint),
+        ("ok" if sv.research.ready() else "bad", f"조사 · {sv.research.label}", sv.research.hint)
+        if sv.channel.research.domains or sv.channel.research.news
+        else ("bad", f"조사 · {sv.research.label}", "channel.toml [research] domains에 허용 사이트를 넣어 주세요"),
         ("ok" if pub.ready() else "warn", f"{pub.label} 업로드", pub.hint),
         ("ok", "YouTube Data API 키", "주제 찾기에서 인기 쇼츠를 모아요") if trends.ready()
         else ("warn", "YouTube Data API 키", "선택 · 주제 찾기용 · .env에 YOUTUBE_API_KEY"),
@@ -456,7 +459,11 @@ def job_page(request: Request, job_id: str):
     job = _load(Job, job_id)
     ch = _channel(job.data.get("channel"))
     s, thumb, ko, cues = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json"), job.doc("cues.json")
+    facts = (job.doc("facts.json") or {}).get("facts", [])
     return _page(request, "job.html", {
+        # 조사 없이 만든 예전 작업은 근거 검사를 하지 않는다(모든 숫자 문장이 걸린다)
+        "facts": facts, "unverified": script.unverified(s, facts) if s and facts else [],
+        "desc": pipeline.description(job, ch) if s else "",
         "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
         "script": s, "clips": job.doc("clips.json"),
         "cues": cues, "has_thumb": (job.dir / "thumbnail.jpg").exists(),
@@ -570,7 +577,7 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
         shots = [_clean(x) for x in prompts]
         if len(shots) != len(lines) or not all(shots) or any(len(x) > 1000 for x in shots):
             raise HTTPException(400, "장면 프롬프트는 장면 수만큼, 비우지 않고 1000자 안으로 적어 주세요")
-        files["script.json"]["prompts"] = shots
+        files["script.json"] |= {"prompts": shots, "prompts_ko": script.keep_ko(old, shots)}
     fields, steps = {"voice": voice}, set()
     if lines != old["sentences"] or voice != was:
         steps |= {"voice", "subtitles", "render"}
@@ -779,6 +786,8 @@ def _run_view(run: dict) -> dict:
                 return view | {"label": "올리는 중", "cls": "b-running"}
             if up == "failed":
                 return view | {"label": "업로드 실패", "cls": "b-failed"}
+            if in_review(d):
+                return view | {"label": "대본 확인", "cls": "b-waiting"}
             sc = job.doc("script.json") if st == "waiting" else None
             if sc and sc.get("sensitive") and not d.get("confirmed"):
                 return view | {"label": "확인 필요", "cls": "b-waiting"}

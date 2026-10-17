@@ -44,7 +44,7 @@ def two_channels(tmp_path, monkeypatch):
     head, voices = toml.split("[tts.voices]")
     head = head.replace('name = "40초 상식"', 'name = "Space Facts"').replace('language = "ko"', 'language = "en"')
     head = re.sub(r'(?m)^default = ".*"', 'default = "enVoice1"', head)
-    head = head.replace("daily_goal = 3", "daily_goal = 2")
+    head = head.replace("daily_goal = 1", "daily_goal = 2")
     voices = '\nenVoice1 = "Adam"\n\n[video]' + voices.split("[video]", 1)[1]
     (en / "channel.toml").write_text(head + "[tts.voices]" + voices, encoding="utf-8")
     monkeypatch.setattr(config, "CHANNELS_DIR", root)
@@ -91,9 +91,27 @@ def test_job_page_api_and_retry_rules():
     html = client.get(f"/jobs/{job.id}").text
     assert "#커피상식 #카페" in html and "final.mp4?v=2026-10-13" in html and "그라데이션 배경" in html
     d = client.get(f"/api/jobs/{job.id}").json()
-    assert d["sig"] == "done:dddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
+    assert d["sig"] == "done:ddddddd:0:-" and d["say"] == "완성" and d["log"][-1].endswith("완성")
     assert client.post(f"/api/jobs/{job.id}/retry").status_code == 409
     assert client.get("/jobs/..%2Fetc").status_code == 404 and client.get("/api/jobs/nope").status_code == 404
+
+
+def test_job_page_shows_facts_refs_unverified_and_description_preview():
+    job = done_job()
+    job.edit("script.json", lambda s: s | {"sentences": ["물은 100도", "2배 비싸다"], "fact_ids": [["F1"], []],
+                                           "prompts_ko": ["끓는 냄비", "가격 비교"]})
+    job.put("facts.json", {"facts": [
+        {"id": "F1", "text": "물은 100도에서 끓는다", "url": "https://a.go.kr/1", "title": "", "site": "a.go.kr",
+         "kind": "official", "retrieved_at": "2026-10-16T09:00:00+09:00"},
+        {"id": "F2", "text": "값이 올랐다", "url": "https://news.kr/2", "title": "", "site": "news.kr",
+         "kind": "news", "retrieved_at": "2026-10-16T09:00:00+09:00"}]})
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'id="fact-F1"' in html and "물은 100도에서 끓는다" in html and "2026-10-16 확인" in html
+    assert 'class="chip chip-news">보도<' in html and 'href="#fact-F1">F1<' in html
+    assert "근거 없는 문장 1개" in html and "2번 문장" in html and 'class="unv"' in html
+    assert "설명란 미리보기" in html and '<pre class="desc-preview">설명\n\n출처\nhttps://a.go.kr/1</pre>' in html
+    job.update(status="waiting", review=True)   # 확정 전: 영어 프롬프트 아래 한국어 한 줄
+    assert '<p class="prompt-ko" lang="ko">끓는 냄비</p>' in client.get(f"/jobs/{job.id}").text
 
 
 def test_lifespan_migrates_legacy_folder(tmp_path, monkeypatch):
@@ -233,6 +251,7 @@ def test_sensitive_banner_and_confirm(monkeypatch):
 
 def test_review_edit_saves_and_confirm_starts(monkeypatch):
     job = scene_job()
+    job.put("script.json", job.doc("script.json") | {"prompts_ko": ["가", "나"]})
     job.update(review=True)
     html = client.get(f"/jobs/{job.id}").text
     assert "대본·음성·자막을 확인해 주세요" in html and "대본 확인" in html and "대본을 확정하면 시작해요" in html
@@ -247,6 +266,7 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     assert client.post(url, data=form).status_code == 200
     s, d = job.doc("script.json"), job.data
     assert s["sentences"] == ["하나", "셋"] and s["prompts"] == ["p1", "p3"] and d["voice"] == "elevenlabs"
+    assert s["prompts_ko"] == ["가", ""]   # 바꾼 프롬프트의 한국어 풀이는 낡아서 비운다
     assert d["status"] == "queued" and d["steps"]["voice"]["status"] == "pending"   # 음성·자막만 다시
     assert d["steps"]["render"]["status"] == "pending" and web.q._q.get_nowait() == ("run", job.id)
     job.update(status="waiting")
@@ -284,6 +304,8 @@ def test_checks_list_providers():
     labels = [c[1] for c in web._checks(CH)]
     assert labels[0] == "Claude API 키" and "영상 · Google Flow(자동) (이 채널)" in labels
     assert "음성 · ElevenLabs" in labels
+    research = next(c for c in web._checks(CH) if c[1] == "조사 · Claude 조사")
+    assert "[research] domains" not in research[2]   # 채널에 허용 사이트가 있다
     assert "YouTube 업로드" in labels and labels == [c[1] for c in web._checks("all")]   # 전체는 첫 채널
     html = client.get("/").text   # 대시보드 카드가 아니라 상단바의 점 하나 + 펼침
     assert 'popovertarget="env-pop"' in html and "Claude API 키" in html and 'id="h-env"' not in html
@@ -420,11 +442,11 @@ def test_channel_cookie_selects_and_filters(two_channels):
     html = client.get("/").text   # 쿠키가 없으면 첫 채널(이름순)
     assert "커피" not in html and "Mars" in html and "<small> / 2</small>" in html
     r = client.get(f"/?channel={CH}")
-    assert r.cookies.get("sp_channel") == CH and "Mars" not in r.text and "<small> / 3</small>" in r.text
+    assert r.cookies.get("sp_channel") == CH and "Mars" not in r.text and "<small> / 1</small>" in r.text
     html = client.get("/").text   # 쿠키로 기억한다
     assert "커피" in html and "Mars" not in html
     html = client.get("/?channel=all").text   # 전체: 둘 다, 채널 이름 배지, 목표는 합
-    assert "커피" in html and "Mars" in html and 'b-ch">Space Facts' in html and "<small> / 5</small>" in html
+    assert "커피" in html and "Mars" in html and 'b-ch">Space Facts' in html and "<small> / 3</small>" in html
     assert client.get("/?channel=nope").status_code == 404
     assert client.cookies.get("sp_channel") == "all"   # 모르는 채널은 쿠키를 바꾸지 않는다
 
@@ -481,3 +503,10 @@ def test_translate_saves_ko_shows_it_and_marks_stale(two_channels, monkeypatch):
     assert "(하나 뜻)" not in client.get(f"/jobs/{job.id}").text
     job.edit("script.json", lambda s: s | {"title": "new"})
     assert "바뀌었어요" in client.get(f"/jobs/{job.id}").text
+
+
+def test_job_cost_adds_research_and_page_shows_step():
+    job = done_job()
+    job.update(research_usage={"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.05})
+    assert web.job_cost(job.data) == 0.06
+    assert "자료 조사" in client.get(f"/jobs/{job.id}").text

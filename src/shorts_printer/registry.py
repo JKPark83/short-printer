@@ -5,6 +5,7 @@ from functools import cache
 
 from . import config
 from .adapters.claude import Claude
+from .adapters.claude_research import ClaudeResearch
 from .adapters.discord import Discord
 from .adapters.elevenlabs import ElevenLabs
 from .adapters.flow import Flow
@@ -25,11 +26,13 @@ from .infra.worker import LocalQueue
 from .ports.llm import LLM
 from .ports.notifier import Notifier
 from .ports.publisher import Publisher
+from .ports.research import Researcher
 from .ports.splitter import Splitter
 from .ports.tts import TTS
 from .ports.video import VideoProvider
 
 LLMS: dict[str, LLM] = {"claude": Claude()}
+RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto()}
 FALLBACK_VIDEO = "flow"   # 고른 공급자를 쓸 수 없을 때(사람이 올린다)
@@ -71,7 +74,8 @@ def splitter(language: str) -> Splitter:
 def services(channel_id: str) -> Services:
     ch = channel.load(channel_id)
     return Services(channel=ch, llm=_pick(LLMS, ch.llm, "LLM"), tts=_pick(TTSES, ch.tts.provider, "음성 공급자"),
-                    video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language))
+                    video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language),
+                    research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"))
 
 
 def publisher(ch: Channel) -> Publisher:

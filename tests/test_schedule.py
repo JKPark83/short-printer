@@ -161,6 +161,7 @@ def test_after_trend_picks_first_unmade_topic(q, sent):
     job = Job.load(run["job"]).data
     assert run["topic"] == job["topic"] == "우유" and job["status"] == "queued"
     assert job["source"] == {"trend": t.id, "pick": 1, "schedule": s.id} and "우유 각도" in job["brief"]
+    assert job["review"] is True
     Job.create(CH, "우유", "v")
     t2 = trend_done(s, ["커피", "우유"])
     schedule.after_trend(Trend.load(t2.id), q, sent.append)
@@ -205,16 +206,27 @@ def test_after_job_uploads_and_notifies(q, sent):
     assert "제작 실패(음성): ElevenLabs 401" in sent[-1] and len(sent) == 3
 
 
-def test_after_job_sensitive_wait_only(q, sent):
+def test_after_job_review_wait_once(q, sent):
     s = make()
     job = Job.load(schedule.fire(s, q, sent.append, at(FRI, "09:00"))["job"])
+    assert job.data["review"] is True   # 스케줄 작업도 사람이 검수한다
     job.put("script.json", {"title": "약 먹는 법", "sensitive": "건강"})
     job.update(status="waiting")
     schedule.after_job(job, "run", q, sent.append)
-    assert sent[-1].startswith("[확인 필요]") and "민감 분야(건강)" in sent[-1]
+    assert len(sent) == 1 and sent[-1].startswith("[검수 필요] 40초 상식 · 아침 상식")   # 민감 대기와 겹쳐도 하나
+    assert "민감 분야(건강)" in sent[-1] and f"{config.URL}/jobs/{job.id}" in sent[-1]
     job.update(confirmed=True)   # 확인 뒤 클립 대기는 알리지 않는다
     schedule.after_job(job, "run", q, sent.append)
     assert len(sent) == 1
+
+
+def test_after_job_sensitive_wait_without_review(q, sent):
+    s = make()
+    job = Job.load(schedule.fire(s, q, sent.append, at(FRI, "09:00"))["job"])
+    job.put("script.json", {"title": "약 먹는 법", "sensitive": "건강"})
+    job.update(status="waiting", review=False)   # 검수 도입 전에 만든 작업
+    schedule.after_job(job, "run", q, sent.append)
+    assert sent[-1].startswith("[확인 필요]") and "민감 분야(건강)" in sent[-1]
 
 
 def test_manual_job_is_left_alone(q, sent):
