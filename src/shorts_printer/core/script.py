@@ -195,8 +195,21 @@ def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int,
     if facts:
         text += "\n\n" + sheet_block(facts)
     name = "script_proofread_ko" if ch.language == "ko" else "script_proofread"
-    return llm.ask(prompts.render(name, lang=ch.lang_name, limit=limit), text, Verdict,
-                   refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
+    verdict, usage = llm.ask(prompts.render(name, lang=ch.lang_name, limit=limit), text, Verdict,
+                             refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
+    if long := too_long(ch, s["sentences"]):
+        verdict = Verdict(passed=False, issues=verdict.issues + long)
+    return verdict, usage
+
+
+def too_long(ch: Channel, sentences: Sequence[str]) -> list[Issue]:
+    """한 장면 최대 길이를 넘는 장면. 모델은 글자 수를 세지 못해 지시문만으론 넘치므로 코드가 재서 검수 지적으로 넘긴다.
+    짧은 장면은 클립 안에 끝나니 넘긴다."""
+    hi, u = ch.script.sentence[1], UNITS[ch.script.unit]
+    size = len if ch.script.unit == "chars" else (lambda t: len(t.split()))
+    return [Issue(scene=i, problem=f"{n}{u}라 한 장면 {hi}{u}를 넘어 장면 클립보다 길게 읽힘",
+                  fix=f"뜻과 고정 멘트는 그대로 두고 군더더기를 덜어 {hi}{u} 안으로 줄인 문장")
+            for i, t in enumerate(sentences, 1) if (n := size(t)) > hi]
 
 
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: Sequence[str] = (),
