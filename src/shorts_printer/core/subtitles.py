@@ -51,10 +51,18 @@ def _parts(text: str, splitter: Splitter, limit: int) -> list[str]:
     return [p for t in SENTENCE_END.split(text) if t.strip() for p in splitter.chunks(t, limit)]
 
 
-def cues(timing: list[dict], splitter: Splitter, limit: int) -> list[dict]:
+def _bare(text: str) -> str:
+    return "".join(text.split())
+
+
+def cues(timing: list[dict], splitter: Splitter, limit: int, hand: list[list[str]] | None = None) -> list[dict]:
+    """hand: 문장마다 손으로 고친 자막 줄. 그 문장과 글자가 같으면 나누기 대신 그 줄로 시각을 나눈다
+    (나중에 문장을 고쳐 안 맞는 예전 줄은 버린다)."""
     out = []
-    for s in timing:
+    for i, s in enumerate(timing):
         parts = _parts(s["text"], splitter, limit)
+        if hand and i < len(hand) and _bare("".join(hand[i])) == _bare(s["text"]):
+            parts = hand[i]
         if not parts:
             continue
         if words := s.get("words"):
@@ -69,17 +77,25 @@ def cues(timing: list[dict], splitter: Splitter, limit: int) -> list[dict]:
     return out
 
 
-def sentences(lines: list[str], texts: list[str], splitter: Splitter, limit: int) -> list[str]:
-    """손으로 고친 자막 줄 → 문장. 자막이 처음 나뉜 그대로인 문장은 원문을 두고, 줄이 바뀐 문장만 그 줄들을 이어
-    다시 짓는다(음성은 문장으로 만들므로 고친 자막대로 다시 읽게). 문장마다 줄 수는 같은 나누기로 다시 센다."""
+def groups(lines: list[str], texts: list[str], splitter: Splitter, limit: int) -> list[list[str]]:
+    """손으로 고친 자막 줄을 문장마다 묶는다. 문장마다 줄 수는 처음 나눈 그대로라 같은 나누기로 다시 센다."""
     out, k = [], 0
     for line in lines:
-        auto = _parts(line, splitter, limit)
-        mine, k = texts[k:k + len(auto)], k + len(auto)
-        sep = " " if " " in line else ""   # ponytail: 띄어쓰기 없는 문장(일본어)은 붙여 잇는다. 언어 규칙이 더 필요하면 Splitter에 join을
-        out.append(line if mine == auto else sep.join(mine))
+        n = len(_parts(line, splitter, limit))
+        out.append(texts[k:k + n])
+        k += n
     if k != len(texts):
         raise RuntimeError("자막 줄 수가 대본과 달라요. 새로고침한 뒤 다시 고쳐 주세요")
+    return out
+
+
+def sentences(lines: list[str], hand: list[list[str]], splitter: Splitter, limit: int) -> list[str]:
+    """문장마다 묶은 자막 줄 → 문장. 처음 나뉜 그대로인 문장은 원문을 두고, 줄이 바뀐 문장만 그 줄들을 이어
+    다시 짓는다(음성은 문장으로 만들므로 고친 자막대로 다시 읽게)."""
+    out = []
+    for line, mine in zip(lines, hand, strict=True):
+        sep = " " if " " in line else ""   # ponytail: 띄어쓰기 없는 문장(일본어)은 붙여 잇는다. 언어 규칙이 더 필요하면 Splitter에 join을
+        out.append(line if mine == _parts(line, splitter, limit) else sep.join(mine))
     return out
 
 

@@ -330,6 +330,7 @@
           </p>
           <p class="muted">비공개로 올라갔어요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
           {% if up.note %}<p class="err">{{ up.note }}</p>{% endif %}
+          {% if publisher.ready() %}<button class="btn btn-secondary" type="button" data-upload data-again data-ask="지금 영상을 {{ publisher.label }}에 새로 올릴까요?&#10;지금 올라가 있는 영상은 지워지지 않아요. 필요 없으면 스튜디오에서 지우세요.">{{ icon('rotate') }}다시 올리기</button>{% endif %}
           {% else %}
           {% if job.uploaded_before %}<p class="muted">예전에 올린 영상 <a class="mono" href="https://youtu.be/{{ job.uploaded_before.video_id }}" target="_blank" rel="noopener">youtu.be/{{ job.uploaded_before.video_id }}</a>은 YouTube에 그대로 있어요. 고친 영상을 올린 뒤 필요 없으면 스튜디오에서 지우세요.</p>{% endif %}
           {% if up.status == 'failed' %}<p class="err">{{ up.error }}</p>{% endif %}

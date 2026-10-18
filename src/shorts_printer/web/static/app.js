@@ -261,9 +261,10 @@ document.addEventListener('click', async e => {
   }
   const up = e.target.closest('[data-upload]');
   if (up) {
+    if (up.dataset.ask && !confirm(up.dataset.ask)) return;
     up.disabled = true;
     try {
-      const r = await fetch(`${api}/upload`, { method: 'POST' });
+      const r = await fetch(`${api}/upload${'again' in up.dataset ? '?again=true' : ''}`, { method: 'POST' });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'YouTube에 올리지 못했어요');
       toast('YouTube에 올리기 시작했어요');
       await tick(true);

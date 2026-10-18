@@ -36,14 +36,17 @@ class LocalQueue:
         self._q.put(("run", job_id))
         return True
 
-    def enqueue_upload(self, job_id: str) -> bool:
-        """완성된 작업만, 올리는 중이거나 이미 올린 작업은 빼고 넣는다."""
+    def enqueue_upload(self, job_id: str, again: bool = False) -> bool:
+        """완성된 작업만, 올리는 중이거나 이미 올린 작업은 빼고 넣는다.
+        again이면 이미 올린 작업도 새 영상으로 다시 올린다(예전 기록은 uploaded_before, 영상은 YouTube에 남는다)."""
         with self.lock:
             job = pipeline.Job.load(job_id)
             data = job.data
-            if data["status"] != "done" or (data.get("upload") or {}).get("status") in ("queued", "running", "done"):
+            up = data.get("upload") or {}
+            if data["status"] != "done" or up.get("status") in ("queued", "running") \
+                    or (up.get("status") == "done" and not again):
                 return False
-            job.update(upload=upload_state("queued"))
+            job.update(upload=upload_state("queued"), **({"uploaded_before": up} if up.get("status") == "done" else {}))
         self._q.put(("upload", job_id))
         return True
 

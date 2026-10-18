@@ -32,7 +32,7 @@ style = "Polished stylized 3D animated explainer with feature-animation quality.
 [style]
 accent = "#FFE500"
 background = ["#0f172a", "#14532d"]
-layout = "clean"   # 영상은 띠·제목 없이 9:16 전체 + 자막, 썸네일만 위아래 띠 + 제목
+layout = "clean"   # 영상은 띠 없이 9:16 전체 + 자막, 제목은 처음 1초만. 썸네일은 위아래 띠 + 제목
 
 [thumbnail]
 max_line = 12

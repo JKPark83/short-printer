@@ -182,6 +182,12 @@ def test_upload_endpoint_rules(monkeypatch):
     job.update(upload=upload_state("done", video_id="VID"))
     assert client.post(f"/api/jobs/{job.id}/upload").json()["detail"] == "이미 올렸어요"
     assert "studio.youtube.com/video/VID/edit" in client.get(f"/jobs/{job.id}").text
+    # 다시 올리기: 새 영상으로 올리고 예전 기록은 uploaded_before에 남긴다
+    assert "data-again" in client.get(f"/jobs/{job.id}").text
+    assert client.post(f"/api/jobs/{job.id}/upload?again=true").json() == {"ok": True}
+    assert web.q._q.get_nowait() == ("upload", job.id)
+    d = job.data
+    assert d["upload"]["status"] == "queued" and d["uploaded_before"]["video_id"] == "VID"
 
 
 def test_recover_fails_interrupted_upload(monkeypatch):
@@ -369,6 +375,28 @@ def test_script_edit_direct_and_revise():
     d = job.data
     assert d["upload"] is None and d["uploaded_before"]["video_id"] == "old"
     assert web.q._q.get_nowait() == ("run", job.id)
+
+
+def test_edit_subtitle_line_breaks_redoes_voice_and_keeps_them():
+    job = scene_job("done", STEPS)
+    job.put("script.json", job.doc("script.json") | {"sentences": ["가나다. 라마 바사", "둘"]})
+    job.put("timing.json", [{"text": "가나다. 라마 바사", "start": 0, "end": 2}, {"text": "둘", "start": 2, "end": 3}])
+    job.put("cues.json", [{"start": 0, "end": 1, "text": "가나다."}, {"start": 1, "end": 2, "text": "라마 바사"},
+                          {"start": 2, "end": 3, "text": "둘"}])
+    form = {"title": "t", "description": "d", "tags": "", "sentences": ["가나다. 라마 바사", "둘"]}
+    # 낱말은 그대로 줄만 옮겨도 음성부터 다시 하고, 고친 줄은 자막 단계가 쓰게 남긴다
+    r = client.post(f"/api/jobs/{job.id}/edit", data=form | {"cues": ["가나다. 라마", "바사", "둘"]}).json()
+    assert r["msg"] == "저장했어요. 음성·자막·렌더를 다시 해요"
+    assert job.data["cue_hand"] == [["가나다. 라마", "바사"], ["둘"]]
+    assert job.doc("script.json")["sentences"] == ["가나다. 라마 바사", "둘"]
+    assert [s for s in STEPS if job.data["steps"][s]["status"] == "pending"] == ["voice", "subtitles", "render"]
+    web.q._q.get_nowait()
+    # 대본 확정 전에도 음성은 다시 녹음한다(렌더만 확정 뒤로 미룬다)
+    job.update(status="waiting", review=True)
+    r = client.post(f"/api/jobs/{job.id}/edit", data=form | {"cues": ["가나다. 라", "마 바사", "둘"]}).json()
+    assert r["msg"] == "저장했어요. 음성·자막를 다시 해요"
+    assert job.data["cue_hand"] == [["가나다. 라", "마 바사"], ["둘"]]
+    web.q._q.get_nowait()
 
 
 def test_edit_checks_only_changed_sentences_against_channel_length():

@@ -1,7 +1,9 @@
 """주제 찾기: 채널 기본 추천 기준(prompts/trend_idea.md + 채널 ideas.md·trends.md)으로 LLM이 웹을 찾아
 주제 IDEA_N개를 고른다. 사용자가 적은 추가 요청이 있으면 기본 기준에 더해 따른다.
 단계는 선정 하나. 작업(Job)과 같은 규칙으로 실패하면 다시 시도할 수 있다."""
+import re
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
 
@@ -19,6 +21,7 @@ STEPS = ("pick",)
 LABELS = {"pick": "선정"}
 IDEA_N = 10          # 추천 수
 MAX_REQUEST = 1000   # 추가 요청 최대 글자
+SAME = 0.6           # 띄어쓰기·문장부호를 뺀 글자 닮음 비율. 이 이상이면 말만 바꾼 같은 주제로 본다
 CRITERIA = {
     "fit": ("제작 적합도", "우리 제작 방식으로 만들 수 있나"),
     "fresh": ("차별화", "이미 만든 주제·흔한 영상과 겹치지 않고 새 각도가 있나"),
@@ -95,18 +98,30 @@ def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
     return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
 
 
+# ponytail: 앞서 나온 주제를 전부 지시문에 넣는다(채널마다 수백 줄). 수천 개가 되면 오래된 것을 줄여 넣는다
 def _made(cid: str) -> list[str]:
-    """이 채널에서 이미 만든 작업 주제 최근 30개(겹치지 않게 지시문에 넣는다)."""
-    return [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid][-30:]
+    """이 채널에서 이미 만든 작업 주제 전부(겹치지 않게 지시문에 넣는다)."""
+    return [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid]
 
 
 def _shown(t: Trend) -> list[str]:
-    """이 채널에서 앞서 추천했던 주제 최근 50개(새 것 먼저): 이어진 기록(avoid)뿐 아니라 지난 주제 찾기 전부.
+    """이 채널에서 한 번이라도 추천했던 주제 전부(새 것 먼저): 이어진 기록(avoid)뿐 아니라 지난 주제 찾기 전부.
     새로 시작한 주제 찾기도 지난 추천을 되풀이하지 않게."""
     cid = t.data["channel"]
     past = [p["topic"] for o in reversed(Trend.all()) if o.id != t.id and o.data.get("channel") == cid
             for p in (o.doc("picks.json") or {}).get("picks", [])]
-    return list(dict.fromkeys((t.data.get("avoid") or []) + past))[:50]
+    return list(dict.fromkeys((t.data.get("avoid") or []) + past))
+
+
+def _key(topic: str) -> str:
+    return re.sub(r"[\W_]+", "", topic)
+
+
+def _repeat(topic: str, seen: list[str]) -> bool:
+    """앞서 나온 주제를 말만 바꿔 다시 낸 것인지. LLM은 피하라고 해도 같은 물음을 자주 되풀이해 코드로 거른다.
+    ponytail: 글자 닮음만 본다(뜻이 같아도 말이 많이 다르면 못 거른다). 더 필요하면 LLM에 겹침 판정을 따로 묻는다."""
+    k = _key(topic)
+    return any(SequenceMatcher(None, k, _key(s)).ratio() >= SAME for s in seen)
 
 
 def _bullets(items: list[str]) -> str:
@@ -138,16 +153,23 @@ def _criteria(w: dict[str, int], keys) -> str:
 def step_pick(t: Trend, sv: Services) -> str:
     ch = sv.channel
     made, avoid, web = _made(ch.id), _shown(t), _web(ch)
-    text = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"
+    head = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"
             f"점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
-    if avoid:
-        text += "\n\n앞서 추천했지만 고르지 않은 주제:\n" + _bullets(avoid)
     t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
-    out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,
-                            refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 추가 요청을 바꿔 보세요.")
-    t.update(usage=add_usage(t.data["usage"], usage))
-    t.log(f"{usage['model']} 답: 주제 {len(out.picks)}개 → 점수 매기는 중")
-    picks = finish_ideas(out, ch.trends.weights)
+    kept, seen = [], made + avoid
+    for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다
+        text = head + ("\n\n앞서 추천한 주제:\n" + _bullets(avoid) if avoid else "")
+        out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,
+                                refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 추가 요청을 바꿔 보세요.")
+        t.update(usage=add_usage(t.data["usage"], usage))
+        t.log(f"{usage['model']} 답: 주제 {len(out.picks)}개 → 점수 매기는 중")
+        new = [p for p in out.picks if not _repeat(p.topic, seen)]
+        if dup := [p.topic for p in out.picks if p not in new]:
+            t.log(f"앞서 나온 주제와 겹쳐 {len(dup)}개를 뺐어요: {', '.join(dup)}")
+        kept, seen, avoid = kept + new, seen + [p.topic for p in out.picks], dup + avoid
+        if not dup or len(kept) >= IDEA_N // 2:
+            break
+    picks = finish_ideas(IdeasOut(summary=out.summary, picks=kept), ch.trends.weights)
     if not picks["picks"]:
         raise RuntimeError("추천 주제를 받지 못했어요. 다시 시도해 보세요.")
     t.put("picks.json", picks)

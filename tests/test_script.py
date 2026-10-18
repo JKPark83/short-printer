@@ -311,3 +311,12 @@ def test_proofread_shows_subtitle_cuts_and_lists_issues_with_source(tmp_path):
     script.proofread(llm, ch, s | {"sentences": ["今日は天気がいいですね。散歩に行きましょう。"]}, Japanese(), 10)
     assert "1. 今日は天気が / いいですね。 / 散歩に行きましょう。" in llm.calls[1]["text"]
     assert verdict.lines(s["sentences"]) == ["장면 2「二」: 번역투 → 三にする"]
+
+
+def test_proofread_flags_scenes_over_the_length_limit_even_when_the_model_passes(tmp_path):
+    ch = make_channel(tmp_path, language="ja", script={"sentence": [3, 5], "unit": "chars"})
+    s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一二三", "一二三四五六"]}
+    out, _ = script.proofread(FakeLLM(script.Verdict(passed=True)), ch, s, Japanese(), 10)
+    assert not out.passed and [(i.scene, "6자" in i.problem) for i in out.issues] == [(2, True)]
+    en = make_channel(tmp_path, script={"sentence": [1, 2], "unit": "words"})
+    assert [i.scene for i in script.too_long(en, ["one two", "one two three"])] == [2]

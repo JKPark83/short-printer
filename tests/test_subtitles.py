@@ -19,6 +19,15 @@ def test_cues_always_break_at_sentence_end():
     assert [c["text"] for c in cues([{"text": "3.5배 커요", "start": 0, "end": 1}], KO, 16)] == ["3.5배 커요"]
 
 
+def test_cues_keep_hand_line_breaks():
+    t = [{"text": "가나다 라마바사아자차카", "start": 1.0, "end": 4.0}]
+    out = cues(t, KO, 5, [["가나다 라마", "바사아자차카"]])
+    assert [c["text"] for c in out] == ["가나다 라마", "바사아자차카"] and out[-1]["end"] == 4.0
+    # 문장을 고쳐 글자가 안 맞는 예전 줄은 버리고 다시 나눈다
+    assert [c["text"] for c in cues(t, KO, 5, [["가나다", "라마"]])] == ["가나다", "라마바사아자차카"]
+    assert out[1]["start"] == 2.5   # 줄 길이 비율(6:6)대로
+
+
 def test_ts_and_escape():
     assert ts(61.25) == "0:01:01.25"
     assert ts(3725.5) == "1:02:05.50"
