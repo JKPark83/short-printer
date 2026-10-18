@@ -11,8 +11,7 @@ from . import subtitles
 from .channel import Channel
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
-THUMB_FLASH = 0.1   # 영상 맨 앞에 썸네일을 그대로 보이는 길이(초)
-THUMB_FADE = 0.4    # 그 뒤 썸네일이 영상으로 녹아 사라지는 길이(초)
+TITLE_HOLD, TITLE_FADE = 1.0, 0.5   # clean 배치 제목: 처음 이만큼 보이고(초) 이만큼 동안 사라진다
 XFADE = 0.5   # 장면 클립 사이 겹침(초). 8초마다 딱 끊기지 않게 경계를 가운데 두고 녹아든다
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 채널 강조색. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
@@ -31,14 +30,15 @@ class Layout(NamedTuple):
     h: int                   # 영상칸 높이
     title: tuple[int, int] | None   # 제목 (Alignment, MarginV). None이면 영상에 제목을 띄우지 않는다
     sub: int                 # 자막 윗줄(위 정렬 MarginV)
+    intro: bool = False      # 제목을 영상 내내가 아니라 처음에만 띄우고 사라지게
 
 
 # 화면 배치(channel.toml style.layout). full은 9:16 전체에 텔롭: 위아래 약 250px은 쇼츠 UI가 덮으므로
 # 제목은 위 UI 바로 아래에 위 정렬(가운데보다 위), 자막은 아래 제목·채널 이름 칸 위(1385~ 한 줄)
-# clean은 영상만 full에서 제목을 뺀 것: 세로 화면에서 영상이 덜 잘리게 하고, 훅 제목은 band 썸네일에만 둔다.
+# clean은 full에서 제목을 처음에만 띄우는 것: 피드 첫 화면에 훅을 보이고 곧 사라져 영상을 가리지 않는다.
 # 자막은 band(1465)보다 조금 아래. 더 내리면 쇼츠 아래 제목·채널 이름과 겹친다
 LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920, (8, 280), 1385),
-           "clean": Layout(0, 1920, None, 1510)}
+           "clean": Layout(0, 1920, (8, 280), 1510, True)}
 THUMB_LAYOUT = {"clean": "band"}   # 썸네일 배치가 영상과 다른 것
 GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
 # 목소리·장면 클립 소리(Flow가 만든 효과음) 크기는 채널 style.voice_lufs·sfx_lufs
@@ -63,7 +63,7 @@ def frames(starts: list[float], dur: float, n: int) -> list[int]:
 
 def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, splitter: Splitter,
            title: tuple[list[str], str] | None = None, starts: list[float] | None = None) -> float:
-    """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 영상 내내 띄운다. starts는 문장 시작 시각(장면 경계)."""
+    """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 띄운다(clean은 처음에만). starts는 문장 시작 시각(장면 경계)."""
     dur = round(voice_sec + TAIL, 2)
     lay = LAYOUTS[ch.style.layout]
     title = title if lay.title else None
@@ -99,21 +99,14 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
         chains.append(f"[0:v]crop=1080:{lay.h},format=yuv420p[bg]")
     n = len(clips) or 1
     if title:
-        caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter)
-    # 썸네일을 첫 THUMB_FLASH초(3프레임)에 그대로 얹고 THUMB_FADE초 동안 투명해지게 한다: 올린 뒤 유튜브 앱은 영상
-    # 프레임 중에서만 썸네일을 고르게 하므로 그 프레임을 고르면 된다. 뚝 끊기지 않고 영상으로 넘어간다
-    thumb = (job_dir / "thumbnail.jpg").exists()
-    tail = ["-loop", "1", "-framerate", "30", "-i", "thumbnail.jpg"] if thumb else []   # voice.wav 다음 입력(n+1)
+        caption_ass(job_dir / "title.ass", *title, 140, lay.title, ch, splitter, lay.intro)
     # 효과음을 더하면 겹치는 곳이 넘칠 수 있어 리미터로 막는다
     voice = VOICE.format(ch.style.voice_lufs) if ch.style.voice_lufs else ""
     voice_a = f"[{n}:a]{voice}apad" + ("[vo];[vo][fx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[a]"
                                        if fx else "[a]")
     frame = f"[bg]{FRAME_VF.format(y=lay.y)}," + ("ass=title.ass," if title else "") + "ass=subs.ass"
-    if thumb:
-        chains.append(f"[{n + 1}:v]format=yuva420p,fade=t=out:st={THUMB_FLASH}:d={THUMB_FADE}:alpha=1[th]")
-        frame += f"[f];[f][th]overlay=enable='lt(t,{THUMB_FLASH + THUMB_FADE})':shortest=1"
     chains += [frame + "[v]", voice_a]
-    ffmpeg.run([*args, "-i", "voice.wav", *tail, "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
+    ffmpeg.run([*args, "-i", "voice.wav", "-filter_complex", ";".join(chains), "-map", "[v]", "-map", "[a]",
                 "-t", dur, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
                 "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "final.tmp.mp4"], cwd=job_dir)
     os.replace(job_dir / "final.tmp.mp4", job_dir / "final.mp4")
@@ -122,8 +115,9 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
 
 
 def caption_ass(path: Path, lines: list[str], accent: str, max_size: int, pos: tuple[int, int], ch: Channel,
-                splitter: Splitter) -> None:
-    """굵은 흰 글씨 + 강조 낱말 강조색 ASS 한 장면. 가장 긴 줄이 화면 폭에 들어가게 크기를 줄인다."""
+                splitter: Splitter, intro: bool = False) -> None:
+    """굵은 흰 글씨 + 강조 낱말 강조색 ASS 한 장면. 가장 긴 줄이 화면 폭에 들어가게 크기를 줄인다.
+    intro면 처음 TITLE_HOLD초만 보이고 TITLE_FADE초 동안 사라진다."""
     # 가장 긴 줄이 868px 안팎이 되게 한다(폭은 언어마다 Splitter.width)
     size = min(max_size, int(868 / max(map(splitter.width, lines))))
     style = THUMB_STYLE.format(font=ch.font, size=size, align=pos[0], margin=pos[1])
@@ -132,7 +126,10 @@ def caption_ass(path: Path, lines: list[str], accent: str, max_size: int, pos: t
         a = subtitles.escape(accent)
         text = text.replace(a, f"{{\\c{ass_color(ch.style.accent)}}}{a}{{\\r}}", 1)
     head = re.sub(r"^Style: .*$", style, subtitles.header(ch.font), flags=re.M)
-    atomic_write_text(path, head + f"Dialogue: 0,0:00:00.00,9:59:59.00,Cap,,0,0,0,,{text}\n")
+    end, fad = ("9:59:59.00", "")
+    if intro:
+        end, fad = f"0:00:{TITLE_HOLD + TITLE_FADE:05.2f}", f"{{\\fad(0,{round(TITLE_FADE * 1000)})}}"
+    atomic_write_text(path, head + f"Dialogue: 0,0:00:00.00,{end},Cap,,0,0,0,,{fad}{text}\n")
 
 
 def thumbnail(job_dir: Path, lines: list[str], accent: str, position: str, ch: Channel, splitter: Splitter,

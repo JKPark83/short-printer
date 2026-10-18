@@ -561,17 +561,18 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
         texts = [_clean(c) for c in cues]
         if len(texts) != len(before) or not all(texts) or any(len(t) > 40 for t in texts):
             raise HTTPException(400, "자막은 줄 수 그대로, 비우지 않고 40자 안으로 적어 주세요")
-        # 자막 줄을 고치면 그 문장을 고친 줄대로 다시 짓고 음성부터 한다(목소리가 예전 문장을 읽지 않게)
-        sp = registry.splitter(ch.language)
-        try:
-            heard = subtitles.sentences(lines, texts, sp, ch.style.subtitle_limit or sp.limit)
-        except RuntimeError as e:
-            raise HTTPException(400, str(e)) from e
-        if heard != lines:
-            files["script.json"]["sentences"] = heard
+        # 자막 줄을 고치면 줄 나눔만 바꿔도 그 문장을 고친 줄대로 다시 짓고 음성부터 한다.
+        # 고친 줄은 cue_hand로 남겨 자막 단계가 다시 나누지 않고 그대로 쓴다
+        if texts != [c["text"] for c in before]:
+            sp = registry.splitter(ch.language)
+            limit = ch.style.subtitle_limit or sp.limit
+            try:
+                hand = subtitles.groups(lines, texts, sp, limit)
+            except RuntimeError as e:
+                raise HTTPException(400, str(e)) from e
+            files["script.json"]["sentences"] = subtitles.sentences(lines, hand, sp, limit)
+            fields["cue_hand"] = hand
             steps |= {"voice", "subtitles", "render"}
-        elif texts != [c["text"] for c in before]:   # 예전에 손으로만 고친 자막을 되돌렸다: 문장대로 다시 나눈다
-            steps |= {"subtitles", "render"}
     if thumb and (t := job.doc("thumb.json")):
         hand = [_clean(x) for x in thumb if x.strip()]
         # 문구에 없는 강조는 뺀다
@@ -629,12 +630,12 @@ def translate(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/upload")
-def upload(job_id: str):
+def upload(job_id: str, again: bool = False):
     job = _load(Job, job_id)
     pub = registry.publisher(_channel(job.data.get("channel")))
     if not pub.ready():
         raise HTTPException(400, f"{pub.label} 연결이 안 돼 있어요. {pub.hint}")
-    if not q.enqueue_upload(job_id):
+    if not q.enqueue_upload(job_id, again):
         data = job.data
         raise HTTPException(409, "완성된 영상만 올릴 수 있어요" if data["status"] != "done"
                             else "이미 올렸어요" if data["upload"]["status"] == "done" else "이미 올리는 중이에요")

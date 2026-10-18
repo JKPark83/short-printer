@@ -188,7 +188,7 @@ def test_again_avoids_shown_topics():
     assert (n.data["keyword"], n.data["avoid"]) == ("겨울", ["예전 주제", "정전기", "입김"]) and "mode" not in n.data
     llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))
     trends.run(n, sv(llm))
-    assert "앞서 추천했지만 고르지 않은 주제:\n- 예전 주제\n- 정전기\n- 입김" in llm.calls[0]["text"]
+    assert "앞서 추천한 주제:\n- 예전 주제\n- 정전기\n- 입김" in llm.calls[0]["text"]
 
 
 def test_fresh_run_avoids_topics_shown_in_earlier_runs():
@@ -200,4 +200,20 @@ def test_fresh_run_avoids_topics_shown_in_earlier_runs():
     llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))
     trends.run(t, sv(llm))
     text = llm.calls[0]["text"]
-    assert "앞서 추천했지만 고르지 않은 주제:\n- 단풍 색\n- 고구마 냉장고" in text and "다른 채널 주제" not in text
+    assert "앞서 추천한 주제:\n- 단풍 색\n- 고구마 냉장고" in text and "다른 채널 주제" not in text
+
+
+def test_pick_drops_repeats_of_earlier_topics_and_asks_again():
+    pipeline.Job.create(CH, "하품은 왜 옮을까?", "v")
+    old = new()
+    old.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "단풍은 왜 빨강과 노랑으로 갈릴까?"}]})
+    answers = iter([[idea("하품은 왜 옮을까"), idea("같은 나무인데 단풍은 왜 빨강과 노랑으로 갈릴까?"), idea("간은 잘라 내도 다시 자랄까?")],
+                    [idea("손톱은 왜 발톱보다 빨리 자랄까?"), idea("눈썹은 왜 머리카락만큼 안 자랄까?"), idea("간은 잘라 내도 다시 자랄까!")]])
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=next(answers)), USAGE))
+    t = new()
+    trends.run(t, sv(llm))
+    # 겹친 둘을 빼니 절반이 안 돼 다시 묻고, 그때는 뺀 주제도 알린다. 두 번째 답의 겹침(첫 답과 같은 것)도 뺀다
+    assert len(llm.calls) == 2 and "- 하품은 왜 옮을까\n" in llm.calls[1]["text"]
+    assert [p["topic"] for p in t.doc("picks.json")["picks"]] == ["간은 잘라 내도 다시 자랄까?", "손톱은 왜 발톱보다 빨리 자랄까?",
+                                                                 "눈썹은 왜 머리카락만큼 안 자랄까?"]
+    assert any("겹쳐 2개를 뺐어요" in m for m in logs(t))

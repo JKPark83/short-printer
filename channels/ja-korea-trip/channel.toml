@@ -34,7 +34,7 @@ provider = "flow-auto"
 style = "Stylized 3D animated miniature diorama: everything is a handmade tabletop scale model with soft clay and felt matte materials, seen up close with shallow depth of field, smooth continuous motion. Palette of cream, sage green, coral and warm wood. Signboards, packages and screens are plain and blank."
 
 [style]
-layout = "clean"   # 영상은 띠·제목 없이 9:16 전체 + 자막, 썸네일만 위아래 띠 + 제목
+layout = "clean"   # 영상은 띠 없이 9:16 전체 + 자막, 제목은 처음 1초만. 썸네일은 위아래 띠 + 제목
 accent = "#FFE14D"
 background = ["#0f172a", "#7f1d1d"]
 voice_lufs = -16   # 미나미 원본이 -33 LUFS로 작다

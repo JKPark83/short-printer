@@ -45,7 +45,7 @@
 | `[style]` `accent` / `background` | 강조색 `#RRGGBB` / 클립 없을 때 배경 그라데이션 두 색 |
 | `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본 |
 | `[style]` `voice_lufs` / `sfx_lufs` | 목소리를 맞출 크기(0이면 원본 그대로) / 장면 클립 효과음을 맞출 크기(그 뒤 70%). LUFS, 기본 0 / -21 |
-| `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(영상은 띠·제목 없이 9:16 전체에 자막만, 썸네일은 band) |
+| `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(띠 없이 9:16 전체, 제목은 처음 1초만 보이고 사라진다, 썸네일은 band) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |

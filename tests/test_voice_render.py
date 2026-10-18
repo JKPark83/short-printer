@@ -185,14 +185,16 @@ def test_render_full_layout_fills_screen(tmp_path, ch):
         assert max(top) > 64, name
 
 
-def test_render_clean_layout_no_title_band_thumbnail(tmp_path, ch):
+def test_render_clean_layout_intro_title_band_thumbnail(tmp_path, ch):
     clean = ch.model_copy(update={"style": ch.style.model_copy(update={"layout": "clean"})})
     _, timing = voice.synth(Fake(fake_speak), clean, ["하나"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), clean.font,
                         render.LAYOUTS["clean"].sub)
     clips = make_clips(tmp_path, 1)
     render.render(tmp_path, clips, timing[-1]["end"], clean, KO, (["커피 상식"], "상식"), [t["start"] for t in timing])
-    assert not (tmp_path / "title.ass").exists()   # 영상에는 제목이 없다
+    # 제목은 full 자리에 처음 1초 보이고 0.5초 동안 사라진다
+    title = (tmp_path / "title.ass").read_text()
+    assert ",8,80,80,280," in title and "0:00:00.00,0:00:01.50,Cap,,0,0,0,,{\\fad(0,500)}" in title
     render.thumbnail(tmp_path, ["커피"], "", "top", clean, KO, "clip0.mp4")
     assert ",2,80,80,1390," in (tmp_path / "thumb.ass").read_text()   # 썸네일은 band 제목 자리
 

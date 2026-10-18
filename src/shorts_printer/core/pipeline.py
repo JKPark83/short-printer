@@ -194,8 +194,8 @@ def step_voice(job: Job, sv: Services) -> str:
 
 
 def step_subtitles(job: Job, sv: Services) -> str:
-    cues = subtitles.cues(job.doc("timing.json"), sv.splitter,
-                          sv.channel.style.subtitle_limit or sv.splitter.limit)
+    cues = subtitles.cues(job.doc("timing.json"), sv.splitter,   # 손으로 고친 줄(cue_hand)은 그대로 쓴다
+                          sv.channel.style.subtitle_limit or sv.splitter.limit, job.data.get("cue_hand"))
     job.put("cues.json", cues)   # subs.ass는 렌더가 쓴다(상세 화면에서 고친 자막도 들어가게)
     return f"ASS {len(cues)}줄"
 
