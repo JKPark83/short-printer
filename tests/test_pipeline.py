@@ -100,6 +100,9 @@ def test_review_job_waits_for_confirmed_script(monkeypatch):
     job.update(confirmed=True)
     assert not pipeline.in_review(job.data)
     assert not pipeline.in_review(Job.create(CH, "주제", "v").data | {"status": "waiting"})   # 스케줄·CLI는 안 멈춘다
+    job.update(voice_ok=False)   # 초안 음성을 확정해 채널 TTS로 다시 읽었으면 음성 확정 전까지 영상을 만들지 않는다
+    pipeline.run(job, services())
+    assert job.data["status"] == "waiting" and pipeline.in_voice_review(job.data)
 
 
 def footage_only(monkeypatch):
@@ -202,6 +205,15 @@ def test_redo_steps():
     assert d["status"] == "queued" and d["steps"]["render"]["status"] == "pending"
     assert d["steps"]["thumbnail"]["status"] == "done"
     assert q._q.get_nowait() == ("run", job.id)
+
+
+def test_trend_queue_is_separate_from_jobs():
+    """주제 찾기는 따로 줄을 서서 영상 제작이 도는 동안에도 돈다."""
+    q = LocalQueue(lambda cid: pytest.fail("넣기만 하면 Services를 찾지 않는다"))
+    job, t = Job.create("ch", "주제", "v"), trends.Trend.create("ch")
+    assert q.enqueue(job.id) and q.enqueue_trend(t.id)
+    assert q._q.get_nowait() == ("run", job.id) and q._q.empty()
+    assert q._tq.get_nowait() == ("trend", t.id)
 
 
 def test_queue_resolves_services_by_job_channel(monkeypatch):
@@ -505,21 +517,3 @@ def test_old_job_without_proofread_step_is_filled_from_script(db):
     old["script"]["status"] = "done"
     db.edit("job", job.id, lambda d: d | {"steps": old})
     assert job.data["steps"]["proofread"]["status"] == "done"
-
-
-def test_voice_is_free_draft_until_confirmed(monkeypatch):
-    """확정 전엔 무료 초안 TTS로만 읽고, 확정 뒤에야 채널 TTS(유료)로 읽는다."""
-    job = scene_job("script")
-    job.update(review=True)
-    called = []
-    monkeypatch.setattr(pipeline.voice, "draft", lambda tts, *a: called.append("draft") or ("초안", []))
-    monkeypatch.setattr(pipeline.voice, "synth", lambda tts, *a: called.append("synth") or ("유료", []))
-    draft = SimpleNamespace(label="초안", ready=lambda: True)
-    sv = services(tts=SimpleNamespace(label="유료"), draft_tts=draft)
-    assert pipeline.step_voice(job, sv) == "초안" and job.data["voice_draft"] is True
-    job.update(confirmed=True)
-    assert pipeline.step_voice(job, sv) == "유료" and job.data["voice_draft"] is False
-    job.update(confirmed=False)
-    draft.ready = lambda: False   # macOS가 아니면 채널 TTS로
-    pipeline.step_voice(job, sv)
-    assert called == ["draft", "synth", "synth"]

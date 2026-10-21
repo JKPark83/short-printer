@@ -80,7 +80,7 @@ def test_tick_fires_list_in_order_and_records_missed(q, sent):
     assert run["result"] == "started" and run["topic"] == "커피" and d["topics"] == ["우유"]
     assert d["last_slot"] == at(FRI, "09:00").isoformat()
     job = Job.load(run["job"]).data
-    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "PDoCXqBQFGsvfO0hNkEs"
+    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "8QclKarwLctvzN2plke3"
     assert q._q.get_nowait() == ("run", run["job"])
     schedule.tick(q, sent.append, at(FRI, "09:01"))   # 같은 시각은 한 번만
     assert len(s.data["runs"]) == 1
@@ -180,7 +180,21 @@ def test_after_trend_picks_first_unmade_topic(q, sent):
     t2 = trend_done(s, ["커피", "우유"])
     schedule.after_trend(Trend.load(t2.id), q, sent.append)
     assert [j.data["source"] for j in Job.all() if (j.data["source"] or {}).get("trend") == t2.id][0]["pick"] == 0
-    assert not sent
+    assert sent[0] == (f"[주제 찾기 완료] {NAME} · 아침 상식\n1. 커피\n2. 우유\n→ 2번 주제로 영상을 만들어요\n"
+                       f"주제 찾기: {config.URL}/trends/{t.id}")
+
+
+def test_after_trend_notifies_manual_trend(q, sent):
+    t = Trend.create(CH)
+    t.put("picks.json", {"picks": [{"topic": "커피"}, {"topic": "우유"}]})
+    t.update(status="done")
+    schedule.after_trend(t, q, sent.append)
+    assert sent == [f"[주제 찾기 완료] {NAME} · 직접 찾은 주제\n1. 커피\n2. 우유\n"
+                    f"주제 찾기: {config.URL}/trends/{t.id}"]
+    assert not Job.all()
+    t.update(status="failed", error={"message": "요청 한도에 걸렸어요"})
+    schedule.after_trend(t, q, sent.append)
+    assert "주제 찾기 실패: 요청 한도에 걸렸어요" in sent[-1]
 
 
 def test_after_trend_failure_notifies(q, sent):
@@ -303,4 +317,4 @@ def test_retried_trend_restarts_run_and_interrupted_notifies(q, sent):
     job = Job.load(run["job"])
     job.update(status="interrupted")
     schedule.after_job(job, "run", q, sent.append)
-    assert "제작 중단: 서버가 꺼져 멈췄어요" in sent[-1] and len(sent) == 2
+    assert "제작 중단: 서버가 꺼져 멈췄어요" in sent[-1] and len(sent) == 3   # 실패·완료·중단

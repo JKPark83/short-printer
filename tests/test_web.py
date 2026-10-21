@@ -297,14 +297,40 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
 
 
 def test_confirm_redoes_draft_voice():
-    """초안 음성으로 확인했으면 확정할 때 음성·자막을 다시 해 채널 TTS로 한 번 읽는다."""
+    """초안 음성으로 확인했으면 확정할 때 음성·자막을 다시 해 채널 TTS로 한 번 읽고, 음성 확정에서 다시 멈춘다."""
     job = scene_job(done=("script", "voice", "subtitles"))
     job.update(review=True, voice_draft=True)
     assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True}
     d = job.data
-    assert d["confirmed"] is True and d["status"] == "queued" and web.q._q.get_nowait() == ("run", job.id)
+    assert d["confirmed"] is True and d["voice_ok"] is False
+    assert d["status"] == "queued" and web.q._q.get_nowait() == ("run", job.id)
     assert d["steps"]["voice"]["status"] == d["steps"]["subtitles"]["status"] == "pending"
 
+    steps = d["steps"] | {s: {"status": "done", "engine": "ElevenLabs", "sec": 1} for s in ("voice", "subtitles")}
+    job.update(status="waiting", steps=steps, voice_draft=False)   # 채널 TTS로 다 읽고 영상 소스 앞에서 멈춘 뒤
+    html = client.get(f"/jobs/{job.id}").text
+    assert "음성 확정하고 영상 만들기" in html and "음성 다시 만들기" in html
+    assert client.post(f"/api/jobs/{job.id}/voice/redo").json() == {"ok": True}   # 마음에 안 들면 다시 읽는다
+    assert web.q._q.get_nowait() == ("run", job.id) and job.data["steps"]["voice"]["status"] == "pending"
+    job.update(status="waiting", steps=steps)
+    assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True}
+    assert job.data["voice_ok"] is True and job.data["steps"]["voice"]["status"] == "done"   # 음성은 두고 영상으로
+    assert web.q._q.get_nowait() == ("run", job.id)
+    assert client.post(f"/api/jobs/{job.id}/voice/redo").status_code == 409
+
+
+
+def test_review_job_can_redo_channel_voice():
+    """초안 없이 처음부터 채널 TTS로 읽은 작업: 대본 확인 중에도 음성을 다시 만들 수 있고, 확정하면 바로 영상으로."""
+    job = scene_job(done=("script", "voice", "subtitles"))
+    job.update(review=True, status="waiting")
+    assert "음성 다시 만들기" in client.get(f"/jobs/{job.id}").text
+    assert client.post(f"/api/jobs/{job.id}/voice/redo").json() == {"ok": True}
+    assert web.q._q.get_nowait() == ("run", job.id) and job.data["steps"]["voice"]["status"] == "pending"
+    job.update(status="waiting", steps=job.data["steps"] | {s: {"status": "done"} for s in ("voice", "subtitles")})
+    assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True}
+    assert job.data["confirmed"] is True and "voice_ok" not in job.data
+    assert web.q._q.get_nowait() == ("run", job.id)
 
 def test_clip_replace_after_done_rerenders_only(monkeypatch):
     job = scene_job("done", STEPS)

@@ -49,6 +49,12 @@ def in_review(data: dict) -> bool:
     return data["status"] == "waiting" and bool(data.get("review")) and not data.get("confirmed")
 
 
+def in_voice_review(data: dict) -> bool:
+    """대본 확정 뒤 채널 TTS로 다시 읽은 음성을 사람이 확정하기를 기다리는 중.
+    voice_ok는 초안 음성을 확정할 때만 False로 생긴다(예전 작업·처음부터 채널 TTS로 읽은 작업은 없다)."""
+    return data["status"] == "waiting" and data.get("voice_ok") is False
+
+
 def missing_clips(job: Job) -> list[int]:
     """아직 안 올라온 장면 번호(0부터). 장면 = 대본 문장."""
     n = len(job.doc("script.json")["sentences"])
@@ -145,6 +151,8 @@ def step_footage(job: Job, sv: Services) -> str:
     채널이 sensitive_gate를 켰으면 민감 분야 대본은 사람이 확인(confirmed)하기 전엔 크레딧을 쓰지 않고 멈춘다."""
     if job.data.get("review") and not job.data.get("confirmed"):   # 영상 크레딧이 가장 비싸 먼저 확정받는다
         raise Wait("대본 확정")
+    if job.data.get("voice_ok") is False:   # 실제 음성을 들어 보고 확정해야 영상 크레딧을 쓴다
+        raise Wait("음성 확정")
     area = job.doc("script.json").get("sensitive")
     if sv.channel.sensitive_gate and area and not job.data.get("confirmed"):
         raise Wait(f"민감 분야({area}) 대본 확인")
@@ -164,13 +172,8 @@ def step_footage(job: Job, sv: Services) -> str:
 
 def step_voice(job: Job, sv: Services) -> str:
     sentences = job.doc("script.json")["sentences"]
-    draft = bool(job.data.get("review") and not job.data.get("confirmed") and sv.draft_tts and sv.draft_tts.ready())
-    if draft:   # 확정 전엔 무료 초안 음성. 확정(/confirm)이 음성·자막을 되돌려 채널 TTS로 한 번만 읽는다
-        engine, timing = voice.draft(sv.draft_tts, sentences, job.dir, job.log)
-        job.log(f"초안 음성이에요. 대본을 확정하면 {sv.tts.label}(으)로 다시 읽어요")
-    else:
-        engine, timing = voice.synth(sv.tts, sv.channel, sentences, job.data["voice"], job.dir, job.log)
-    job.update(voice_draft=draft)
+    engine, timing = voice.synth(sv.tts, sv.channel, sentences, job.data["voice"], job.dir, job.log)
+    job.update(voice_draft=False)   # 예전 초안 음성 작업도 채널 TTS로 다시 읽으면 초안 표시를 지운다
     job.put("timing.json", timing)
     return engine
 
@@ -209,8 +212,10 @@ def step_render(job: Job, sv: Services) -> str:
     title = (t["lines"], t["accent"]) if t else ([job.doc("script.json")["title"]], "")
     if cues := job.doc("cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
         subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub)
+    # 따옴표 낱말(표시 라벨)은 "no voices"를 적어도 영상 모델이 읽어 버려서, 그 장면은 클립 소리를 통째로 뺀다
+    mute = {i for i, p in enumerate(job.doc("script.json").get("prompts", [])) if '"' in p}
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], sv.channel, sv.splitter, title,
-                                      [t["start"] for t in timing]))
+                                      [t["start"] for t in timing], mute))
     translate(job, sv)   # 자막·썸네일 문구는 대본 뒤에 생기고, 무엇을 고쳐도 렌더는 다시 돈다
     return "ffmpeg"
 

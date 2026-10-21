@@ -12,7 +12,8 @@ from .channel import Channel
 
 TAIL = 0.6   # 마지막 문장 뒤 여유(초)
 TITLE_HOLD, TITLE_FADE = 1.0, 0.5   # clean 배치 제목: 처음 이만큼 보이고(초) 이만큼 동안 사라진다
-XFADE = 0.5   # 장면 클립 사이 겹침(초). 8초마다 딱 끊기지 않게 경계를 가운데 두고 녹아든다
+XFADE = 0.25   # 장면 클립 사이 겹침(초). 경계를 가운데 두고 짧게 넘겨 속도감을 낸다
+TRANSITION = "slideleft"   # 다음 장면이 옆에서 밀고 들어온다(페이드보다 빠르게 느껴진다)
 # 흰 굵은 글씨, 두꺼운 검은 외곽선. 강조 낱말만 채널 강조색. 크기는 가장 긴 줄이 한 줄에 들어가게 정한다
 THUMB_STYLE = "Style: Cap,{font},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,0,0,1,12,5,{align},80,80,{margin},1"
 # 위아래 검은 띠 + 가운데 영상(560~1440). 위 띠(검색창 아래 200~530)에 훅 제목, 자막은 아래 띠 맨 위에(subtitles MarginV)
@@ -45,6 +46,10 @@ GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
 VOICE = "loudnorm=I={}:TP=-1.5,aresample=48000,"
 SFX = "loudnorm=I={}:TP=-2,aresample=48000,aformat=channel_layouts=stereo,volume=0.7,"
 SILENCE = "anullsrc=r=48000:cl=stereo,"
+# 장면 전환 "휙": 걸러 낸 분홍 잡음을 전환 가운데마다 짧은 종 모양으로 키운다(파일 없이 ffmpeg가 만든다)
+WHOOSH = ("anoisesrc=r=48000:c=pink:a=0.5:d={dur},highpass=f=400,lowpass=f=4000,"
+          "volume='{env}':eval=frame,aformat=channel_layouts=stereo[wh]")
+WHOOSH_GAIN = 1.4   # 휙 크기: 순간 최대 약 -29 LUFS, 목소리(약 -21)보다 낮게 깔린다
 
 
 def ass_color(hex_rgb: str) -> str:
@@ -62,8 +67,10 @@ def frames(starts: list[float], dur: float, n: int) -> list[int]:
 
 
 def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, splitter: Splitter,
-           title: tuple[list[str], str] | None = None, starts: list[float] | None = None) -> float:
-    """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 띄운다(clean은 처음에만). starts는 문장 시작 시각(장면 경계)."""
+           title: tuple[list[str], str] | None = None, starts: list[float] | None = None,
+           mute: set[int] = frozenset()) -> float:
+    """title=(줄들, 강조 낱말)이면 위(배치의 제목 자리)에 띄운다(clean은 처음에만). starts는 문장 시작 시각(장면 경계).
+    mute는 클립 소리를 버릴 장면 번호(화면 글자를 영상 모델이 소리 내어 읽어 버리는 장면)."""
     dur = round(voice_sec + TAIL, 2)
     lay = LAYOUTS[ch.style.layout]
     title = title if lay.title else None
@@ -80,20 +87,31 @@ def render(job_dir: Path, clips: list[str], voice_sec: float, ch: Channel, split
             pad = f"tpad=stop_mode=clone:stop_duration={ext / 30 + 0.1:.2f}," if same else ""
             chains.append(f"[{i}:v]{CLIP_VF.format(h=lay.h)},{pad}trim=end_frame={ext},setpts=PTS-STARTPTS[v{i}]")
             if same:   # 효과음은 장면 클립만(스톡은 배경 음악일 수 있다). 소리 없는 클립 자리는 무음
-                src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if ffmpeg.has_audio(job_dir / "clips" / c) else SILENCE
+                live = i not in mute and ffmpeg.has_audio(job_dir / "clips" / c)
+                src = f"[{i}:a]{SFX.format(ch.style.sfx_lufs)}" if live else SILENCE
                 fx.append(f"{src}apad,atrim=end={k / 30:.3f},asetpts=PTS-STARTPTS[s{i}]")
-        prev, cum = "[v0]", 0
+        prev, cum, peaks = "[v0]", 0, []
         for i in range(1, n):   # xfade offset은 앞 입력(누적 결과) 기준 = 최종 시간축. 경계 pre 프레임 전에 시작
             cum += ks[i - 1]
             out = "[bg]" if i == n - 1 else f"[x{i}]"
-            chains.append(f"{prev}[v{i}]xfade=transition=fade:duration={XFADE}:offset={(cum - pre) / 30:.3f}{out}")
+            chains.append(f"{prev}[v{i}]xfade=transition={TRANSITION}:duration={XFADE}:offset={(cum - pre) / 30:.3f}{out}")
             prev = out
+            peaks.append((cum - pre) / 30 + XFADE / 2)
         if n == 1:
             chains.append("[v0]null[bg]")
-        if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 목소리만
-            chains += fx + ["".join(f"[s{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[fx]"]
-        else:
-            fx = []
+        sfx = []   # 목소리에 얹을 소리 갈래: 장면 클립 효과음, 전환 휙
+        if any(f.startswith("[") for f in fx):   # 소리 있는 클립이 하나도 없으면 클립 효과음은 뺀다
+            chains += fx + ["".join(f"[s{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=0:a=1[cl]"]
+            sfx.append("[cl]")
+        if peaks:
+            env = "+".join(f"exp(-((t-{c:.3f})/0.07)^2)" for c in peaks)   # 전환마다 약 0.25초 부푼다
+            chains.append(WHOOSH.format(dur=dur, env=f"{WHOOSH_GAIN}*({env})"))
+            sfx.append("[wh]")
+        if len(sfx) == 2:
+            chains.append("[cl][wh]amix=inputs=2:duration=longest:normalize=0[fx]")
+        elif sfx:
+            chains.append(f"{sfx[0]}anull[fx]")
+        fx = sfx
     else:
         args += ["-f", "lavfi", "-i", GRADIENT.format(*(c[1:] for c in ch.style.background), dur=dur)]
         chains.append(f"[0:v]crop=1080:{lay.h},format=yuv420p[bg]")

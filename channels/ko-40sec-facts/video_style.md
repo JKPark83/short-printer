@@ -1,8 +1,9 @@
 # 장면 영상 규칙
 
+- 첫 장면(훅)은 첫 프레임부터 대본 첫 문장의 그 순간을 보여 준다. 레이아웃상 제목이 1초만 떠서 그림만으로 물음이 읽혀야 한다. Dot(또는 공통 규칙의 어른 캐릭터)이 그 순간을 직접 겪는 모습을 medium close-up으로 화면 가운데 크게 잡고(예: Dot's eyelids droop heavily right after finishing a meal, his head nodding), 반응이 커지는 쪽으로 빠른 push-in 하나만 쓴다. 몸 모형·단면도·장기·글자 라벨은 훅에 넣지 않는다. 몸 접촉 동작은 아래 Dot 규칙을 따른다.
 - 화풍은 실사가 아니라 과학 해설 채널 같은 깔끔하고 윤곽이 또렷한 토이·모션그래픽 3D 애니메이션이다. 화풍은 앱이 머리말로 붙이므로 prompt에는 쓰지 않는다.
 - 주인공 물체는 미세한 표면 질감(잔주름·섬유·알갱이)을 길게 늘어놓지 않고, 빠른 움직임에서도 뭉개지지 않게 굵직한 외곽선(bold silhouette)·색 대비·매끈한 무광/반광 표면(smooth matte, satin sheen)으로 선명하게 그린다. 보이는 핵심 부위 2~3개의 모양과 움직이는 자리를 또렷하게 적고, 단어는 배경 소품이 아니라 주인공의 형태와 2단계 동작 묘사에 쓴다. 배경은 깔끔한 단색·스튜디오 톤으로 비우고 소품은 꼭 필요한 하나둘만 둔다.
-- 주인공이 화면을 크게 채우는 medium close-up이나 close-up을 기본으로 한다. 작은 물체가 여럿 보이는 wide shot은 뭉개지므로 훅·마지막 장면의 pull-back에만 쓴다.
+- 주인공이 화면을 크게 채우는 medium close-up이나 close-up을 기본으로 한다. 작은 물체가 여럿 보이는 wide shot은 뭉개지므로 마지막 장면의 pull-back에만 쓴다.
 - 빛은 광원 방향을 짧게 붙여(예: crisp rim light from the upper left, warm key light from the right) 주인공의 윤곽과 움직이는 부위가 배경에서 또렷하게 분리되게 한다.
 - 동작은 무엇이 어떻게 움직이고 맞닿는지 8초 동안 '원인 동작 → 즉각적인 반응·변화' 두 단계가 이어지게 생동감 있게 쓴다(예: food pieces tumble in and rapidly break apart as the folds squeeze rhythmically). 대본이 생활 비유(초인종, 경보기, 안전 잠금 등)로 원리를 설명하면, 모형만 두지 않고 그 비유 물체를 깔끔한 3D 소품으로 나란히 배치해 원리가 한눈에 보이게 연출한다.
 - 사람이 필요하면 아래 마스코트 문장을 글자 그대로 넣는다. 영상마다 새 주인공을 만들지 않는다. 다른 사람은 얼굴을 단순화한 어른 3D 캐릭터로, 머리 모양과 옷 색 하나만 정해 짧게 쓴다. 대머리로 그려지지 않게 머리카락을 꼭 적고 남녀를 섞는다(a man with short black hair, a woman with shoulder-length brown hair, a woman with a low ponytail). 아이·아기·학생은 쓰지 않는다(필터가 아동 장면을 막는다).
@@ -31,6 +32,6 @@
 - 피, 상처, 수술, 칼, 바늘, 주사, 알약, 병원, 의사는 그리지 않는다. 체액은 도식으로만 보여 준다.
 - 사람 무리·물건 개수로 비율을 보여 주지 않는다. "열 명 중 두세 명"은 많은 무리 가운데 몇몇만 빛나는 장면으로 쓰고, 몇 명인지 적지 않는다.
 - 표시 라벨 말고 글자가 들어갈 물건(시계, 달력, 그래프, 간판, 화면, 물음표·X 아이콘)은 쓰지 않는다. 시간 흐름은 해의 위치나 그림자 길이로, 계산·데이터는 빛나는 작은 정육면체 흐름으로 보여 준다.
-- 카메라는 이 넷 중 하나를 장면 호흡에 맞춰 속도감 있게 쓴다: push-in(원리·반전 포착은 빠르게, 세밀한 관찰은 slow push-in), sideways truck(비교·흐름 이동), top-down crane, slow pull-back. 훅과 5·10번째 장면은 pull-back이나 reveal로 화면 구도가 확 바뀌게 한다.
+- 카메라는 이 넷 중 하나를 장면 호흡에 맞춰 속도감 있게 쓴다: push-in(원리·반전 포착은 빠르게, 세밀한 관찰은 slow push-in), sideways truck(비교·흐름 이동), top-down crane, slow pull-back. 4·8번째 장면은 pull-back이나 reveal로 화면 구도가 확 바뀌게 한다.
 - prompt 끝 두 줄 중 둘째 줄은 라벨이 있는 장면만 이렇게 쓴다: Only the Korean label "힘줄" as text; no other text, no numbers, no logos. 라벨이 없는 장면은 공통 규칙대로 No on-screen text, no numbers, no logos.
 - 한국 생활 물건이 나오면 이름 뒤에 생김새를 붙여 쓴다(예: 온돌: a cutaway of a Korean ondol floor, warm air flowing through channels under flat stone slabs).

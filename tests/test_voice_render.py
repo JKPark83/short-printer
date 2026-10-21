@@ -22,9 +22,9 @@ KO = Korean()
 
 
 @pytest.fixture
-def ch():   # 배치는 band로 고정한다(채널 설정이 바뀌어도 테스트가 그대로 돌게)
+def ch():   # 배치·효과음 크기는 기본으로 고정한다(채널 설정이 바뀌어도 테스트가 그대로 돌게)
     c = channel.load("ko-40sec-facts")
-    return c.model_copy(update={"style": c.style.model_copy(update={"layout": "band"})})
+    return c.model_copy(update={"style": c.style.model_copy(update={"layout": "band", "sfx_lufs": -21})})
 
 
 class Fake:
@@ -106,9 +106,10 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
     assert [r.split("/")[-2] for r in urls[1:]] == ["envID", "iWLjl1zCuqXRkW6494ve"]
 
 
-def test_voices_default_chris(ch):
-    assert list(ch.tts.voices.values()) == ["크리스", "미스터킴", "이하나", "지수", "민성", "미나", "민우", "미스터최"]
-    assert ch.tts.default == "PDoCXqBQFGsvfO0hNkEs"
+def test_voices_default_eungwang(ch):
+    assert list(ch.tts.voices.values()) == [
+        "크리스", "미스터킴", "이하나", "지수", "민성", "미나", "민우", "은광", "미스터최"]
+    assert ch.tts.default == "8QclKarwLctvzN2plke3"
 
 
 def test_synth_refuses_old_voice_and_missing_key(tmp_path, ch):
@@ -249,6 +250,16 @@ def test_audio_levels_follow_channel_and_default_keeps_old_mix(tmp_path, ch, mon
     assert "loudnorm=I=-23:" in e.value.value and "[1:a]loudnorm=I=-16:TP=-1.5,aresample=48000,apad[vo]" in e.value.value
 
 
+
+def test_muted_scene_drops_clip_sound(tmp_path, ch, monkeypatch):
+    def run(args, cwd=None):
+        raise StopIteration(args[args.index("-filter_complex") + 1])
+    monkeypatch.setattr(ffmpeg, "has_audio", lambda p: True)
+    monkeypatch.setattr(ffmpeg, "run", run)
+    with pytest.raises(StopIteration) as e:   # 라벨 장면(1)은 효과음 대신 무음
+        render.render(tmp_path, ["a.mp4", "b.mp4"], 2.0, ch, KO, None, [0, 1.0], {1})
+    assert "[0:a]loudnorm" in e.value.value and "[1:a]loudnorm" not in e.value.value and "anullsrc" in e.value.value
+
 def test_scenes_cross_fade_centered_on_sentence_starts(tmp_path, ch, monkeypatch):
     calls = []
     monkeypatch.setattr(render.ffmpeg, "run", lambda args, cwd=None: calls.append([str(a) for a in args]))
@@ -256,8 +267,10 @@ def test_scenes_cross_fade_centered_on_sentence_starts(tmp_path, ch, monkeypatch
     monkeypatch.setattr(os, "replace", lambda a, b: None)
     render.render(tmp_path, ["a.mp4", "b.mp4", "c.mp4"], 5.4, ch, KO, None, [0, 2.0, 4.0])   # dur 6.0 = 180f
     fc = calls[0][calls[0].index("-filter_complex") + 1]
-    # 겹침 15프레임(0.5초): 첫 장면은 7f 더, 가운데는 8+7f 더, 마지막은 8f 더 자르고 경계 8f 전에 녹아들기 시작한다
-    assert "trim=end_frame=67," in fc and "trim=end_frame=75," in fc and "trim=end_frame=68," in fc
-    assert "[v0][v1]xfade=transition=fade:duration=0.5:offset=1.733[x1]" in fc
-    assert "[x1][v2]xfade=transition=fade:duration=0.5:offset=3.733[bg]" in fc
+    # 겹침 8프레임(0.25초): 첫 장면은 4f 더, 가운데는 4+4f 더, 마지막은 4f 더 자르고 경계 4f 전에 넘어가기 시작한다
+    assert "trim=end_frame=64," in fc and "trim=end_frame=68," in fc and "trim=end_frame=64," in fc
+    assert "[v0][v1]xfade=transition=slideleft:duration=0.25:offset=1.867[x1]" in fc
+    assert "[x1][v2]xfade=transition=slideleft:duration=0.25:offset=3.867[bg]" in fc
     assert "concat=n=3:v=1" not in fc
+    # 클립 소리가 없어도 전환 가운데(1.992·3.992초)마다 휙이 목소리에 섞인다
+    assert "exp(-((t-1.992)/0.07)^2)+exp(-((t-3.992)/0.07)^2)" in fc and "[wh]anull[fx]" in fc and "amix" in fc

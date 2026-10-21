@@ -60,8 +60,3 @@ def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path
     _check(tts)
     return tts.label, _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))
 
-
-def draft(tts: TTS, sentences: list[str], job_dir: Path, log) -> tuple[str, list[dict]]:
-    """확정 전 초안: 무료 TTS로 읽는다. 대본·자막을 고칠 때마다 유료 크레딧을 쓰지 않게, 확정하면 채널 TTS로 다시 읽는다."""
-    _check(tts)
-    return tts.label, _read_all(sentences, job_dir, log, lambda text, out: tts.speak("", text, out))

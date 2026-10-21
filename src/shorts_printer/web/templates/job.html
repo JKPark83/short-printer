@@ -4,8 +4,14 @@
 {% set up = job.upload or {} %}
 {% set busy = job.status in ACTIVE or up.status in ACTIVE %}
 {% set review = in_review(job) %}
-{% set editable = (job.status in ('done', 'failed', 'interrupted') or review) and up.status not in ACTIVE %}
-{% set locked %}<p class="empty-stage">대본을 확정하면 시작해요</p>{% endset %}
+{% set vreview = in_voice_review(job) %}
+{% set editable = (job.status in ('done', 'failed', 'interrupted') or review or vreview) and up.status not in ACTIVE %}
+{% set locked %}<p class="empty-stage">{{ '음성' if vreview else '대본' }}을 확정하면 시작해요</p>{% endset %}
+{% set next_btn %}{% if vreview %}<div class="form-actions"><button class="btn btn-primary" type="button" data-retry="confirm" data-done="음성을 확정했어요. 영상을 만들어요">{{ icon('check') }}음성 확정하고 영상 만들기</button>
+<button class="btn btn-secondary" type="button" data-retry="voice/redo" data-done="같은 목소리로 다시 읽어요">{{ icon('rotate') }}음성 다시 만들기</button></div>
+{% elif review and job.voice_draft %}<button class="btn btn-primary" type="button" data-retry="confirm" data-done="대본을 확정했어요. 실제 음성을 만들어요">{{ icon('check') }}대본 확정하고 실제 음성 만들기</button>
+{% elif review %}<div class="form-actions"><button class="btn btn-primary" type="button" data-retry="confirm" data-done="대본을 확정했어요. 영상을 만들어요">{{ icon('check') }}대본 확정하고 영상 만들기</button>
+<button class="btn btn-secondary" type="button" data-retry="voice/redo" data-done="같은 목소리로 다시 읽어요">{{ icon('rotate') }}음성 다시 만들기</button></div>{% endif %}{% endset %}
 {% set files = '/files/' ~ job.id ~ '/' %}
 {% set bust = '?v=' ~ (job.finished_at or '') %}
 <main id="page" class="wrap wrap-job" data-api="/api/jobs/{{ job.id }}" data-swap="head stepper banners c-script c-voice c-subs c-footage c-thumb upload-box final" data-sig="{{ sig(job) }}" data-active="{{ 1 if busy else 0 }}">
@@ -21,18 +27,20 @@
     </div>
     <div class="jh-actions">
       <span class="badge b-{{ job.status }}">{{ status_label(job) }}</span>
-      {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') and not review %}
+      {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') and not review and not vreview %}
       <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
       {% endif %}
     </div>
   </header>
 
-  {# 단계 묶음. 화면에서 만든 작업(review)은 대본·음성·자막 뒤에 [대본 확정]이 있고, 확정 전 뒤 묶음은 흐리게 #}
+  {# 단계 묶음. 화면에서 만든 작업(review)은 대본·음성·자막 뒤에 [대본 확정]이 있고, 확정 전 뒤 묶음은 흐리게.
+     초안 음성으로 확인했으면(voice_ok가 있으면) 채널 TTS로 다시 읽은 뒤 [음성 확정]이 하나 더 있다 #}
+  {% set vgate = job.voice_ok is not none %}{% set vwait = job.voice_ok is sameas false %}
   {% set done_steps = job.steps|dictsort|selectattr('1.status', 'eq', 'done')|map('first')|list %}
   <ol id="stepper" class="phases" aria-label="제작 단계" tabindex="-1">
-    {% for name, steps in PHASES %}{% set gate = loop.first and job.review %}
+    {% for name, steps in PHASES %}{% set gate = loop.first and job.review %}{% set vg = gate and vgate %}
     {% set all_done = steps|reject('in', done_steps)|list|length == 0 %}
-    <li class="phase{{ ' ph-locked' if not loop.first and job.review and not job.confirmed }}{{ ' ph-done' if all_done and (not gate or job.confirmed) }}" style="--n: {{ steps|length + (1 if gate else 0) }}">
+    <li class="phase{{ ' ph-locked' if not loop.first and job.review and (not job.confirmed or vwait) }}{{ ' ph-done' if all_done and (not gate or (job.confirmed and not vwait)) }}" style="--n: {{ steps|length + (1 if gate else 0) + (1 if vg else 0) }}">
       <p class="ph-head"><span class="num">{{ loop.index }}</span>{{ name }}</p>
       <ol class="stepper">
         {% for s in steps %}{% set st = job.steps[s] %}
@@ -47,6 +55,14 @@
         <li class="node n-{{ g }}"{% if g == 'wait' %} aria-current="step"{% endif %}>
           <span class="dot">{{ icon({'done': 'check', 'wait': 'pencil', 'pending': 'circle'}[g], 16) }}</span>
           <span class="n-label">대본 확정</span>
+          <span class="n-sub">{{ {'done': '완료', 'wait': '확인 대기', 'pending': '대기'}[g] }}</span>
+          <span class="n-engine"></span>
+        </li>
+        {% endif %}
+        {% if vg %}{% set g = 'wait' if vreview else 'pending' if vwait else 'done' %}
+        <li class="node n-{{ g }}"{% if g == 'wait' %} aria-current="step"{% endif %}>
+          <span class="dot">{{ icon({'done': 'check', 'wait': 'pencil', 'pending': 'circle'}[g], 16) }}</span>
+          <span class="n-label">음성 확정</span>
           <span class="n-sub">{{ {'done': '완료', 'wait': '확인 대기', 'pending': '대기'}[g] }}</span>
           <span class="n-engine"></span>
         </li>
@@ -69,9 +85,13 @@
         <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
       {% elif review and script %}
       <div class="banner banner-warn" role="alert">{{ icon('pencil', 18) }}
-        <div><strong>대본·음성·자막을 확인해 주세요</strong><p class="muted">문장·목소리·자막을 바로 고치거나 Claude에게 수정 요청을 할 수 있어요(문장·목소리를 바꾸면 음성·자막을 다시 만들어요). 확정하면 장면 영상·썸네일을 차례로 만들어요(이때부터 영상 크레딧이 들어요).</p>
+        <div><strong>대본·음성·자막을 확인해 주세요</strong><p class="muted">문장·목소리·자막을 바로 고치거나 Claude에게 수정 요청을 할 수 있어요(문장·목소리를 바꾸면 음성·자막을 다시 만들어요). {% if job.voice_draft %}지금 음성은 무료 초안이에요. 확정하면 채널 목소리로 실제 음성을 만들고, 들어 본 뒤 [음성 확정]을 눌러야 영상을 만들어요.{% else %}확정하면 장면 영상·썸네일을 차례로 만들어요(이때부터 영상 크레딧이 들어요).{% endif %}</p>
           {% if script.sensitive %}<p class="muted"><strong>민감 분야({{ script.sensitive }}) 대본이에요.</strong> YouTube는 보건당국 지침과 어긋나는 치료·예방 정보와 틀에 박힌 대량 생산 콘텐츠를 제재해요. 틀린 정보는 신고·삭제될 수 있어요. 사실관계를 확인한 뒤에만 확정하세요.</p>{% endif %}
-          <button id="confirm" class="btn btn-primary" type="button" data-retry="confirm" data-done="대본을 확정했어요. 영상을 만들어요">{{ icon('check') }}대본 확정하고 영상 만들기</button></div></div>
+          {{ next_btn }}</div></div>
+      {% elif vreview %}
+      <div class="banner banner-warn" role="alert">{{ icon('pencil', 18) }}
+        <div><strong>실제 음성을 들어 봐 주세요</strong><p class="muted">초안 대신 채널 TTS({{ job.steps.voice.engine }})로 다시 읽었어요. 마음에 안 들면 다시 읽거나 목소리·문장·자막을 고쳐 저장하세요. 확정하면 장면 영상·썸네일을 차례로 만들어요(이때부터 영상 크레딧이 들어요).</p>
+          {{ next_btn }}</div></div>
       {% elif job.status == 'waiting' and script and script.sensitive and not job.confirmed %}
       <div class="banner banner-warn" role="alert">{{ icon('alert', 18) }}
         <div><strong>민감 분야({{ script.sensitive }}) 대본이에요</strong><p class="muted">YouTube는 보건당국 지침과 어긋나는 치료·예방 정보와 틀에 박힌 대량 생산 콘텐츠를 제재해요. 틀린 정보는 신고·삭제될 수 있어요. 대본의 사실관계를 확인한 뒤에만 계속하세요.</p>
@@ -116,7 +136,8 @@
                 {% if script.prompts_ko and script.prompts_ko[loop.index0] %}<p class="prompt-ko" lang="ko">{{ script.prompts_ko[loop.index0] }}</p>{% endif %}</details>{% endif %}</li>{% endfor %}
             </ol></dd>
           </dl>
-          {% if review %}<p class="muted ie-tip">제목·설명·태그·문장·목소리·자막과 문장 아래 장면 영상 프롬프트(영어)를 눌러 바로 고치고 아래 막대에서 저장한 뒤 [대본 확정]을 눌러요.</p>
+          {% if vreview %}<p class="muted ie-tip">목소리·문장·자막을 고쳐 저장하면 음성·자막을 다시 만들어요. 다 되면 [음성 확정]을 눌러요.</p>
+          {% elif review %}<p class="muted ie-tip">제목·설명·태그·문장·목소리·자막과 문장 아래 장면 영상 프롬프트(영어)를 눌러 바로 고치고 아래 막대에서 저장한 뒤 [대본 확정]을 눌러요.</p>
           {% else %}<p class="muted ie-tip">대본·목소리·자막·썸네일 문구를 눌러 바로 고치고, 아래 막대에서 한 번에 저장해요. 바뀐 것에 필요한 단계만 다시 만들어요(장면 클립은 그대로).{% if up.status == 'done' %} 이미 올린 영상은 YouTube에 그대로 두고, 다시 만든 영상을 새로 올릴 수 있어요.{% endif %}</p>{% endif %}
           <div id="savebar" class="savebar" role="region" aria-label="저장하지 않은 변경" hidden>
             <p><strong id="sb-count"></strong> <span id="sb-hint" class="muted"></span></p>
@@ -222,6 +243,7 @@
           <button class="btn btn-secondary" type="button" data-sample="se-voice" data-channel="{{ ch.id }}">{{ icon('play', 16) }}미리 듣기</button>
         </div>
         {% endif %}
+        {% if (review or vreview) and job.steps.voice.status == 'done' %}<div class="voice-next">{{ next_btn }}</div>{% endif %}
       </section>
 
       <section id="c-subs" class="card" aria-labelledby="h-subs">
@@ -247,7 +269,7 @@
           <h2 id="h-footage">영상 소스</h2>
           {% if scenes %}<span class="mono muted">클립 {{ scenes|selectattr('v')|list|length }}/{{ scenes|length }}</span>{% endif %}
         </div>
-        {% if review %}{{ locked }}
+        {% if review or vreview %}{{ locked }}
         {% elif scenes %}
         <ol class="scenes">{% for s in scenes %}
           <li id="scene-{{ s.i }}" class="scene">
@@ -319,7 +341,7 @@
           </form>
         </details>
         {% endif %}
-        {% elif review %}{{ locked }}
+        {% elif review or vreview %}{{ locked }}
         {% else %}<p class="empty-stage">이 단계가 끝나면 여기에 나와요</p>{% endif %}
       </section>
     </div>

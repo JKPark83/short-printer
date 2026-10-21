@@ -276,6 +276,7 @@ textarea.ie { display: block; resize: none; field-sizing: content; }
 select.ie { border-color: var(--border); }
 .voice-pick { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--s2); margin-top: var(--s4); }
 .voice-pick label { grid-column: 1 / -1; }
+.voice-next { margin-top: var(--s4); }
 .thumb .kv dd.thumb-lines { flex-direction: column; align-items: stretch; gap: var(--s1); }
 .thumb .kv dt label { display: block; padding-top: 4px; }
 .cues .ie { min-height: 0; padding: 1px 6px; font: inherit; }

@@ -1,4 +1,5 @@
-"""작업 스레드 1개 + 큐(제작·업로드·주제 찾기). 같은 작업을 두 번 넣지 않는다.
+"""작업 스레드 1개 + 큐(제작·업로드), 주제 찾기 스레드 1개 + 큐. 같은 작업을 두 번 넣지 않는다.
+주제 찾기는 LLM만 써서(Chrome·ffmpeg 안 씀) 제작과 따로 돌아도 부딪치지 않는다.
 스케줄 스레드 1개가 30초마다 예정 시각을 본다."""
 import logging
 import queue
@@ -16,14 +17,16 @@ TICK = 30   # 초. 스케줄 GRACE(5분)보다 충분히 짧게
 
 
 class LocalQueue:
-    """ports.queue.Queue 구현: 프로세스 안 스레드 하나. 채널마다 쓸 구현(Services)은 resolve(channel_id)로 얻는다.
+    """ports.queue.Queue 구현: 프로세스 안 스레드 둘(제작·업로드 / 주제 찾기).
+    채널마다 쓸 구현(Services)은 resolve(channel_id)로 얻는다.
     notify(text)는 스케줄 알림(registry.notify)."""
 
     def __init__(self, resolve: Callable[[str], Services], notify: Callable[[str], object] = lambda text: None):
         self.resolve = resolve
         self.notify = notify
         self.lock = threading.RLock()   # put_clip이 락 안에서 enqueue를 부른다
-        self._q: queue.Queue[tuple[str, str]] = queue.Queue()   # (run|upload|trend, job_id 또는 trend_id)
+        self._q: queue.Queue[tuple[str, str]] = queue.Queue()   # (run|upload, job_id)
+        self._tq: queue.Queue[tuple[str, str]] = queue.Queue()   # ("trend", trend_id)
         self._thread: threading.Thread | None = None
 
     def enqueue(self, job_id: str) -> bool:
@@ -83,7 +86,7 @@ class LocalQueue:
             if trend.data["status"] in ("queued", "running", "done"):
                 return False
             trend.update(status="queued")
-        self._q.put(("trend", trend_id))
+        self._tq.put(("trend", trend_id))
         return True
 
     def run_one(self, job_id: str, kind: str = "run") -> None:
@@ -117,9 +120,9 @@ class LocalQueue:
         except Exception as e:  # noqa: BLE001 — 후속 처리 실패로 작업 스레드가 멈추지 않게
             log.error("스케줄 후속 처리 실패 %s: %s", job_id, redact(str(e)) or type(e).__name__)
 
-    def _loop(self) -> None:
+    def _loop(self, q: queue.Queue) -> None:
         while True:
-            kind, job_id = self._q.get()
+            kind, job_id = q.get()
             self.run_one(job_id, kind)
 
     def _ticks(self) -> None:
@@ -133,6 +136,7 @@ class LocalQueue:
     def start(self) -> None:
         with self.lock:
             if self._thread is None:
-                self._thread = threading.Thread(target=self._loop, daemon=True, name="sp-worker")
+                self._thread = threading.Thread(target=self._loop, args=(self._q,), daemon=True, name="sp-worker")
                 self._thread.start()
+                threading.Thread(target=self._loop, args=(self._tq,), daemon=True, name="sp-trends").start()
                 threading.Thread(target=self._ticks, daemon=True, name="sp-scheduler").start()

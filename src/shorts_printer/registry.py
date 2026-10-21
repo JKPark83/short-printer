@@ -7,12 +7,10 @@ from . import config
 from .adapters.claude import Claude
 from .adapters.claude_research import ClaudeResearch
 from .adapters.discord import Discord
-from .adapters.edge_tts import EdgeTTS
 from .adapters.elevenlabs import ElevenLabs
 from .adapters.fish_audio import FishAudio
 from .adapters.flow import Flow
 from .adapters.flow_auto import FlowAuto
-from .adapters.macos_say import MacSay
 from .adapters.splitters.ja import Japanese
 from .adapters.splitters.ko import Korean
 from .adapters.splitters.whitespace import Whitespace
@@ -78,8 +76,7 @@ def services(channel_id: str) -> Services:
     ch = channel.load(channel_id)
     return Services(channel=ch, llm=_pick(LLMS, ch.llm, "LLM"), tts=_pick(TTSES, ch.tts.provider, "음성 공급자"),
                     video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language),
-                    research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"),
-                    draft_tts=EdgeTTS(ch.language, fallback=MacSay(ch.language)))
+                    research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"))
 
 
 def publisher(ch: Channel) -> Publisher:

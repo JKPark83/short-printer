@@ -20,7 +20,7 @@ from markupsafe import Markup
 from .. import config, registry
 from ..core import channel, pipeline, scenes, schedule, script, subtitles, trends, voice
 from ..core.channel import Channel
-from ..core.pipeline import LABELS, STEPS, Job, in_review
+from ..core.pipeline import LABELS, STEPS, Job, in_review, in_voice_review
 from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
@@ -117,7 +117,7 @@ def sig(data: dict) -> str:
 
 
 def status_label(data: dict) -> str:
-    return "대본 확인" if in_review(data) else STATUS[data["status"]]
+    return "대본 확인" if in_review(data) else "음성 확인" if in_voice_review(data) else STATUS[data["status"]]
 
 
 def say(data: dict) -> str:
@@ -261,6 +261,7 @@ templates.env.globals |= {
     "ACTIVE": ACTIVE, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS, "ALL": ALL, "LANGS": channel.LANGS,
     "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON,
     "schedule": schedule, "PHASES": PHASES, "status_label": status_label, "in_review": in_review,
+    "in_voice_review": in_voice_review,
 }
 templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "at": at, "until": until}
 
@@ -370,7 +371,7 @@ def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
 def _can_upload(data: dict) -> bool:
     """클립을 올리거나 바꿀 수 있나: 대본을 확정했고, 만들거나 YouTube에 올리는 중이 아닐 때
     (올린 뒤에 바꾸면 새로 올린다)."""
-    return (data["status"] not in ACTIVE and not in_review(data)
+    return (data["status"] not in ACTIVE and not in_review(data) and not in_voice_review(data)
             and (data.get("upload") or {}).get("status") not in ACTIVE)
 
 
@@ -478,16 +479,33 @@ def delete_job(job_id: str):
 
 @app.post("/api/jobs/{job_id}/confirm")
 def confirm(job_id: str):
-    """대본(민감 분야 포함)을 사람이 확인했다. 멈춘 단계부터 이어서."""
+    """대본(민감 분야 포함) 또는 음성을 사람이 확인했다. 멈춘 단계부터 이어서.
+    예전 초안 음성 작업이면 대본 확정 뒤 채널 TTS로 다시 읽고 음성 확정(voice_ok)에서 한 번 더 멈춘다."""
     job = _load(Job, job_id)
     with q.lock:   # 고쳐 쓰는 중(queued·running)에 확정하면 고치기 전 대본을 확정한 셈이 된다
         if job.data["status"] != "waiting":
             raise HTTPException(409, "지금은 확정할 수 없어요")
+        if in_voice_review(job.data):
+            job.update(voice_ok=True)
+            return retry(job_id)
         job.update(confirmed=True)
-    if job.data.get("voice_draft"):   # 초안 음성이면 채널 TTS로 다시 읽고 자막 시각도 새로 잰다(고친 줄은 그대로)
+        draft = job.data.get("voice_draft")
+        if draft:
+            job.update(voice_ok=False)
+    if draft:   # 초안 음성이면 채널 TTS로 다시 읽고 자막 시각도 새로 잰다(고친 줄은 그대로)
         _redo(job_id, ("voice", "subtitles"))
         return {"ok": True}
     return retry(job_id)
+
+
+@app.post("/api/jobs/{job_id}/voice/redo")
+def redo_voice(job_id: str):
+    """대본·음성 확인 중: 같은 대본·목소리로 다시 읽는다(마음에 안 들 때). 자막 시각도 새로 잰다."""
+    data = _load(Job, job_id).data
+    if not (in_review(data) or in_voice_review(data)):
+        raise HTTPException(409, "확정 전에만 다시 읽을 수 있어요")
+    _redo(job_id, ("voice", "subtitles"))
+    return {"ok": True}
 
 
 def _note(note: str) -> str:
@@ -586,7 +604,7 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
                 raise HTTPException(400, f"썸네일 문구는 1~2줄, 줄마다 {cap}자 안으로 적어 주세요")
             fields["thumb_hand"] = {"lines": hand, "accent": accent}
             steps |= {"thumbnail", "render"}
-    if in_review(job.data):   # 확정 전엔 썸네일·렌더를 아직 안 했다(확정하면 그때 만든다)
+    if in_review(job.data) or in_voice_review(job.data):   # 확정 전엔 썸네일·렌더를 아직 안 했다(확정하면 그때 만든다)
         steps -= {"thumbnail", "render"}
     steps = tuple(s for s in STEPS if s in steps)
     _redo(job_id, steps, files=files, **fields)
@@ -769,8 +787,8 @@ def _run_view(run: dict) -> dict:
                 return view | {"label": "올리는 중", "cls": "b-running"}
             if up == "failed":
                 return view | {"label": "업로드 실패", "cls": "b-failed"}
-            if in_review(d):
-                return view | {"label": "대본 확인", "cls": "b-waiting"}
+            if in_review(d) or in_voice_review(d):
+                return view | {"label": status_label(d), "cls": "b-waiting"}
             sc = job.doc("script.json") if st == "waiting" else None
             if sc and sc.get("sensitive") and not d.get("confirmed"):
                 return view | {"label": "확인 필요", "cls": "b-waiting"}

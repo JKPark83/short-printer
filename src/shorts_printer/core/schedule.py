@@ -289,30 +289,38 @@ def _schedule(sid: str | None) -> Schedule | None:
 
 
 def after_trend(trend: Trend, q: Queue, notify: Notify) -> None:
-    """스케줄 주제 찾기가 끝나면: 아직 안 만든 첫 추천(다 겹치면 1위)으로 작업을 만들어 넣는다. 실패면 알린다."""
+    """주제 찾기가 끝나면 알린다(모든 주제 찾기). 스케줄 주제 찾기는 거기에 더해
+    아직 안 만든 첫 추천(다 겹치면 1위)으로 작업을 만들어 넣는다."""
     d = trend.data
-    if not (s := _schedule(d.get("schedule"))):
-        return
-    sd = s.data
+    s = _schedule(d.get("schedule"))
+    who = s.data if s else {"channel": d["channel"], "name": "직접 찾은 주제"}
+    link = f"주제 찾기: {_link('trends', trend.id)}"
     if d["status"] in ("failed", "interrupted"):   # interrupted는 앱이 켜질 때 recover()가 넘긴다
         msg = (d.get("error") or {}).get("message") or \
             ("서버가 꺼져 멈췄어요" if d["status"] == "interrupted" else "알 수 없는 오류")
-        with q.lock:
-            _patch(s, "trend", trend.id, result="failed", note=f"주제 찾기 실패: {msg}")
-        notify(_msg(sd, "실패", f"주제 찾기 실패: {msg}", f"주제 찾기: {_link('trends', trend.id)}"))
+        if s:
+            with q.lock:
+                _patch(s, "trend", trend.id, result="failed", note=f"주제 찾기 실패: {msg}")
+        if s or d["status"] == "failed":   # 손으로 찾은 것의 중단은 작업과 같이 알리지 않는다
+            notify(_msg(who, "실패", f"주제 찾기 실패: {msg}", link))
         return
     if d["status"] != "done":
         return
     picks = trend.doc("picks.json")["picks"]
+    tops = [f"{n}. {p['topic']}" for n, p in enumerate(picks[:5], 1)]
+    if not s:
+        notify(_msg(who, "주제 찾기 완료", *tops, link))
+        return
     made = {j.data["topic"] for j in Job.all() if j.data.get("channel") == d["channel"]}
     i = next((i for i, p in enumerate(picks) if p["topic"] not in made), 0)
     p = picks[i]
-    job = Job.create(d["channel"], p["topic"], sd["voice"], brief=trends.brief(trend, p),
+    job = Job.create(d["channel"], p["topic"], s.data["voice"], brief=trends.brief(trend, p),
                      source={"trend": trend.id, "pick": i, "schedule": s.id}, review=True)
     with q.lock:
         # 실패한 주제 찾기를 다시 돌려 끝난 것이면 회차를 다시 진행 중으로(겹침 막기·배지)
         _patch(s, "trend", trend.id, result="started", note=None, job=job.id, topic=p["topic"])
         q.enqueue(job.id)
+    notify(_msg(who, "주제 찾기 완료", *tops, f"→ {i + 1}번 주제로 영상을 만들어요", link))
 
 
 def _sensitive_wait(job: Job) -> str | None:
