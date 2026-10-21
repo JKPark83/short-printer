@@ -15,7 +15,7 @@ duration = "100~110초"
 
 [tts]
 provider = "elevenlabs"
-default = "PDoCXqBQFGsvfO0hNkEs"
+default = "8QclKarwLctvzN2plke3"
 sample = "안녕하세요. 오늘은 매일 겪는 몸 현상, 그때 몸 안에서 무슨 일이 일어나는지 보여 드릴게요."
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
@@ -26,11 +26,12 @@ iWLjl1zCuqXRkW6494ve = "지수"
 pJtMZEFAxLgFoi6crgwM = "민성"
 aiUUgjHa4mpHf6UenZuf = "미나"
 ZYyPb36rFIFpnxQWM6MO = "민우"
+8QclKarwLctvzN2plke3 = "은광"
 elevenlabs = "미스터최"
 
 [video]
 provider = "flow-auto"
-style = "Polished stylized 3D animated explainer with feature-animation quality. Soft matte and satin materials with fine surface texture, one richly detailed hero subject large in frame, soft global illumination, gentle depth of field against a softly detailed background, limited palette of deep teal, cream, coral and mustard yellow, signs and screens plain and blank, no blood, no gore, no realistic wounds."
+style = "Clean stylized 3D animated explainer with bold toy-like silhouettes. Smooth matte vinyl and satin silicone materials without fine micro-texture, one clear hero subject large in frame, crisp studio rim lighting against a clean minimal studio backdrop, limited palette of deep teal, cream, coral and mustard yellow, signs and screens plain and blank, no blood, no gore, no realistic wounds."
 
 [style]
 accent = "#FFE500"

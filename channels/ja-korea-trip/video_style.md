@@ -1,6 +1,6 @@
 # 장면 영상 규칙
 
-- 화풍은 미니어처 디오라마 3D 해설 애니메이션 하나다. 지금의 서울 동네를 탁자 위 모형처럼 보여 준다. 누가 봐도 만든 영상이어야 한다. 실사·포토리얼은 쓰지 않는다(실존 장소를 사실처럼 그리면 AI 라벨·공개 의무 대상이 된다). 화풍·재질·흐림은 앱이 머리말로 붙이므로 prompt에 다시 쓰지 않는다. 빛은 그 장면의 시간대 한 구절만 쓴다(예: warm dusk light, night with soft window glow). 조연은 옷 색 하나로만 구분한다.
+- 화풍은 매끈한 클레이·토이 블록 느낌의 미니어처 디오라마 3D 해설 애니메이션 하나다. 지금의 서울 동네를 탁자 위 깔끔한 모형처럼 보여 준다. 누가 봐도 만든 영상이어야 한다. 실사·포토리얼은 쓰지 않는다(실존 장소를 사실처럼 그리면 AI 라벨·공개 의무 대상이 된다). 화풍·재질·흐림은 앱이 머리말로 붙이므로 prompt에 다시 쓰지 않는다. 건물과 소품은 자잘한 장식을 늘어놓지 않고 굵직한 모형 블록과 뚜렷한 색 대비로 간결하게 묘사해, 카메라가 움직여도 뭉개지지 않게 한다. 빛은 그 장면의 시간대 한 구절만 쓴다(예: warm dusk light, night with soft window glow). 조연은 옷 색 하나로만 구분한다.
 - 주인공은 아래 마스코트 문장을 글자 그대로 넣는다. 소품과 옷을 장면마다 바꾸지 않는다. 다른 사람은 얼굴을 단순화한 작은 클레이 인형으로 쓰고, 실존 인물·연예인을 닮게 그리지 않는다.
   - Mina, the channel's clay traveler figure: round face with dot eyes, cream beret, sage-green coat, small coral suitcase.
 - 거리 장면은 동네를 위에서 비스듬히 내려다보는 장면을 기본으로 쓴다. 카페가 모인 골목, 역에서 가는 길, 줄 서는 곳처럼 실제 영상으로는 한눈에 안 보이는 것을 모형 전체로 보여 준다.
@@ -17,5 +17,5 @@
   - 포장마차: a street-food tent with an orange tarp and a steaming counter
   - 화장품 가게: a bright health-and-beauty drugstore with rows of plain skincare bottles
 - 옛 모습을 한 장면 보여 줄 때는 prompt 끝(마지막 두 줄 앞)에 시대 제약 문장을 붙인다. 조선 시대면 "Joseon era only: no modern buildings, no glass windows, no cars, no power lines, no tourists."
-- 카메라 움직임은 아주 느린 것 하나만 쓴다: very slow push-in, very slow orbit, very slow pull-back, high three-quarter overhead 고정.
+- 카메라 움직임은 매끄러운 것 하나만 쓴다: push-in, slow orbit, pull-back, high three-quarter overhead. 8초 동안 정지해 보이지 않게 Mina의 이동·리액션과 바닥 동선(coral clay path)이나 비교 모형의 변화가 두 단계로 이어지게 쓴다.
 - prompt는 컷 → 카메라 → 마스코트 → 동작(시간 순) → 배경 → 시간대 빛 순으로 쓰고, 제약(시대, 소리, 텍스트 금지)은 끝에 둔다.
