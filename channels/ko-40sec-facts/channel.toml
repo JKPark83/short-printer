@@ -23,11 +23,14 @@ PDoCXqBQFGsvfO0hNkEs = "크리스"
 LKOcTG4J4tYTPR9DnLeM = "미스터킴"
 QPFsEL6IBxlT15xfiD6C = "이하나"
 iWLjl1zCuqXRkW6494ve = "지수"
+pJtMZEFAxLgFoi6crgwM = "민성"
+aiUUgjHa4mpHf6UenZuf = "미나"
+ZYyPb36rFIFpnxQWM6MO = "민우"
 elevenlabs = "미스터최"
 
 [video]
 provider = "flow-auto"
-style = "Polished stylized 3D animated explainer with feature-animation quality. Soft matte and satin materials with fine surface texture, one richly detailed hero subject large in frame, soft global illumination, gentle depth of field against a softly detailed background, limited palette of deep teal, cream, coral and mustard yellow, no readable text anywhere, signs and screens plain and blank, anatomy shown as clean stylized educational models and cutaways, organs and cells stylized with visible folds, grooves and fibers, no blood, no gore, no realistic wounds."
+style = "Polished stylized 3D animated explainer with feature-animation quality. Soft matte and satin materials with fine surface texture, one richly detailed hero subject large in frame, soft global illumination, gentle depth of field against a softly detailed background, limited palette of deep teal, cream, coral and mustard yellow, signs and screens plain and blank, no blood, no gore, no realistic wounds."
 
 [style]
 accent = "#FFE500"
@@ -47,7 +50,9 @@ sources_heading = "출처"
 [research]
 domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "kdca.go.kr", "mfds.go.kr",
            "pubmed.ncbi.nlm.nih.gov", "nih.gov", "medlineplus.gov", "my.clevelandclinic.org", "health.harvard.edu",
-           "nhs.uk", "who.int", "korean.go.kr"]
+           "nhs.uk", "who.int", "korean.go.kr",
+           "nature.com", "science.org", "cell.com", "nejm.org", "thelancet.com", "bmj.com", "jamanetwork.com",
+           "pnas.org", "physiology.org", "elifesciences.org", "cochranelibrary.com"]
 news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
         "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
         "bbc.com", "nationalgeographic.com", "sciencetimes.co.kr", "livescience.com", "britannica.com"]
@@ -57,4 +62,5 @@ max_pages = 10
 
 [trends]
 production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 45초(100~110초), 13장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(몸속 단면·장기·세포를 보여 주는 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제와 치료·약·식품 효능을 말해야 답이 되는 주제는 못 만든다."
-weights = { fit = 54, fresh = 23, safe = 23 }
+weights = { trend = 20, curious = 25, fit = 30, fresh = 10, safe = 15 }
+keywords = ["인체", "우리몸", "몸의비밀", "인체의신비", "인체상식", "건강상식"]

@@ -1,11 +1,18 @@
 """주제 찾기: 채널 기본 추천 기준(prompts/trend_idea.md + 채널 ideas.md·trends.md)으로 LLM이 웹을 찾아
 주제 IDEA_N개를 고른다. 사용자가 적은 추가 요청이 있으면 기본 기준에 더해 따른다.
+인기 쇼츠 참고(popular)를 켜면 채널 검색어(trends.keywords)로 최근 뜨는 쇼츠를 YouTube Data API로 모아
+시간당 조회수 순으로 함께 넘긴다.
 단계는 선정 하나. 작업(Job)과 같은 규칙으로 실패하면 다시 시도할 수 있다."""
+import json
 import re
-from datetime import datetime
+from collections import Counter
+from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, Field
 
@@ -21,12 +28,26 @@ STEPS = ("pick",)
 LABELS = {"pick": "선정"}
 IDEA_N = 10          # 추천 수
 MAX_REQUEST = 1000   # 추가 요청 최대 글자
+POPULAR_N = 15       # 지시문에 넣을 인기 쇼츠 수
+POPULAR_DAYS = 7     # 인기 쇼츠를 찾을 기간
+MAX_SEC = 180        # 쇼츠 최대 길이
 SAME = 0.6           # 띄어쓰기·문장부호를 뺀 글자 닮음 비율. 이 이상이면 말만 바꾼 같은 주제로 본다
+# 나이 구간(시간 이하, 이름). 갓 올린 쇼츠일수록 시간당 조회수가 부풀어 같은 구간끼리만 순위를 매긴다
+AGES = ((24, "24시간 안"), (72, "1~3일"), (POPULAR_DAYS * 24, "3~7일"))
 CRITERIA = {
+    "trend": ("화제성", "지금 사람들이 이 소재를 보고 찾고 있나(요즘 뜨는 쇼츠·최근 화제)"),
+    "curious": ("호기심", "듣자마자 답이 궁금하고, 알고 나면 남에게 말하고 싶은가"),
     "fit": ("제작 적합도", "우리 제작 방식으로 만들 수 있나"),
     "fresh": ("차별화", "이미 만든 주제·흔한 영상과 겹치지 않고 새 각도가 있나"),
     "safe": ("안전성", "저작권·민감 주제 위험이 낮나"),
 }
+
+API = "https://www.googleapis.com/youtube/v3/"
+NO_KEY = "YouTube API 키가 없어요. .env에 YOUTUBE_API_KEY를 넣고 서버를 다시 켜세요."
+QUOTA = "YouTube API 오늘 할당량을 다 썼어요. 태평양 시간 자정(한국 오후 4~5시)에 다시 채워져요."
+REGIONS = {"ko": "KR", "ja": "JP", "en": "US"}
+# 언어마다 제목·설명에 있어야 할 글자. 여기 없는 언어는 글자로 거르지 않는다(relevanceLanguage만)
+SCRIPTS = {"ko": re.compile("[가-힣]"), "ja": re.compile("[\u3040-\u30ff\u4e00-\u9fff]")}
 
 Format = Literal["잡학·상식", "썰·사연", "명언·동기부여", "순위·리스트", "뉴스·이슈", "꿀팁·하우투", "유머·밈",
                  "음식", "일상·브이로그", "게임", "음악·댄스", "동물", "기타"]
@@ -41,21 +62,127 @@ class Trend(Record):
         return config.TRENDS_DIR
 
     @classmethod
-    def create(cls, channel: str, keyword: str = "") -> "Trend":
-        """keyword는 사용자 추가 요청(자유 글). 예전 기록·스케줄과 맞추려고 저장 키 이름은 keyword 그대로 둔다."""
-        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:MAX_REQUEST])
+    def create(cls, channel: str, keyword: str = "", *, popular: bool = False) -> "Trend":
+        """keyword는 사용자 추가 요청(자유 글). 예전 기록·스케줄과 맞추려고 저장 키 이름은 keyword 그대로 둔다.
+        popular면 요즘 인기 쇼츠를 모아 주제 고르기에 함께 넘긴다."""
+        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:MAX_REQUEST], popular=popular)
 
     def again(self) -> "Trend":
         """같은 채널·추가 요청으로 다시 뽑는 새 기록. 앞서 나온 주제(이어진 기록 포함, 최근 50개)는 피하게 넘긴다."""
         shown = self.data.get("avoid", []) + [p["topic"] for p in (self.doc("picks.json") or {}).get("picks", [])]
-        t = Trend.create(self.data["channel"], self.data["keyword"])
+        t = Trend.create(self.data["channel"], self.data["keyword"], popular=self.data.get("popular", False))
         t.update(avoid=shown[-50:])
         return t
+
+
+# ---------- 인기 쇼츠 ----------
+
+def iso_seconds(s: str) -> float:
+    """ISO 8601 길이(PT1M5S, P0D 등)를 초로."""
+    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?", s or "")
+    if not m:
+        return 0.0
+    d, h, mi, sec = (float(x or 0) for x in m.groups())
+    return d * 86400 + h * 3600 + mi * 60 + sec
+
+
+def _api(path: str, **params) -> dict:
+    url = f"{API}{path}?{urlencode(params | {'key': config.secret('YOUTUBE_API_KEY')})}"
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "shorts-printer/0.1"}), timeout=30) as r:
+            return json.load(r)
+    except HTTPError as e:
+        try:
+            reason = json.loads(e.read())["error"]["errors"][0]["reason"]
+        except Exception:  # noqa: BLE001 — 본문이 json이 아니면 상태 코드만 쓴다
+            reason = str(e.code)
+        if reason in ("quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"):
+            raise RuntimeError(QUOTA) from None
+        if e.code in (400, 403):
+            raise RuntimeError(f"YouTube API 키가 맞지 않거나 YouTube Data API v3가 사용 설정되지 않았어요({reason}). "
+                               "Google Cloud 콘솔에서 확인하세요.") from None
+        raise RuntimeError(f"YouTube API 오류({e.code}, {reason})") from None
+    except URLError:
+        raise RuntimeError("YouTube API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
+
+
+def rank(items: list[dict], now: datetime, language: str) -> list[dict]:
+    """videos.list 결과를 거른다(180초 이하, 제목·설명에 그 언어 글자) → 시간당 조회수 내림차순."""
+    out, script = [], SCRIPTS.get(language)
+    for it in items:
+        sn, st = it["snippet"], it.get("statistics", {})
+        dur = iso_seconds(it.get("contentDetails", {}).get("duration"))
+        if not 0 < dur <= MAX_SEC or script and not script.search(sn["title"] + sn.get("description", "")):
+            continue
+        views = int(st.get("viewCount", 0))   # 숨긴 값은 0
+        age = max((now - datetime.fromisoformat(sn["publishedAt"])).total_seconds() / 3600, 1)
+        out.append({"id": it["id"], "title": sn["title"], "channel": sn["channelTitle"], "channel_id": sn["channelId"],
+                    "views": views,
+                    "views_per_hour": round(views / age), "hours": round(age),
+                    "url": f"https://www.youtube.com/shorts/{it['id']}",
+                    "description": sn.get("description", "")[:200]})
+    out.sort(key=lambda v: v["views_per_hour"], reverse=True)
+    seen = Counter()
+    for v in out:
+        v["age"] = next((name for h, name in AGES if v["hours"] <= h), AGES[-1][1])
+        seen[v["age"]] += 1
+        v["age_rank"] = seen[v["age"]]
+    for v in out:
+        v["age_n"] = seen[v["age"]]
+    return out
+
+
+def _subs(ids: list[str]) -> dict[str, int]:
+    """채널 ID → 구독자 수. 숨겼거나 0인 채널은 뺀다. 할당량 1."""
+    items = _api("channels", part="statistics", id=",".join(ids)).get("items", []) if ids else []
+    return {c["id"]: n for c in items if not (st := c["statistics"]).get("hiddenSubscriberCount")
+            and (n := int(st.get("subscriberCount", 0)))}
+
+
+def popular_shorts(ch: Channel) -> list[dict]:
+    """채널 검색어로 최근 POPULAR_DAYS일 쇼츠를 조회수 순으로 찾아 시간당 조회수 상위 POPULAR_N개.
+    구독자 대비 배수(per_sub)를 붙여 큰 채널의 평소 성적과 작은 채널의 대박을 가른다.
+    검색어가 없으면 지역 전체 인기(드라마·아이돌)가 모여 채널과 상관없는 주제가 나와 막는다. 할당량은 102."""
+    if not config.secret("YOUTUBE_API_KEY"):
+        raise RuntimeError(NO_KEY)
+    if not ch.trends.keywords:
+        raise RuntimeError("채널 channel.toml의 [trends] keywords에 인기 쇼츠 검색어를 넣어 주세요.")
+    now = datetime.now(UTC)
+    q = {"part": "snippet", "type": "video", "videoDuration": "short", "order": "viewCount", "maxResults": 50,
+         "relevanceLanguage": ch.language, "q": " | ".join(ch.trends.keywords),   # | 는 YouTube 검색의 OR
+         "publishedAfter": (now - timedelta(days=POPULAR_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if region := REGIONS.get(ch.language):
+        q["regionCode"] = region
+    ids = [it["id"]["videoId"] for it in _api("search", **q).get("items", [])]
+    items = _api("videos", part="snippet,contentDetails,statistics", id=",".join(ids)).get("items", []) if ids else []
+    top = rank(items, now, ch.language)[:POPULAR_N]
+    subs = _subs(sorted({v["channel_id"] for v in top}))
+    for v in top:
+        if n := subs.get(v["channel_id"]):
+            v["per_sub"] = round(v["views"] / n, 2)
+    return top
+
+
+def _age(v: dict) -> str:
+    """나이·구간 순위·구독자 대비 배수. 예전 기록에는 없는 값은 빼고 쓴다."""
+    s = f" · {v['hours']}시간 전" if "hours" in v else ""
+    if "age" in v:
+        s += f" · {v['age']} {v['age_n']}개 중 {v['age_rank']}위"
+    return s + (f" · 구독자의 {v['per_sub']:g}배" if "per_sub" in v else "")
+
+
+def _popular_text(videos: list[dict]) -> str:
+    return "\n".join(f"{i}. {v['title']} · {v['channel']} · 조회수 {v['views']:,} · 시간당 {v['views_per_hour']:,}"
+                     + _age(v)
+                     + (f"\n   설명: {d}" if (d := " ".join(v["description"].split())) else "")
+                     for i, v in enumerate(videos, 1))
 
 
 # ---------- 선정 ----------
 
 class Scores(BaseModel):
+    trend: int = Field(description="화제성 1~5: " + CRITERIA["trend"][1])
+    curious: int = Field(description="호기심 1~5: " + CRITERIA["curious"][1])
     fit: int = Field(description="제작 적합도 1~5: " + CRITERIA["fit"][1])
     fresh: int = Field(description="차별화 1~5: " + CRITERIA["fresh"][1])
     safe: int = Field(description="안전성 1~5: " + CRITERIA["safe"][1])
@@ -69,6 +196,7 @@ class IdeaOut(BaseModel):
     why_now: str = Field(description="왜 지금, 왜 사람들이 궁금해하는지 한두 문장")
     scores: Scores
     search_terms: list[str] = Field(description="화면에 보일 장면을 나타내는 영어 키워드 3~5개")
+    refs: list[int] = Field(default=[], description="참고한 인기 쇼츠 번호. 목록이 없거나 참고하지 않았으면 빈 목록")
 
 
 class IdeasOut(BaseModel):
@@ -86,13 +214,13 @@ def system_idea(ch: Channel) -> str:
 
 def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
     """LLM 답에 총점(채널 weights, 합 100)을 붙여 total 내림차순 상위 IDEA_N개.
-    refs·excluded는 예전 기록(인기 쇼츠 근거)과 화면 모양을 맞추려고 빈 값으로 둔다."""
+    refs는 참고한 인기 쇼츠 번호(1부터). excluded는 예전 기록과 화면 모양을 맞추려고 빈 값으로 둔다."""
     picks = []
     for p in out.picks:
         scores = {k: min(5, max(1, v)) for k, v in p.scores.model_dump().items()}
         total = round(sum(weights[k] * (scores[k] - 1) / 4 for k in weights))
         picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:500],
-                      "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": [],
+                      "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": p.refs,
                       "search_terms": p.search_terms})
     picks.sort(key=lambda p: p["total"], reverse=True)
     return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
@@ -155,6 +283,16 @@ def step_pick(t: Trend, sv: Services) -> str:
     made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     head = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"
             f"점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
+    if t.data.get("popular"):
+        if (videos := t.doc("videos.json")) is None:   # 다시 시도할 때 할당량을 또 쓰지 않는다
+            t.log(f"YouTube에서 최근 {POPULAR_DAYS}일 인기 쇼츠 찾는 중: {' | '.join(ch.trends.keywords)}")
+            videos = popular_shorts(ch)
+            t.put("videos.json", videos)
+        if len(videos) < 3:
+            raise RuntimeError(f"인기 쇼츠를 {len(videos)}개만 찾았어요. "
+                               "channel.toml의 [trends] keywords를 넓혀 보세요.")
+        t.log(f"인기 쇼츠 {len(videos)}개(시간당 조회수 순): " + ", ".join(v["title"] for v in videos[:5]) + " …")
+        head += f"\n\n요즘 뜨는 쇼츠(최근 {POPULAR_DAYS}일, 시간당 조회수 순):\n{_popular_text(videos)}"
     t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
     kept, seen = [], made + avoid
     for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다

@@ -2,7 +2,9 @@
 (MoneyPrinter의 gpt.py 역할).
 지시문 = prompts/script.md(공통) + 채널 script.md·video_style.md. 장면 수·문장 길이·영상 머리말은 channel.toml."""
 import re
+from collections import Counter
 from collections.abc import Sequence
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -161,44 +163,74 @@ def translate(llm: LLM, ch: Channel, s: dict, thumb: dict | None,
     return {"src": src, "cues": list(cues), "ko": out.model_dump()}, usage
 
 
+# 화면은 점수 분야가 아니다(합 100 유지). 지적이 있으면 사실처럼 점수와 상관없이 떨어진다
+Kind = Literal["주제·제목", "흐름", "사실", "문장", "낭독·자막", "재미", "화면"]
+SCORES: dict[str, int] = {"주제·제목": 15, "흐름": 25, "사실": 20, "문장": 15, "낭독·자막": 10, "재미": 15}
+PENALTY = {"큼": 8, "작음": 3}
+PASS = 70
+
+
 class Issue(BaseModel):
     scene: int = Field(description="장면 번호(1부터). 제목·설명·태그는 0")
+    kind: Kind = Field(description="분야: 주제·제목(제목·주제와 본문이 맞는가), 흐름(앞뒤 이어짐·반전·답), "
+                                   "사실(시트보다 세게·어긋남), 문장(꼬임·번역투·입말), 낭독·자막(TTS·자막 끊김·길이), "
+                                   "재미(끝까지 들을 이유), 화면(장면 prompt가 그 문장의 대상을 보여 주는가)")
+    severity: Literal["큼", "작음"] = Field(description="큼: 시청자가 뜻을 놓치거나 오해함. 작음: 들을 만하지만 거슬림")
     problem: str = Field(description="어느 표현이 무슨 뜻이고 왜 어색한지 한 줄. 반드시 한국어(확인하는 사람은 한국인)")
-    fix: str = Field(description="고친 문장(대본 언어)과 괄호 안에 그 뜻을 한국어로 짧게")
+    fix: str = Field(description="고친 문장(대본 언어)과 괄호 안에 그 뜻을 한국어로 짧게. 화면 지적이면 prompt에서 바꿀 곳(영어)")
 
 
 class Verdict(BaseModel):
-    passed: bool = Field(description="시청자에게 내보내도 되면 true")
-    issues: list[Issue] = Field(default_factory=list, description="고칠 곳. passed가 true면 비운다")
+    issues: list[Issue] = Field(default_factory=list, description="고칠 곳 모두. 없으면 비운다")
+
+    def scores(self) -> dict[str, int]:
+        """분야마다 만점에서 지적의 무게만큼 뺀다(0 아래로는 안 간다). 점수는 모델이 아니라 코드가 매긴다."""
+        lost = Counter()
+        for i in self.issues:
+            lost[i.kind] += PENALTY[i.severity]
+        return {k: max(0, top - lost[k]) for k, top in SCORES.items()}
+
+    @property
+    def total(self) -> int:
+        return sum(self.scores().values())
+
+    @property
+    def passed(self) -> bool:
+        # 사실을 시트보다 세게 말한 것, 문장과 다른 부위를 보여 주는 화면은 점수와 상관없이 고친다
+        # (건강 채널에서 틀린 말·엉뚱한 해부 장면은 못 내보낸다)
+        return self.total >= PASS and not any(i.kind in ("사실", "화면") for i in self.issues)
 
     def lines(self, sentences: Sequence[str]) -> list[str]:
-        """로그에 남기고 다시 쓰기에 넘기는 꼴. 원문을 같이 적어 장면 번호 없이도 무엇을 고칠지 알게 한다."""
-        return [f"장면 {i.scene}" + (f"「{sentences[i.scene - 1]}」" if 0 < i.scene <= len(sentences) else "")
+        """로그·화면에 남기는 꼴. 원문을 같이 적어 장면 번호 없이도 무엇을 고칠지 알게 한다."""
+        return [f"장면 {i.scene}" + ("(화면)" if i.kind == "화면" else "") + (f"「{sentences[i.scene - 1]}」" if 0 < i.scene <= len(sentences) else "")
                 + f": {i.problem} → {i.fix}" for i in self.issues]
 
-
-FIX_NOTE = ("검수 지적이다. 지적받은 장면(0은 제목·설명)을 fix를 따라 고치고 괄호 안 한국어 뜻은 넣지 않는다. "
-            "고친 문장이 바로 앞뒤 장면과 이어지지 않으면 그 앞뒤 장면까지만 같이 고친다. "
-            "그 밖의 장면은 한 글자도 바꾸지 않는다:\n")
+    def summary(self) -> str:
+        return f"{self.total}점(" + ", ".join(f"{k} {v}/{SCORES[k]}" for k, v in self.scores().items()) + ")"
 
 
 def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int,
-              facts: Sequence[dict] = ()) -> tuple[Verdict, dict]:
+              facts: Sequence[dict] = (), topic: str = "") -> tuple[Verdict, dict]:
     """대본(script.json 꼴)이 그 말로 자연스러운지, 자막으로 끊었을 때 잘 읽히는지 검수한다.
     문장마다 따로가 아니라 앞 문장들에 비춰 흐름부터 본다. 사실 시트를 붙여 고칠 말이 사실을 벗어나지 않게 한다.
     문장마다 자막 단계와 같은 규칙으로 끊은 자리를 " / "로 보여 준다(끊는 규칙은 못 고치니 문장을 고치게).
-    통과하지 못하면 호출한 쪽이 FIX_NOTE + Verdict.lines()를 revise()로 넘겨 지적한 곳만 고친다."""
+    topic: 작업 주제. 제목·본문이 주제에서 벗어났는지 본다.
+    고치지 않는다. 떨어지면 호출한 쪽이 지적을 남기고 사람 확인으로 멈춘다."""
     def cut(t: str) -> str:
         return " / ".join(p for part in SENTENCE_END.split(t) if part.strip() for p in splitter.chunks(part, limit))
-    scenes = "\n".join(f"{i}. {cut(t)}" for i, t in enumerate(s["sentences"], 1))
-    text = f"제목: {s['title']}\n설명: {s['description']}\n장면 {len(s['sentences'])}개(자막 끊는 자리는 /):\n{scenes}"
+    # 화면은 머리말을 뺀 장면 몫만 보인다(머리말은 모든 장면에 같다)
+    shown = [p.removeprefix(ch.video.style).strip() for p in s.get("prompts") or [""] * len(s["sentences"])]
+    scenes = "\n".join(f"{i}. {cut(t)}" + (f"\n   (화면: {p})" if p else "")
+                       for i, (t, p) in enumerate(zip(s["sentences"], shown, strict=True), 1))
+    text = (f"주제: {topic}\n" if topic else "") + (f"제목: {s['title']}\n설명: {s['description']}\n"
+                                                    f"장면 {len(s['sentences'])}개(자막 끊는 자리는 /):\n{scenes}")
     if facts:
         text += "\n\n" + sheet_block(facts)
     name = "script_proofread_ko" if ch.language == "ko" else "script_proofread"
     verdict, usage = llm.ask(prompts.render(name, lang=ch.lang_name, limit=limit), text, Verdict,
                              refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
     if long := too_long(ch, s["sentences"]):
-        verdict = Verdict(passed=False, issues=verdict.issues + long)
+        verdict = Verdict(issues=verdict.issues + long)
     return verdict, usage
 
 
@@ -207,7 +239,8 @@ def too_long(ch: Channel, sentences: Sequence[str]) -> list[Issue]:
     짧은 장면은 클립 안에 끝나니 넘긴다."""
     hi, u = ch.script.sentence[1], UNITS[ch.script.unit]
     size = len if ch.script.unit == "chars" else (lambda t: len(t.split()))
-    return [Issue(scene=i, problem=f"{n}{u}라 한 장면 {hi}{u}를 넘어 장면 클립보다 길게 읽힘",
+    return [Issue(scene=i, kind="낭독·자막", severity="큼",
+                  problem=f"{n}{u}라 한 장면 {hi}{u}를 넘어 장면 클립보다 길게 읽힘",
                   fix=f"뜻과 고정 멘트는 그대로 두고 군더더기를 덜어 {hi}{u} 안으로 줄인 문장")
             for i, t in enumerate(sentences, 1) if (n := size(t)) > hi]
 

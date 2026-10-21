@@ -24,7 +24,8 @@ async function swap(url, ids) {
   for (const id of ids) {
     const cur = document.getElementById(id), fresh = doc.getElementById(id);
     if (!cur || !fresh) continue;
-    if (cur.querySelector('.changed')) continue;   // 저장하지 않은 고친 칸이 있으면 지우지 않는다
+    // 저장하지 않은 고친 칸이 있으면 지우지 않는다. 자막·목소리 칸은 다른 조각에서 #edit에 묶여 있어 폼(저장 막대)이 든 조각도 지킨다
+    if (cur.querySelector('.changed') || (document.querySelector('.changed') && cur.querySelector('#edit'))) continue;
     // 펼쳐 둔 프롬프트는 새 조각에도 펼친 채로 둔다(이것만 다르면 바꾸지 않는다)
     for (const d of cur.querySelectorAll('.scene[id] details[open]')) fresh.querySelector(`#${CSS.escape(d.closest('.scene').id)} details`)?.setAttribute('open', '');
     for (const d of cur.querySelectorAll('details[id][open]')) fresh.querySelector('#' + CSS.escape(d.id))?.setAttribute('open', '');
@@ -251,6 +252,21 @@ document.addEventListener('click', async e => {
       toast(err instanceof TypeError ? '서버에 닿지 않아요' : err.message, true);
     }
     smp.disabled = false;
+    return;
+  }
+  const share = e.target.closest('a[data-share]');
+  // 폰(터치 화면)에서는 내려받기 대신 공유 시트를 띄운다. iOS는 거기서 "비디오 저장"으로 사진첩에 들어간다.
+  // 공유 API는 https(또는 localhost)에서만 있어서, 없으면 그냥 내려받는다
+  if (share && navigator.maxTouchPoints > 1 &&
+      navigator.canShare?.({ files: [new File([], share.download, { type: 'video/mp4' })] })) {
+    e.preventDefault();
+    toast('영상을 가져오는 중…');
+    try {
+      const blob = await (await fetch(share.href)).blob();
+      await navigator.share({ files: [new File([blob], share.download, { type: 'video/mp4' })] });
+    } catch (err) {
+      if (err.name !== 'AbortError') location.href = share.href;   // 공유가 막히면 보통 내려받기로
+    }
     return;
   }
   const copy = e.target.closest('[data-copy]');

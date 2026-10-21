@@ -107,7 +107,7 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
 
 
 def test_voices_default_chris(ch):
-    assert list(ch.tts.voices.values()) == ["크리스", "미스터킴", "이하나", "지수", "미스터최"]
+    assert list(ch.tts.voices.values()) == ["크리스", "미스터킴", "이하나", "지수", "민성", "미나", "민우", "미스터최"]
     assert ch.tts.default == "PDoCXqBQFGsvfO0hNkEs"
 
 

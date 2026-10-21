@@ -39,9 +39,10 @@ def stop(*a):
     raise StopIteration
 
 
-def idea(topic, fit=3, fresh=3, safe=3, content="핵심 답"):
+def idea(topic, fit=3, fresh=3, safe=3, content="핵심 답", trend=3, curious=3):
     return trends.IdeaOut(topic=topic, angle="a", content=content, format="잡학·상식", why_now="w",
-                          scores=trends.Scores(fit=fit, fresh=fresh, safe=safe), search_terms=["x"])
+                          scores=trends.Scores(trend=trend, curious=curious, fit=fit, fresh=fresh, safe=safe),
+                          search_terms=["x"])
 
 
 def old_record(steps):
@@ -52,15 +53,18 @@ def old_record(steps):
     return t
 
 
-def test_trends_cfg_takes_fit_fresh_safe_summing_100():
-    assert channel.TrendsCfg(production="p").weights == {"fit": 54, "fresh": 23, "safe": 23}
-    for bad in ({"fit": 50, "fresh": 25, "safe": 24},
-                {"trend": 35, "fit": 35, "fresh": 15, "safe": 15},   # 예전 네 개짜리
-                {"fit": 50, "fresh": 50}):
-        with pytest.raises(ValueError, match="fit·fresh·safe 세 개, 합 100"):
+W5 = {"trend": 20, "curious": 25, "fit": 30, "fresh": 10, "safe": 15}
+
+
+def test_trends_cfg_takes_five_weights_summing_100():
+    assert channel.TrendsCfg(production="p").weights == W5
+    for bad in ({**W5, "safe": 14},
+                {"fit": 54, "fresh": 23, "safe": 23},   # 예전 세 개짜리
+                {"trend": 35, "fit": 35, "fresh": 15, "safe": 15}):   # 예전 네 개짜리
+        with pytest.raises(ValueError, match="다섯 개, 합 100"):
             channel.TrendsCfg(production="p", weights=bad)
     cfg = channel.TrendsCfg(production="p", region="KR", keywords=["x"])   # 예전 키는 무시한다
-    assert not {"region", "language", "keywords"} & set(type(cfg).model_fields)
+    assert not {"region", "language"} & set(type(cfg).model_fields) and cfg.keywords == ["x"]
     for cid in ("ko-40sec-facts", "ja-korea-trip"):
         assert sum(channel.load(cid).trends.weights.values()) == 100
 
@@ -72,17 +76,19 @@ def test_create_keeps_request_up_to_max_without_period_or_mode():
     assert "period" not in d and "mode" not in d and list(d["steps"]) == ["pick"]
     with pytest.raises(TypeError):   # 기간 인자는 없다
         trends.Trend.create(CH, "", "3d")
+    assert d["popular"] is False
 
 
-def test_finish_ideas_uses_three_weights_and_top_10():
-    out = trends.IdeasOut(summary="방향", picks=[idea(f"주제{i}", fit=1 + i % 5) for i in range(12)])
-    r = trends.finish_ideas(out, {"fit": 54, "fresh": 23, "safe": 23})
+def test_finish_ideas_uses_five_weights_and_top_10():
+    out = trends.IdeasOut(summary="방향", picks=[idea(f"주제{i}", curious=1 + i % 5) for i in range(12)])
+    r = trends.finish_ideas(out, W5)
     assert len(r["picks"]) == 10 and r["excluded"] == [] and r["summary"] == "방향"
     top = r["picks"][0]
-    assert top["scores"] == {"fit": 5, "fresh": 3, "safe": 3} and top["refs"] == [] and top["content"] == "핵심 답"
-    assert top["total"] == round(54 + 23 * 0.5 + 23 * 0.5)
+    assert top["scores"] == {"trend": 3, "curious": 5, "fit": 3, "fresh": 3, "safe": 3}
+    assert top["refs"] == [] and top["content"] == "핵심 답"
+    assert top["total"] == round(25 + (20 + 30 + 10 + 15) * 0.5)
     r = trends.finish_ideas(trends.IdeasOut(summary="s", picks=[idea("x", fit=5, fresh=1, safe=9)]),
-                            {"fit": 0, "fresh": 0, "safe": 100})
+                            {"trend": 0, "curious": 0, "fit": 0, "fresh": 0, "safe": 100})
     assert r["picks"][0]["scores"]["safe"] == 5 and r["picks"][0]["total"] == 100   # 9는 5로, 가중치는 받은 값 그대로
 
 
@@ -90,7 +96,7 @@ def test_pick_message_has_request_today_weights_and_this_channels_topics():
     pipeline.Job.create(CH, "우리 채널 주제", "v")
     pipeline.Job.create("en-space-facts", "다른 채널 주제", "v")
     ch = channel.load(CH)
-    ch = ch.model_copy(update={"trends": ch.trends.model_copy(update={"weights": {"fit": 60, "fresh": 25, "safe": 15}})})
+    ch = ch.model_copy(update={"trends": ch.trends.model_copy(update={"weights": {**W5, "fit": 35, "fresh": 5}})})
     llm = FakeLLM(stop)
     with pytest.raises(StopIteration):
         trends.step_pick(new("겨울 위주로\n초등학생도 알아듣게"), sv(llm, ch))
@@ -98,7 +104,8 @@ def test_pick_message_has_request_today_weights_and_this_channels_topics():
     text = call["text"]
     assert "추가 요청: 겨울 위주로\n초등학생도 알아듣게" in text and f"오늘: {datetime.now():%Y-%m-%d}" in text
     assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
-    assert "(가중치 60)" in text and "(가중치 25)" in text and "화제성" not in text and "좁힐 주제" not in text
+    assert "trend 화제성 (가중치 20)" in text and "fit 제작 적합도 (가중치 35)" in text and "(가중치 5)" in text
+    assert "좁힐 주제" not in text
     assert call["system"] == trends.system_idea(ch) and call["web"] == research.sites(ch) and call["images"] == []
     with pytest.raises(StopIteration):
         trends.step_pick(new(), sv(llm, ch))
@@ -217,3 +224,53 @@ def test_pick_drops_repeats_of_earlier_topics_and_asks_again():
     assert [p["topic"] for p in t.doc("picks.json")["picks"]] == ["간은 잘라 내도 다시 자랄까?", "손톱은 왜 발톱보다 빨리 자랄까?",
                                                                  "눈썹은 왜 머리카락만큼 안 자랄까?"]
     assert any("겹쳐 2개를 뺐어요" in m for m in logs(t))
+
+
+def _video(vid, title, hours_ago, views, dur="PT40S", desc="설명", ch="UC1"):
+    at = datetime.now(trends.UTC) - trends.timedelta(hours=hours_ago)
+    return {"id": vid, "snippet": {"title": title, "channelTitle": "c", "channelId": ch, "description": desc,
+                                   "publishedAt": at.isoformat().replace("+00:00", "Z")},
+            "contentDetails": {"duration": dur}, "statistics": {"viewCount": str(views)}}
+
+
+def test_popular_pick_sends_shorts_ranked_by_views_per_hour_and_keeps_refs(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "k")
+    calls = []
+    items = [_video("a", "심장이 멈추면", 10, 1000), _video("b", "뼈의 비밀", 100, 50000, ch="UC2"),
+             _video("c", "콩팥 이야기", 5, 900, ch="UC3"), _video("d", "긴 영상 몸", 1, 10**6, "PT5M"),
+             _video("e", "english only", 1, 10**6, desc="no korean")]
+    chans = [{"id": "UC1", "statistics": {"subscriberCount": "400"}},
+             {"id": "UC2", "statistics": {"subscriberCount": "0", "hiddenSubscriberCount": True}}]
+
+    def api(path, **q):
+        calls.append((path, q))
+        if path == "search":
+            return {"items": [{"id": {"videoId": i["id"]}} for i in items]}
+        return {"items": chans if path == "channels" else items}
+
+    monkeypatch.setattr(trends, "_api", api)
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="s", picks=[idea("하품", fit=5).model_copy(update={"refs": [2]})]),
+                              USAGE))
+    t = trends.Trend.create(CH, popular=True)
+    trends.run(t, sv(llm))
+    assert calls[0][1]["regionCode"] == "KR" and "인체 | 우리몸" in calls[0][1]["q"]
+    assert [v["id"] for v in t.doc("videos.json")] == ["b", "c", "a"]   # 시간당 500·180·100, 긴 것·한국어 없는 것 빠짐
+    text = llm.calls[0]["text"]
+    assert "요즘 뜨는 쇼츠" in text and "1. 뼈의 비밀" in text and "긴 영상" not in text and "english" not in text
+    # 구간끼리 순위: c·a는 24시간 안 2개, b는 3~7일 1개. 구독자 숨긴 UC2·없는 UC3는 배수가 없다
+    assert "시간당 500 · 100시간 전 · 3~7일 1개 중 1위\n" in text
+    assert "시간당 180 · 5시간 전 · 24시간 안 2개 중 1위\n" in text
+    assert "시간당 100 · 10시간 전 · 24시간 안 2개 중 2위 · 구독자의 2.5배" in text
+    assert calls[2] == ("channels", {"part": "statistics", "id": "UC1,UC2,UC3"})
+    assert t.doc("picks.json")["picks"][0]["refs"] == [2]
+    assert t.again().data["popular"] is True
+    trends.step_pick(t, sv(llm))   # 다시 고를 때는 모은 쇼츠를 다시 쓴다
+    assert len(calls) == 3
+
+
+def test_popular_without_key_fails_with_hint(monkeypatch):
+    monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
+    t = trends.Trend.create(CH, popular=True)
+    with pytest.raises(RuntimeError):
+        trends.run(t, sv(FakeLLM(stop)))
+    assert t.data["status"] == "failed" and "YOUTUBE_API_KEY" in t.data["error"]["message"]

@@ -106,8 +106,8 @@ def test_trend_page_shows_request_criteria_and_picks():
     assert "“겨울 위주로" in html and "초등학생도 알아듣게" in html and "겨울 궁금증" in html
     assert "건조해서 전하가 쌓인다" in html and html.count('class="pick"') == 10
     assert 'id="c-videos"' not in html and 'id="c-analyses"' not in html and "참고 쇼츠" not in html
-    assert "화제성" not in html and "시간당 조회수" not in html and "Claude가 매김" in html
-    assert '<span class="mono">54</span>' in html and '<span class="mono">23</span>' in html   # 채널 가중치 그대로
+    assert "화제성" in html and "호기심" in html and "시간당 조회수" not in html and "Claude가 매김" in html
+    assert '<span class="mono">25</span>' in html and '<span class="mono">30</span>' in html   # 채널 가중치 그대로
     assert 'name="pick" value="0"' in html and "이 주제로 만들기" in html and f'action="/trends/{t.id}/again"' in html
     assert client.get("/trends/..%2Fx").status_code == 404 and client.get("/trends/nope").status_code == 404
 

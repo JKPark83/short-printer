@@ -19,3 +19,4 @@ class Services:
     publisher: Publisher
     splitter: Splitter
     research: Researcher
+    draft_tts: TTS | None = None   # 확정 전 초안 음성(무료). 없으면 채널 TTS로 읽는다

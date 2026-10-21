@@ -296,6 +296,16 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     assert client.post(url, data=form).status_code == 409   # 확정 뒤엔 장면 프롬프트를 못 고친다
 
 
+def test_confirm_redoes_draft_voice():
+    """초안 음성으로 확인했으면 확정할 때 음성·자막을 다시 해 채널 TTS로 한 번 읽는다."""
+    job = scene_job(done=("script", "voice", "subtitles"))
+    job.update(review=True, voice_draft=True)
+    assert client.post(f"/api/jobs/{job.id}/confirm").json() == {"ok": True}
+    d = job.data
+    assert d["confirmed"] is True and d["status"] == "queued" and web.q._q.get_nowait() == ("run", job.id)
+    assert d["steps"]["voice"]["status"] == d["steps"]["subtitles"]["status"] == "pending"
+
+
 def test_clip_replace_after_done_rerenders_only(monkeypatch):
     job = scene_job("done", STEPS)
     (job.dir / "clips").mkdir()
@@ -396,6 +406,14 @@ def test_edit_subtitle_line_breaks_redoes_voice_and_keeps_them():
     r = client.post(f"/api/jobs/{job.id}/edit", data=form | {"cues": ["가나다. 라", "마 바사", "둘"]}).json()
     assert r["msg"] == "저장했어요. 음성·자막를 다시 해요"
     assert job.data["cue_hand"] == [["가나다. 라", "마 바사"], ["둘"]]
+    web.q._q.get_nowait()
+    # 예전에 줄을 합쳐 나눈 줄 수와 달라진 문장이 있어도, 지금 자막 줄 수대로 묶어 글자를 고칠 수 있다
+    job.update(status="waiting", cue_hand=[["가나다. 라마 바사"], ["둘"]])
+    job.put("cues.json", [{"start": 0, "end": 2, "text": "가나다. 라마 바사"}, {"start": 2, "end": 3, "text": "둘"}])
+    r = client.post(f"/api/jobs/{job.id}/edit", data=form | {"cues": ["가나다. 라마 아자", "둘"]}).json()
+    assert r["msg"] == "저장했어요. 음성·자막를 다시 해요"
+    assert job.data["cue_hand"] == [["가나다. 라마 아자"], ["둘"]]
+    assert job.doc("script.json")["sentences"] == ["가나다. 라마 아자", "둘"]
     web.q._q.get_nowait()
 
 

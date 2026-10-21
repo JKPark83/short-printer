@@ -301,22 +301,52 @@ def test_live_claude_writes_korean_script(ko):
 def test_proofread_shows_subtitle_cuts_and_lists_issues_with_source(tmp_path):
     ch = make_channel(tmp_path, language="ja")
     s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一", "二"]}
-    verdict = script.Verdict(passed=False, issues=[script.Issue(scene=2, problem="번역투", fix="三にする")])
+    verdict = script.Verdict(issues=[script.Issue(scene=2, kind="문장", severity="작음",
+                                                  problem="번역투", fix="三にする")])
     llm = FakeLLM(verdict)
-    out, _ = script.proofread(llm, ch, s, Japanese(), 10)
+    out, _ = script.proofread(llm, ch, s, Japanese(), 10, topic="편의점 환불")
     call = llm.calls[0]
     assert out is verdict and call["schema"] is script.Verdict and "한 줄 10자" in call["system"]
-    assert "1. 一\n2. 二" in call["text"]
+    # 주제를 같이 넘겨 제목·본문이 주제에서 벗어났는지 보게 한다
+    assert call["text"].startswith("주제: 편의점 환불\n제목: t") and "1. 一\n2. 二" in call["text"]
     # 자막 단계와 같은 자리에 /를 넣어 보여 준다. 문장 끝(。)에서는 자막처럼 따로 나눈다
     script.proofread(llm, ch, s | {"sentences": ["今日は天気がいいですね。散歩に行きましょう。"]}, Japanese(), 10)
     assert "1. 今日は天気が / いいですね。 / 散歩に行きましょう。" in llm.calls[1]["text"]
     assert verdict.lines(s["sentences"]) == ["장면 2「二」: 번역투 → 三にする"]
 
 
+def test_verdict_passes_at_70_points_unless_a_fact_is_flagged():
+    def issue(kind, severity="큼"):
+        return script.Issue(scene=1, kind=kind, severity=severity, problem="p", fix="f")
+    assert script.Verdict().total == 100 and script.Verdict().passed
+    v = script.Verdict(issues=[issue("흐름")] * 3 + [issue("재미", "작음")])
+    assert v.scores()["흐름"] == 1 and v.total == 73 and v.passed
+    v.issues.append(issue("흐름"))   # 분야 점수는 0 아래로 가지 않는다
+    assert v.scores()["흐름"] == 0 and v.total == 72 and v.passed
+    v.issues.append(issue("주제·제목"))
+    assert v.total == 64 and not v.passed
+    # 사실을 시트보다 세게 말한 것은 점수가 높아도 떨어진다
+    assert not script.Verdict(issues=[issue("사실", "작음")]).passed
+    # 문장과 다른 부위를 보여 주는 화면도 점수와 상관없이 떨어진다(점수 분야는 아니다)
+    v = script.Verdict(issues=[issue("화면")])
+    assert v.total == 100 and not v.passed and "화면" not in v.scores()
+    assert v.lines(["손가락"]) == ["장면 1(화면)「손가락」: p → f"]
+
+
+def test_proofread_shows_scene_prompts_without_the_style_prefix(tmp_path):
+    ch = make_channel(tmp_path, language="ja", video={"style": "STYLE."})
+    s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一", "二"],
+         "prompts": ["STYLE. flexor tendons of the hand", ""]}
+    llm = FakeLLM(script.Verdict())
+    script.proofread(llm, ch, s, Japanese(), 10)
+    assert llm.calls[0]["text"].endswith("1. 一\n   (화면: flexor tendons of the hand)\n2. 二")
+
+
 def test_proofread_flags_scenes_over_the_length_limit_even_when_the_model_passes(tmp_path):
     ch = make_channel(tmp_path, language="ja", script={"sentence": [3, 5], "unit": "chars"})
     s = {"title": "t", "description": "d", "tags": ["a"], "sentences": ["一二三", "一二三四五六"]}
-    out, _ = script.proofread(FakeLLM(script.Verdict(passed=True)), ch, s, Japanese(), 10)
-    assert not out.passed and [(i.scene, "6자" in i.problem) for i in out.issues] == [(2, True)]
+    out, _ = script.proofread(FakeLLM(script.Verdict()), ch, s, Japanese(), 10)
+    assert [(i.scene, i.kind, i.severity, "6자" in i.problem) for i in out.issues] == [(2, "낭독·자막", "큼", True)]
+    assert out.scores()["낭독·자막"] == 2
     en = make_channel(tmp_path, script={"sentence": [1, 2], "unit": "words"})
     assert [i.scene for i in script.too_long(en, ["one two", "one two three"])] == [2]

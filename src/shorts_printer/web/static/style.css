@@ -90,6 +90,9 @@ input, select, textarea { width: 100%; min-height: 44px; padding: 10px 12px; bor
 input:hover, select:hover, textarea:hover { border-color: var(--muted-fg); }
 input::placeholder, textarea::placeholder { color: var(--muted-fg); }
 select { cursor: pointer; }
+.check-row { display: flex; align-items: center; gap: var(--s2); min-height: 44px; font-size: 14px; color: var(--fg); cursor: pointer; }
+.check-row input { width: 18px; min-height: 0; height: 18px; padding: 0; accent-color: var(--accent); }
+.refs-list { margin: 0; padding-left: 1.1em; }
 .counter { justify-self: end; margin-top: calc(-1 * var(--s2)); color: var(--muted-fg); font: 12px var(--mono); }
 .form .btn { margin-top: var(--s3); }
 .hint { display: flex; align-items: center; gap: var(--s2); margin: 0; color: var(--warn); font-size: 13px; }
@@ -231,6 +234,12 @@ select { cursor: pointer; }
 .facts li + li { margin-top: var(--s3); }
 .facts p { margin: 0; overflow-wrap: anywhere; }
 .fact-src { font-size: 12px; }
+/* 검수 점수: 분야 이름 · 막대 · 점수 */
+.scores { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s2) var(--s4); margin: 0 0 var(--s3); }
+.scores dt { color: var(--muted-fg); font-size: 13px; }
+.scores dd { display: flex; align-items: center; gap: var(--s3); margin: 0; }
+.scores meter { flex: 1; min-width: 0; height: 10px; }
+.chip-bad { color: var(--bad); border-color: rgba(248, 113, 113, .5); }
 .desc-preview { margin: 0; padding: var(--s3); white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border);
   border-radius: 6px; background: var(--bg); font: 13px/1.5 var(--sans); }
 .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: var(--s4); }

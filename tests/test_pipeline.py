@@ -346,6 +346,7 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
             raise fa.Refused("미성년자 정책")
         if prompt == "a" or (prompt == "b" and tries.count("b") == 1):
             raise RuntimeError("화면이 바뀜")
+        path.write_bytes(prompt.encode())
 
     monkeypatch.setattr(fa, "_generate", gen)
     todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abcd")]
@@ -357,6 +358,34 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
     assert got == ["c.mp4", "b.mp4"] and len(slept) == 2 and 0 < slept[0] <= fa.RETRY_AFTER
     assert "장면 4 거절됨(미성년자 정책)" in logs[4]
     assert "다시 해도 못 만듦" in logs[-2] and "다시 시도해 완료" in logs[-1]
+
+
+def test_flow_auto_never_resubmits_lost_and_drops_duplicate_clip(monkeypatch, tmp_path):
+    """넣었는데 못 받은 장면은 다시 넣지 않고(두 번 과금), 앞 장면과 같은 파일을 받으면 버린다."""
+    from unittest.mock import MagicMock
+
+    import playwright.sync_api
+
+    fa = flow_auto
+    monkeypatch.setattr(fa, "open_chrome", lambda: None)
+    monkeypatch.setattr(fa, "_settings", lambda page: None)
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
+    monkeypatch.setattr(fa.time, "sleep", lambda s: None)
+    tries = []
+
+    def gen(page, prompt, path):
+        tries.append(prompt)
+        if prompt == "b":
+            raise fa.Lost("TimeoutError")
+        path.write_bytes(b"same")   # 타일을 잘못 짚으면 앞 장면 영상이 또 받아진다
+
+    monkeypatch.setattr(fa, "_generate", gen)
+    todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abc")]
+    got = []
+    with pytest.raises(RuntimeError, match="장면 2, 3을 못 만들었어요"):
+        for c in fa.FlowAuto().make(todo, tmp_path, lambda line: None):
+            got.append(c["file"])
+    assert tries == ["a", "b", "c"] and got == ["a.mp4"] and not (tmp_path / "c.mp4").exists()
 
 
 def test_translate_only_non_korean_when_source_changed_and_never_fails_job(monkeypatch):
@@ -423,90 +452,51 @@ def test_step_research_without_facts_keeps_notes_and_usage():
     assert job.data["research_usage"]["cost_usd"] == 0.01 and "조사 메모: 확인 못 함" in job.tail()[-1]
 
 
-def test_proofread_step_fixes_only_flagged_scenes_until_it_passes(monkeypatch):
+def test_proofread_step_only_reviews_and_passes_with_small_issues_left(monkeypatch):
     ja = channel.load("ja-korea-trip")
     monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
-    verdicts = iter([script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="번역투", fix="こう")]),
-                     # 두 번째부터는 고친 장면과 그 앞뒤만 본다: 옆 장면 2는 고치고 먼 장면 3의 새 지적은 넘긴다
-                     script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=2, problem="부딪힘", fix="ああ"),
-                                                              script_mod.Issue(scene=3, problem="새 흠", fix="x")]),
-                     script_mod.Verdict(passed=True)])
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
-    notes = []
-
-    def revise(llm, ch, s, note, draft=False, facts=()):
-        notes.append(note)
-        return s | {"title": "t2", "sentences": ["こう", "ああ" if len(notes) > 1 else "二", "三"],
-                    "prompts": ["P", "Q", "R"], "prompts_ko": ["", "", ""], "fact_ids": [[], [], []]}, usage
     monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
         title="t1", description="d", tags=["a"], sensitive="",
         scenes=[script_mod.Scene(sentence=t, prompt=p) for t, p in zip("一二三", "pqr", strict=True)]), usage))
-    monkeypatch.setattr(pipeline.script, "revise", revise)
-    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (next(verdicts), usage))
+    monkeypatch.setattr(pipeline.script, "revise", lambda *a, **kw: pytest.fail("검수는 고치지 않는다"))
+    verdict = script_mod.Verdict(issues=[script_mod.Issue(scene=3, kind="문장", severity="작음",
+                                                          problem="새 흠", fix="x")])
+    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (verdict, usage))
     job = Job.create("ja-korea-trip", "주제", "v")
     sv = services(channel=ja)
     pipeline.step_script(job, sv)
     assert pipeline.step_proofread(job, sv) == "m"
-    # 처음부터 다시 쓰지 않고 지적(원문과 함께)만 넘겨 그 장면만 고친다
-    assert notes == [script_mod.FIX_NOTE + "- 장면 1「一」: 번역투 → こう",
-                     script_mod.FIX_NOTE + "- 장면 2「二」: 부딪힘 → ああ"]
     s = job.doc("script.json")
-    # 바뀐 장면만 영상 프롬프트를 새로 쓴다(일본어도 한국어처럼 확정 전 대본으로 고친다)
-    assert s["title"] == "t2" and s["sentences"] == ["こう", "ああ", "三"] and s["prompts"] == ["P", "Q", "r"]
-    assert job.data["usage"]["cost_usd"] == 0.06   # 쓰기 1 + 검수 3 + 고치기 2
+    # 대본은 한 글자도 안 바뀐다
+    assert s["title"] == "t1" and s["sentences"] == ["一", "二", "三"] and s["prompts"] == ["p", "q", "r"]
+    assert job.data["usage"]["cost_usd"] == 0.02   # 쓰기 1 + 검수 1
+    assert not job.data.get("review")
     logs = "\n".join(job.tail())
-    assert "불통과(1/3)" in logs and "번역투 → こう" in logs
-    assert "지적한 곳 고침 2곳:\n제목: t1\n  → t2\n장면 1: 一\n  → こう" in logs   # 바뀐 말을 원문과 함께 남긴다
-    assert "지적한 곳 고침 1곳:\n장면 2: 二\n  → ああ" in logs and "통과(3번째 대본)" in logs
-    assert "고친 곳에서 먼 장면 지적 1개는 넘김" in logs
+    assert "통과 97점(주제·제목 15/15, 흐름 25/25, 사실 20/20, 문장 12/15" in logs and "남은 지적 1개" in logs
+    pr = job.doc("proofread.json")
+    assert pr["pass"] == 70 and [r["total"] for r in pr["rounds"]] == [97] and pr["rounds"][0]["passed"]
+    assert pr["rounds"][0]["issues"] == [{"kind": "문장", "severity": "작음", "text": "장면 3「三」: 새 흠 → x"}]
 
 
-def test_korean_proofread_rewrites_prompts_only_for_changed_scenes_and_waits_for_a_human(monkeypatch):
+def test_failed_proofread_keeps_the_script_and_waits_for_a_human(monkeypatch):
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
-    calls = []
-
-    def revise(llm, ch, s, note, draft=False, facts=()):
-        calls.append((note, draft))   # 모델이 안 바꾼 장면 프롬프트까지 고쳐 써도 되돌린다
-        n = len(calls)   # 매번 첫 장면을 고쳐 다음 검수도 그 장면을 본다
-        return s | {"sentences": [f"가{n}", "나2", "다"], "prompts": ["P", "Q", "R"], "prompts_ko": ["ㄱ", "ㄴ", "ㄷ"],
-                    "fact_ids": [["F1"], [], ["F9"]]}, usage
     monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
         title="t", description="d", tags=["a"], sensitive="",
         scenes=[script_mod.Scene(sentence=t, prompt=p) for t, p in zip("가나다", "pqr", strict=True)]), usage))
-    monkeypatch.setattr(pipeline.script, "revise", revise)
-    bad = script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=1, problem="반전이 아님", fix="가2")])
+    monkeypatch.setattr(pipeline.script, "revise", lambda *a, **kw: pytest.fail("검수는 고치지 않는다"))
+    bad = script_mod.Verdict(issues=[script_mod.Issue(scene=1, kind="사실", severity="큼",
+                                                      problem="반전이 아님", fix="가2")])
     monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (bad, usage))
     job = Job.create(CH, "주제", "v")
     sv = services()
     pipeline.step_script(job, sv)
-    pipeline.step_proofread(job, sv)   # 끝내 떨어져도 실패하지 않는다
-    assert calls[0][0].startswith(script_mod.FIX_NOTE) and calls[0][1] is True
-    s = job.doc("script.json")
-    assert s["sentences"] == ["가2", "나2", "다"] and len(calls) == 2
-    assert s["prompts"] == ["P", "Q", "r"] and s["prompts_ko"] == ["ㄱ", "ㄴ", ""] and s["fact_ids"][2] == []
-    # 장면을 만들기 전에 사람 확인으로 멈춘다(스케줄 작업도)
-    assert job.data["review"] is True and "대본 검수를 3번 통과하지 못했어요" in job.tail()[-1]
-
-
-def test_japanese_script_that_never_passes_proofread_waits_for_a_human_with_last_draft_kept(monkeypatch):
-    ja = channel.load("ja-korea-trip")
-    monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
-    usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
-    monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
-        title="t", description="d", tags=["a"], sensitive="", scenes=[script_mod.Scene(sentence="一", prompt="p")]),
-        usage))
-    monkeypatch.setattr(pipeline.script, "revise",
-                        lambda llm, ch, s, note, draft=False, facts=():
-                        (s | {"title": s["title"] + "2", "prompts_ko": [""], "fact_ids": [[]]}, usage))
-    bad = script_mod.Verdict(passed=False, issues=[script_mod.Issue(scene=0, problem="제목", fix="x")])
-    monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (bad, usage))
-    job = Job.create("ja-korea-trip", "주제", "v")
-    sv = services(channel=ja)
-    pipeline.step_script(job, sv)
-    pipeline.step_proofread(job, sv)   # 끝내 떨어져도 실패하지 않고 사람 확인으로 멈춘다
-    assert job.data["review"] is True
-    assert job.doc("script.json")["title"] == "t22"
-    assert sum("불통과" in line for line in job.tail()) == 3 and sum("고침" in line for line in job.tail()) == 2
+    pipeline.step_proofread(job, sv)   # 떨어져도 실패하지 않는다
+    assert job.doc("script.json")["sentences"] == ["가", "나", "다"]   # 한 글자도 안 고친다
+    # 장면을 만들기 전에 사람 확인으로 멈추고, 지적은 로그에 남는다
+    assert job.data["review"] is True and not job.doc("proofread.json")["rounds"][0]["passed"]
+    last = job.tail()[-1]
+    assert "불통과" in last and "장면 1「가」: 반전이 아님 → 가2" in last and "검수는 고치지 않아요" in last
 
 
 def test_old_job_without_proofread_step_is_filled_from_script(db):
@@ -515,3 +505,21 @@ def test_old_job_without_proofread_step_is_filled_from_script(db):
     old["script"]["status"] = "done"
     db.edit("job", job.id, lambda d: d | {"steps": old})
     assert job.data["steps"]["proofread"]["status"] == "done"
+
+
+def test_voice_is_free_draft_until_confirmed(monkeypatch):
+    """확정 전엔 무료 초안 TTS로만 읽고, 확정 뒤에야 채널 TTS(유료)로 읽는다."""
+    job = scene_job("script")
+    job.update(review=True)
+    called = []
+    monkeypatch.setattr(pipeline.voice, "draft", lambda tts, *a: called.append("draft") or ("초안", []))
+    monkeypatch.setattr(pipeline.voice, "synth", lambda tts, *a: called.append("synth") or ("유료", []))
+    draft = SimpleNamespace(label="초안", ready=lambda: True)
+    sv = services(tts=SimpleNamespace(label="유료"), draft_tts=draft)
+    assert pipeline.step_voice(job, sv) == "초안" and job.data["voice_draft"] is True
+    job.update(confirmed=True)
+    assert pipeline.step_voice(job, sv) == "유료" and job.data["voice_draft"] is False
+    job.update(confirmed=False)
+    draft.ready = lambda: False   # macOS가 아니면 채널 TTS로
+    pipeline.step_voice(job, sv)
+    assert called == ["draft", "synth", "synth"]

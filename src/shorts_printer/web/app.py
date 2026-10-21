@@ -446,7 +446,7 @@ def job_page(request: Request, job_id: str):
         "ko": ko, "ko_stale": bool(ko and s and ko["src"] != script.ko_source(s, thumb)),
         # 옮긴 뒤 자막을 고쳤거나 옮길 때 자막이 없었으면 자막 뜻은 안 보인다
         "ko_cues": ko["ko"]["cues"] if ko and cues and ko.get("cues") == [c["text"] for c in cues] else None,
-        "scenes": _scenes(job), "can_upload": _can_upload(job.data)})
+        "scenes": _scenes(job), "can_upload": _can_upload(job.data), "proofread": job.doc("proofread.json")})
 
 
 @app.get("/api/jobs/{job_id}")
@@ -484,6 +484,9 @@ def confirm(job_id: str):
         if job.data["status"] != "waiting":
             raise HTTPException(409, "지금은 확정할 수 없어요")
         job.update(confirmed=True)
+    if job.data.get("voice_draft"):   # 초안 음성이면 채널 TTS로 다시 읽고 자막 시각도 새로 잰다(고친 줄은 그대로)
+        _redo(job_id, ("voice", "subtitles"))
+        return {"ok": True}
     return retry(job_id)
 
 
@@ -567,10 +570,10 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
             sp = registry.splitter(ch.language)
             limit = ch.style.subtitle_limit or sp.limit
             try:
-                hand = subtitles.groups(lines, texts, sp, limit)
+                hand = subtitles.groups(lines, texts, sp, limit, job.data.get("cue_hand"))
             except RuntimeError as e:
                 raise HTTPException(400, str(e)) from e
-            files["script.json"]["sentences"] = subtitles.sentences(lines, hand, sp, limit)
+            files["script.json"]["sentences"] = subtitles.sentences(lines, hand)
             fields["cue_hand"] = hand
             steps |= {"voice", "subtitles", "render"}
     if thumb and (t := job.doc("thumb.json")):
@@ -701,10 +704,10 @@ def trends_page(request: Request):
 
 
 @app.post("/trends")
-def create_trend(keyword: str = Form(""), cid: str = Form("", alias="channel")):
-    """keyword = 기본 추천 기준에 더할 추가 요청(자유 글). 길이는 core가 자른다."""
+def create_trend(keyword: str = Form(""), cid: str = Form("", alias="channel"), popular: bool = Form(False)):
+    """keyword = 기본 추천 기준에 더할 추가 요청(자유 글). 길이는 core가 자른다. popular = 인기 쇼츠 참고."""
     ch = _channel(cid, 400)
-    trend = Trend.create(ch.id, keyword)
+    trend = Trend.create(ch.id, keyword, popular=popular)
     q.enqueue_trend(trend.id)
     return RedirectResponse(f"/trends/{trend.id}", status_code=303)
 
@@ -724,7 +727,7 @@ def trend_page(request: Request, trend_id: str):
     trend = _load(Trend, trend_id)
     return _page(request, "trend.html", {
         "t": trend.data, "ch": _channel(trend.data.get("channel")), "picks": trend.doc("picks.json"),
-        "log": _tail(trend)})
+        "videos": trend.doc("videos.json") or [], "log": _tail(trend)})
 
 
 @app.get("/api/trends/{trend_id}")

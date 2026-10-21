@@ -16,6 +16,8 @@
                     aria-describedby="keyword-count keyword-help"></textarea>
           <span id="keyword-count" class="counter" data-for="keyword">0/{{ trends.MAX_REQUEST }}</span>
           <small id="keyword-help" class="help">비우면 채널 기본 추천 기준만으로 주제 {{ trends.IDEA_N }}개를 골라요. 적으면 기본 기준에 더해 따라요. 예: 겨울철에 맞는 주제 위주로, 초등학생도 알아들을 소재</small>
+          <label class="check-row"><input type="checkbox" name="popular" value="true" aria-describedby="popular-help"{{ ' disabled' if not ch.trends.keywords }}>요즘 인기 쇼츠 참고</label>
+          <small id="popular-help" class="help">{% if ch.trends.keywords %}YouTube에서 최근 {{ trends.POPULAR_DAYS }}일 동안 「{{ ch.trends.keywords|join(' · ') }}」로 뜨는 쇼츠를 시간당 조회수 순으로 {{ trends.POPULAR_N }}개 모아, 그 소재에서 절반 이상을 골라요. <code>.env</code>의 YOUTUBE_API_KEY가 필요해요(하루 할당량 1만 중 101).{% else %}channel.toml의 [trends] keywords에 검색어를 넣으면 쓸 수 있어요.{% endif %}</small>
           <p class="cost">AI 한 번 · 1~2분</p>
           <button class="btn btn-primary" type="submit" data-busy="시작하는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>추천 받기</span></button>
           {% if not llm_ok %}<p class="hint">{{ icon('alert', 14) }}{{ checks[0][1] }}가 없어 AI 단계에서 멈춰요</p>{% endif %}
@@ -29,6 +31,7 @@
         <ol class="how">
           <li><strong>기본 기준</strong> 채널 분야와 추천 규칙(<code>ideas.md</code>·<code>trends.md</code>)으로 Claude가 웹을 찾아 주제 {{ trends.IDEA_N }}개를 골라요. 이 채널에서 이미 만든 주제는 빼요</li>
           <li><strong>추가 요청</strong> 적은 것이 있으면 기본 기준에 더해 따라요. 사실 확인·안전 규칙은 그대로 지켜요</li>
+          <li><strong>인기 쇼츠 참고</strong> 켜면 채널 검색어로 요즘 뜨는 쇼츠를 모아 그 소재를 우리 채널 방식으로 바꿔 골라요. 제목은 베끼지 않아요</li>
           <li><strong>점수</strong> 제작 적합도·차별화·안전성을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 줄 세워요</li>
         </ol>
         <p class="muted small">마음에 드는 추천에서 [이 주제로 만들기]를 누르면 대본부터 렌더까지 바로 만들어요. 자동으로 만들지는 않아요.</p>
@@ -46,7 +49,7 @@
           {% set tc = channels.get(t.channel) %}
           <li><a class="job-row" href="/trends/{{ t.id }}">
             <span class="jr-main">
-              <span class="jr-topic">{{ t.keyword|truncate(40) if t.keyword else '기본 기준' }}</span>
+              <span class="jr-topic">{{ t.keyword|truncate(40) if t.keyword else '기본 기준' }}{% if t.popular %} · 인기 쇼츠{% endif %}</span>
               <span class="jr-meta">{% if not ch and tc %}<span class="badge b-ch">{{ tc.name }}</span> {% endif %}{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}</span>
             </span>
             <span class="dots" role="img" aria-label="{% for s in trends.STEPS %}{{ trends.LABELS[s] }} {{ STATE[t.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">

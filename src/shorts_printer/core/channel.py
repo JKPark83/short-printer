@@ -90,12 +90,13 @@ class ResearchCfg(BaseModel):
 
 class TrendsCfg(BaseModel):
     production: str   # 우리 제작 방식 한 단락
-    weights: dict[str, int] = {"fit": 54, "fresh": 23, "safe": 23}   # 추천 점수 가중치
+    weights: dict[str, int] = {"trend": 20, "curious": 25, "fit": 30, "fresh": 10, "safe": 15}   # 추천 점수 가중치
+    keywords: list[str] = []   # 인기 쇼츠 참고 때 YouTube 검색어(OR로 묶는다). 띄어 쓰면 OR가 깨져 거의 안 잡힌다
 
     @model_validator(mode="after")
     def _weights(self):
-        if set(self.weights) != {"fit", "fresh", "safe"} or sum(self.weights.values()) != 100:
-            raise ValueError("trends.weights는 fit·fresh·safe 세 개, 합 100이어야 해요")
+        if set(self.weights) != {"trend", "curious", "fit", "fresh", "safe"} or sum(self.weights.values()) != 100:
+            raise ValueError("trends.weights는 trend·curious·fit·fresh·safe 다섯 개, 합 100이어야 해요")
         return self
 
 

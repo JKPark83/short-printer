@@ -21,6 +21,7 @@
     <div class="jh-text">
       <h1>{{ ('“' ~ t.keyword|truncate(40) ~ '” 추천') if t.keyword else '기본 기준 추천' }}</h1>
       <p class="meta"><code>{{ t.id }}</code> · {{ ch.name }} · {{ ch.lang_name }} · {{ t.created_at|hm }}</p>
+      {% if t.popular %}<p class="summary request"><strong>참고</strong>요즘 인기 쇼츠 {{ videos|length or '' }}개</p>{% endif %}
       {% if t.keyword %}<p class="summary request"><strong>추가 요청</strong>{{ t.keyword }}</p>{% endif %}
     </div>
     <div class="jh-actions">
@@ -70,7 +71,7 @@
 
       <section id="c-criteria" class="card" aria-labelledby="h-criteria">
         <div class="card-head"><h2 id="h-criteria"><span class="num">1</span>선정 기준</h2></div>
-        <p class="card-lead">추천마다 세 기준을 1~5점으로 매기고 가중치를 곱해 100점 만점으로 합쳐요. 우리 제작 방식으로 만들 수 있는지와 이 채널에서 이미 만든 작업 주제와 겹치지 않는지를 함께 봐요.</p>
+        <p class="card-lead">추천마다 기준별로 1~5점을 매기고 가중치를 곱해 100점 만점으로 합쳐요. 지금 사람들이 찾는 소재인지, 듣자마자 궁금한지에 더해 우리 제작 방식으로 만들 수 있는지와 이미 만든 주제와 겹치지 않는지를 함께 봐요.</p>
         {% set weights = ch.trends.weights %}{% set wmax = weights.values()|max %}
         <table class="crit">
           <thead><tr><th scope="col">기준</th><th scope="col">보는 것</th><th scope="col">가중치</th></tr></thead>
@@ -84,6 +85,14 @@
             {% endfor %}
           </tbody>
         </table>
+        {% if t.popular and videos %}
+        <details class="script-edit">
+          <summary>참고한 인기 쇼츠 {{ videos|length }}개 · 최근 {{ trends.POPULAR_DAYS }}일 시간당 조회수 순</summary>
+          <ol class="refs-list">{% for v in videos %}
+            <li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a> <span class="muted small">{{ v.channel }} · 조회수 {{ '{:,}'.format(v.views) }} · 시간당 {{ '{:,}'.format(v.views_per_hour) }}</span></li>
+          {% endfor %}</ol>
+        </details>
+        {% endif %}
       </section>
 
       <section id="c-picks" class="card" aria-labelledby="h-picks">
@@ -115,6 +124,10 @@
               <dt>왜 지금</dt><dd>{{ p.why_now }}</dd>
               <dt>전개 방향</dt><dd>{{ p.angle }}</dd>
               <dt>검색어</dt><dd><span class="chips">{% for s in p.search_terms %}<span class="chip">{{ s }}</span>{% endfor %}</span></dd>
+              {% if t.popular and p.refs and videos %}<dt>참고 쇼츠</dt>
+              <dd><ul class="refs-list">{% for r in p.refs if r is number and 0 < r <= videos|length %}{% set v = videos[r - 1] %}
+                <li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a> <span class="muted small">{{ v.channel }} · 시간당 {{ '{:,}'.format(v.views_per_hour) }}회</span></li>
+              {% endfor %}</ul></dd>{% endif %}
             </dl>
             <form class="pick-form" method="post" action="/jobs">
               <input type="hidden" name="trend" value="{{ t.id }}"><input type="hidden" name="pick" value="{{ i }}">
