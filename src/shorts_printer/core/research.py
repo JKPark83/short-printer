@@ -49,13 +49,15 @@ def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[
     notes = list(dict.fromkeys(f["text"] for f in raw if not f["url"]))
     for f in (f for f in raw if f["url"]):
         uniq.setdefault(f["text"], f)   # 같은 문장은 첫 것만
+    if len(uniq) > MAX_FACTS:   # 지시문의 상한을 모델이 넘기도 해서 코드로 자른다(대본이 곁가지를 다 쓰지 않게)
+        notes.append(f"사실 {len(uniq)}개 가운데 앞 {MAX_FACTS}개만 썼다")
     at = datetime.now().astimezone().isoformat(timespec="seconds")
     facts = []
-    for i, f in enumerate(uniq.values(), 1):
+    for i, f in enumerate(list(uniq.values())[:MAX_FACTS], 1):
         site = _site(f["url"])
         facts.append({"id": f"F{i}", "text": f["text"], "url": f["url"], "title": f.get("title") or "", "site": site,
                       "kind": _kind(site, r.news, r.domains), "published": f.get("published") or "",
-                      "retrieved_at": f.get("retrieved_at") or at})
+                      "retrieved_at": f.get("retrieved_at") or at} | ({"quote": f["quote"]} if f.get("quote") else {}))
     # 어댑터가 검색어를 돌려주지 않아 비워 둔다(문서 모양은 맞춘다)
     return {"queries": [], "facts": facts, "notes": notes}, usage
 

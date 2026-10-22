@@ -1,5 +1,6 @@
 """Google Flow 자동 공급자: 전용 Chrome(sp chrome으로 한 번 로그인)에 CDP로 붙어 사람이 하던 클릭을 대신한다.
 Flow는 API가 없어 화면을 누른다. 화면이 바뀌면 장면을 건너뛰어 "클립 대기"로 남고, 직접 올리면 된다."""
+import base64
 import hashlib
 import os
 import time
@@ -14,6 +15,10 @@ MODEL = "Omni 1.1 Flash"
 GEN_TIMEOUT = 360   # 초. 보통 2분 안팎
 RETRY_AFTER = 300   # 초. 실패한 장면은 이만큼 뒤 한 번만 다시
 TILE = '.container:has(button[aria-label="프롬프트 재사용"])'
+# 받은 영상(blob:)을 페이지 안에서 읽는다. Chrome 다운로드 폴더는 CDP로 붙은 마지막 연결 것이라,
+# 크레딧 조회·스튜디오 업로드가 붙었다 떨어지면 그 폴더가 지워져 이후 다운로드가 0바이트가 된다
+READ_BLOB = """async u => { const b = await (await fetch(u)).blob();
+  return await new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result.split(',')[1]); f.readAsDataURL(b); }); }"""
 
 
 class Refused(RuntimeError):
@@ -42,7 +47,11 @@ def _settings(page) -> None:
 
 
 class Lost(RuntimeError):
-    """생성은 넣었는데 받지 못했다. 다시 넣으면 크레딧이 또 들므로 다시 넣지 않는다."""
+    """생성은 넣었는데 받지 못했다. 다시 넣으면 크레딧이 또 들므로 다시 넣지 않고, 끝에 새로 불러와 다시 받는다."""
+
+    def __init__(self, msg: str, pos: int):
+        super().__init__(msg)
+        self.pos = pos   # 거절 아닌 타일 가운데 오래된 쪽부터 센 자리. 새 타일은 맨 앞에 붙어 이 자리는 안 바뀐다
 
 
 # Flow는 타일 컨테이너를 겹쳐 두고(한 영상이 두 번 잡힌다) 다시 그릴 때 DOM 표시·썸네일 주소를 바꾼다.
@@ -70,7 +79,8 @@ def _wait(page, until, timeout: int):
 
 def _generate(page, prompt: str, path: Path) -> None:
     """프롬프트 하나 → 새 타일이 끝나면 원본 크기로 받아 path에. 실패하면 던진다(장면만 건너뜀)."""
-    before = len(page.evaluate(SNAPSHOT))
+    tiles = page.evaluate(SNAPSHOT)
+    before, pos = len(tiles), sum(not t["error"] for t in tiles)
     box = page.locator('[contenteditable="true"]').first
     box.click()
     page.keyboard.press("Meta+A")
@@ -83,7 +93,7 @@ def _generate(page, prompt: str, path: Path) -> None:
     except Refused:
         raise
     except Exception as e:  # noqa: BLE001
-        raise Lost(f"{type(e).__name__}: {e}") from e
+        raise Lost(f"{type(e).__name__}: {e}", pos) from e
 
 
 def _download(page, path: Path) -> None:
@@ -91,7 +101,26 @@ def _download(page, path: Path) -> None:
     kind, text = _wait(page, lambda now: _state(now), GEN_TIMEOUT)
     if kind == "error":
         raise Refused(" ".join(text.split()) or "Flow가 이 프롬프트를 거절했어요")
-    tile = page.locator(TILE).filter(has_not=page.locator(TILE)).first
+    _save(page, page.locator(TILE).filter(has_not=page.locator(TILE)).first, path)
+
+
+def _ok_index(tiles: list[dict], pos: int) -> int | None:
+    """오래된 쪽부터 pos번째인 거절 아닌 타일의 화면 순서. 아직 안 보이면 None."""
+    ok = [i for i, t in enumerate(tiles) if not t["error"]]
+    return ok[-1 - pos] if pos < len(ok) else None
+
+
+def _refetch(page, pos: int, path: Path) -> None:
+    """받지 못한 타일을 (새로 불러온) 프로젝트에서 자리로 찾아 다시 받는다. 받기는 크레딧이 들지 않는다.
+    프롬프트가 화면에 없어 자리로 짚는다. 잘못 짚으면 make()의 fresh()가 같은 영상을 걸러 낸다."""
+    tiles = _wait(page, lambda now: now if _ok_index(now, pos) is not None else None, 60)
+    i = _ok_index(tiles, pos)
+    if not tiles[i]["done"]:
+        raise RuntimeError("Flow 타일이 아직 끝나지 않았어요")
+    _save(page, page.locator(TILE).filter(has_not=page.locator(TILE)).nth(i), path)
+
+
+def _save(page, tile, path: Path) -> None:
     tmp = path.with_suffix(".tmp.mp4")
     # 다운로드는 페이지가 받아 둔 영상(blob:)을 저장한다. 타일이 막 끝나면 아직 비어 0바이트가 오니
     # 조금 기다렸다 다시 받는다(받기는 크레딧이 들지 않는다)
@@ -102,12 +131,11 @@ def _download(page, path: Path) -> None:
             tile.locator('button[aria-label="옵션 더보기"]').click()
             page.locator('[role="menuitem"]', has_text="다운로드").first.hover()
             page.locator('[role="menuitem"]', has_text="원본 크기").first.click()
-        d.value.save_as(tmp)
-        if tmp.stat().st_size:
+        if data := base64.b64decode(page.evaluate(READ_BLOB, d.value.url)):
+            tmp.write_bytes(data)
             os.replace(tmp, path)
             return
-        tmp.unlink()
-    raise RuntimeError(f"Flow 다운로드가 비었어요({d.value.failure() or '0바이트'})")
+    raise RuntimeError("Flow 다운로드가 비었어요(0바이트)")
 
 
 def _count(text: str) -> int:
@@ -170,7 +198,7 @@ class FlowAuto:
                 _settings(page)
                 log(f"Flow 프로젝트: {page.url}")
                 # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
-                failed, left = [], []
+                failed, left, lost = [], [], []
                 seen: dict[str, int] = {}
 
                 def fresh(s) -> bool:
@@ -194,8 +222,8 @@ class FlowAuto:
                         left.append(s["i"] + 1)
                         continue
                     except Lost as e:
-                        log(f"Flow: 장면 {s['i'] + 1} 넣었지만 받지 못함({str(e)[:120]}) → 크레딧이 또 들지 않게 다시 넣지 않아요")
-                        left.append(s["i"] + 1)
+                        log(f"Flow: 장면 {s['i'] + 1} 넣었지만 받지 못함({str(e)[:120]}) → 다시 넣지 않고 끝에 새로 불러와 받아요")
+                        lost.append((s, e.pos))
                         continue
                     except Exception as e:  # noqa: BLE001 — 나머지 장면을 먼저 만들고 나중에 한 번 더
                         log(f"Flow: 장면 {s['i'] + 1} 못 만듦({type(e).__name__}: {str(e)[:120]}) → {RETRY_AFTER // 60}분 뒤 한 번 더")
@@ -210,6 +238,10 @@ class FlowAuto:
                     t0 = time.monotonic()
                     try:
                         _generate(page, s["prompt"], out / s["file"])
+                    except Lost as e:
+                        log(f"Flow: 장면 {s['i'] + 1} 다시 넣었지만 받지 못함({str(e)[:120]}) → 끝에 새로 불러와 받아요")
+                        lost.append((s, e.pos))
+                        continue
                     except Exception as e:  # noqa: BLE001 — 그 장면만 남기고 끝에 실패로 알린다
                         log(f"Flow: 장면 {s['i'] + 1} 다시 해도 못 만듦({type(e).__name__}: {str(e)[:120]})")
                         left.append(s["i"] + 1)
@@ -217,6 +249,20 @@ class FlowAuto:
                     if not fresh(s):
                         continue
                     log(f"Flow: 장면 {s['i'] + 1} 다시 시도해 완료 ({time.monotonic() - t0:.0f}s)")
+                    yield {"file": s["file"], "source": self.label, "url": page.url}
+                if lost:   # 오래 쓴 탭은 새 영상을 빈 채로 줄 때가 있다. 새로 불러오면 받힌다
+                    page.reload()
+                for s, pos in lost:
+                    try:
+                        _refetch(page, pos, out / s["file"])
+                    except Exception as e:  # noqa: BLE001 — 그 장면만 남기고 끝에 실패로 알린다
+                        log(f"Flow: 장면 {s['i'] + 1} 새로 불러와도 받지 못함({type(e).__name__}: {str(e)[:120]}) "
+                            "→ Flow 프로젝트에서 직접 받아 올려 주세요")
+                        left.append(s["i"] + 1)
+                        continue
+                    if not fresh(s):
+                        continue
+                    log(f"Flow: 장면 {s['i'] + 1} 새로 불러와 받음")
                     yield {"file": s["file"], "source": self.label, "url": page.url}
                 if left:   # 만든 장면은 위에서 기록됐다. 못 만든 장면은 대기로 두지 않고 실패로 알린다
                     raise RuntimeError(f"Flow가 장면 {', '.join(map(str, sorted(left)))}을 못 만들었어요. "

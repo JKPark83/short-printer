@@ -1,4 +1,5 @@
 """자료 조사 구현: Claude web_search·web_fetch에 인용을 켜고, 인용이 붙은 문장만 사실로 모은다."""
+import re
 
 from .. import config
 from .claude import FALLBACK, SEARCH_USD, cost, errors, stream, with_sites
@@ -24,12 +25,47 @@ def _note(text: str) -> dict:
     return {"text": text, "url": "", "title": "", "published": "", "retrieved_at": ""}
 
 
+def _norm(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _verbatim(text: str, cites) -> bool:
+    """인용 조각이 다른 언어 원문을 그대로 옮긴 것인지. 그렇다면 사실 문장이 아니라 quote로 뺀다.
+    사실 문장은 한국어로 쓰므로 한글이 든 조각은 문장 일부(원문 구절·숫자 인용)라 그대로 둔다."""
+    t = _norm(text)
+    if re.search("[가-힣]", t):
+        return False
+    return any(t and (t in (c := _norm(getattr(x, "cited_text", None) or "")) or (c and c in t)) for x in cites)
+
+
 def parse(contents: list) -> list[dict]:
-    """응답들의 content(차례대로)에서 인용 있는 text는 사실로, 인용 없는 text("확인 못 함: …" 등)는 url 없는 메모로.
-    도구 호출 수와 도구 오류도 메모로 남겨, 못 찾았을 때 검색이 막힌 건지 자료가 없는 건지 알 수 있게 한다."""
+    """응답들의 content(차례대로)에서 인용 있는 줄은 사실로, 인용 없는 줄("확인 못 함: …" 등)은 url 없는 메모로.
+    도구 호출 수와 도구 오류도 메모로 남겨, 못 찾았을 때 검색이 막힌 건지 자료가 없는 건지 알 수 있게 한다.
+    인용을 켜면 text 블록이 인용 경계에서 쪼개져 "한국어 문장 / 원문 조각(인용) / (근거 꼬리표)"로 온다.
+    그래서 줄바꿈까지 블록을 이어 사실 한 줄로 합치고, 원문을 그대로 옮긴 인용 조각은 문장에서 빼 quote에 둔다."""
     fetched, facts, calls, errs = [], [], {}, []   # errs: 검색어마다 결과 수와 도구 오류(왜 못 찾았는지)
     n = {"web_search": 0, "web_fetch": 0}
-    for block in (b for content in contents for b in content):
+    line, quotes, src = [], [], None   # 지금 모으는 줄: 문장 조각, 원문 인용 조각, 첫 출처
+
+    def flush():
+        nonlocal line, quotes, src
+        text = _norm("".join(line))
+        # 문장이 꼬리표·구두점뿐이면(인용 조각이 곧 사실 문장) 인용 조각을 문장에 둔다
+        if quotes and not re.sub(r"\([^)]*\)|[\s.,]", "", text):
+            text, quotes = _norm(" ".join([*quotes, text])), []
+        if text and src:
+            q = {"quote": " … ".join(quotes)} if quotes else {}
+            facts.append({"text": text, "url": src["url"], "title": src["title"], "published": "",
+                          "retrieved_at": src["retrieved_at"]} | q)
+        elif text:   # 왜 못 찾았는지 화면에 보여 주려고 남긴다
+            facts.append(_note(text))
+        line, quotes, src = [], [], None
+
+    for block in (b for content in contents for b in [*content, None]):   # None: 응답 끝에서 줄을 닫는다
+        if block is None or block.type != "text":
+            flush()
+        if block is None:
+            continue
         if block.type == "server_tool_use":
             calls[block.id] = block.input.get("query") or block.input.get("url") or ""
         elif block.type in ("web_search_tool_result", "web_fetch_tool_result"):
@@ -45,13 +81,18 @@ def parse(contents: list) -> list[dict]:
             elif tool == "web_fetch" and getattr(c, "type", None) == "web_fetch_result":
                 fetched.append({"url": c.url, "title": getattr(c.content, "title", None) or "",
                                 "retrieved_at": getattr(c, "retrieved_at", None) or ""})
-        elif block.type == "text" and (text := block.text.strip()):
-            src = next((s for c in getattr(block, "citations", None) or () if (s := _source(c, fetched))), None)
-            if src:
-                facts.append({"text": text, "url": src["url"], "title": src["title"], "published": "",
-                              "retrieved_at": src["retrieved_at"]})
-            else:   # 왜 못 찾았는지 화면에 보여 주려고 남긴다
-                facts.append(_note(text))
+        elif block.type == "text":
+            cites = getattr(block, "citations", None) or ()
+            s = next((s for c in cites if (s := _source(c, fetched))), None)
+            for i, part in enumerate(block.text.split("\n")):
+                if i:   # 줄이 바뀌면 앞 줄을 닫는다
+                    flush()
+                if s and _verbatim(part, cites):
+                    quotes.append(_norm(part))
+                else:
+                    line.append(part)
+                if part.strip():
+                    src = src or s
     summary = _note(f"도구: 검색 {n['web_search']}번, 열람 {n['web_fetch']}쪽")
     return [summary, *map(_note, errs), *facts]
 

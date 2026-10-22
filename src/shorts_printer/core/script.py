@@ -25,10 +25,20 @@ class Scene(BaseModel):
     prompt_ko: str = Field("", description="prompt를 한국어로 짧게. 검수용")
 
 
+class Plan(BaseModel):
+    # scenes보다 먼저 받는다: 물음·답·고리를 정하고 장면을 쓰면 장면 칸을 사실로 하나씩 메우지 않는다(규칙은 지시문의 흐름)
+    question: str = Field("", description="첫 장면이 여는 물음 한 줄(제목과 같은 물음)")
+    answer: str = Field("", description="마지막 장면에서 줄 답 한 문장. 사실 시트의 강도 그대로")
+    chain: list[str] = Field(default_factory=list,
+                             description="물음에서 답까지 '그래서/그런데'로 이어지는 고리 3~5개. 고리마다 끝에 (F번호)")
+    unused: list[str] = Field(default_factory=list, description="시트에 있지만 쓰지 않을 사실 번호와 이유 한마디")
+
+
 class Script(BaseModel):
     title: str = Field(description="쇼츠 제목. 40자 이내, 해시태그 없이")
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
+    plan: Plan = Field(default_factory=Plan, description="장면을 쓰기 전에 세우는 개요")
     scenes: list[Scene] = Field(description="장면 목록. 장면 하나 = 문장 하나, 읽는 순서")
     sensitive: str = Field(
         description="진단·치료·약·식품 효능·투자·법률 조언이 들어가거나 정치 주제면 그 분야 이름(건강·의료, 법률, 금융·투자, 정치). "
@@ -250,12 +260,16 @@ def too_long(ch: Channel, sentences: Sequence[str]) -> list[Issue]:
 
 
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: Sequence[str] = (),
-          facts: Sequence[dict] = ()) -> tuple[Script, dict]:
+          facts: Sequence[dict] = (), unverified: Sequence[str] = ()) -> tuple[Script, dict]:
     """brief: 추천 주제에서 왔으면 훅·전개 방향 참고. recent: 최근 작업 제목(같은 틀을 피한다).
-    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다."""
+    facts: 자료 조사 사실(facts.json의 facts). 대본은 이 시트의 사실만 쓴다.
+    unverified: 조사에서 확인 못 한 주장. brief가 기댄 주장이면 그 방향까지 버리게 한다."""
     text = f"주제: {topic}"
     if brief:
         text += f"\n\n참고(추천 주제 방향). 방향·내용은 따르되 문장을 베끼지 않는다:\n{brief}"
+    if unverified:
+        text += ("\n\n조사에서 확인하지 못한 주장(사실 시트에 같은 내용이 없으면 쓰지 않는다. 위 방향 가운데 "
+                 "시트에 없는 주장에 기댄 장면·마무리는 버리고, 사실 시트로 다시 짠다):\n" + "\n".join(f"- {c}" for c in unverified))
     text += f"\n\n채널 분야: {ch.concept}. 이 분야를 즐겨 보는 시청자에게 맞는 각도로 쓴다."
     if recent:
         text += "\n\n최근 제목(이 틀을 피한다):\n" + "\n".join(f"- {t}" for t in recent)

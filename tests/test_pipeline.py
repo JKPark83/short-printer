@@ -285,7 +285,7 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
     assert job.data["brief"] == "질문으로 시작" and job.data["source"] == {"trend": "t1", "pick": 0}
     seen = []
 
-    def write(llm, ch, topic, brief=None, recent=(), facts=(), feedback=()):
+    def write(llm, ch, topic, brief=None, recent=(), facts=(), **kw):
         seen.append((ch.id, topic, brief, recent, facts))
         raise RuntimeError("여기까지만")
     monkeypatch.setattr(pipeline.script, "write", write)
@@ -299,6 +299,23 @@ def test_script_step_passes_brief_and_recent_titles_of_same_channel(monkeypatch)
     with pytest.raises(RuntimeError):
         pipeline.step_script(job, services())
     assert seen == [(CH, "주제", "질문으로 시작", [], []), (CH, "주제", "질문으로 시작", ["라면의 진짜 이유"], [fact])]
+
+
+def test_script_step_passes_unverified_claims_from_research_notes(monkeypatch):
+    """조사 메모의 "확인 못 함:" 줄을 주장만 떼어 대본 쓰기에 넘긴다(여러 줄이 한 메모에 붙어 와도)."""
+    job = Job.create(CH, "주제", "v")
+    job.put("facts.json", {"queries": [], "facts": [], "notes": [
+        "검색 'x': 9건", "(반론 있음)\n확인 못 함: 수학 손짓(2001)\n확인 못 함: 손을 묶으면(1996)",
+        "확인 못 함: 수학 손짓(2001)"]})
+    seen = []
+
+    def write(*a, unverified=(), **kw):
+        seen.append(unverified)
+        raise RuntimeError("여기까지만")
+    monkeypatch.setattr(pipeline.script, "write", write)
+    with pytest.raises(RuntimeError):
+        pipeline.step_script(job, services())
+    assert seen == [["수학 손짓(2001)", "손을 묶으면(1996)"]]
 
 
 def test_script_step_revises_when_note(monkeypatch):
@@ -409,7 +426,7 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
 
 
 def test_flow_auto_never_resubmits_lost_and_drops_duplicate_clip(monkeypatch, tmp_path):
-    """넣었는데 못 받은 장면은 다시 넣지 않고(두 번 과금), 앞 장면과 같은 파일을 받으면 버린다."""
+    """넣었는데 못 받은 장면은 다시 넣지 않고(두 번 과금) 끝에 자리로 받는다. 앞 장면과 같은 파일을 받으면 버린다."""
     from unittest.mock import MagicMock
 
     import playwright.sync_api
@@ -424,16 +441,23 @@ def test_flow_auto_never_resubmits_lost_and_drops_duplicate_clip(monkeypatch, tm
     def gen(page, prompt, path):
         tries.append(prompt)
         if prompt == "b":
-            raise fa.Lost("TimeoutError")
+            raise fa.Lost("TimeoutError", 1)
         path.write_bytes(b"same")   # 타일을 잘못 짚으면 앞 장면 영상이 또 받아진다
 
+    refetched = []
+
+    def refetch(page, pos, path):
+        refetched.append(pos)
+        path.write_bytes(b"lost")
     monkeypatch.setattr(fa, "_generate", gen)
+    monkeypatch.setattr(fa, "_refetch", refetch)
     todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abc")]
     got = []
-    with pytest.raises(RuntimeError, match="장면 2, 3을 못 만들었어요"):
+    with pytest.raises(RuntimeError, match="장면 3을 못 만들었어요"):
         for c in fa.FlowAuto().make(todo, tmp_path, lambda line: None):
             got.append(c["file"])
-    assert tries == ["a", "b", "c"] and got == ["a.mp4"] and not (tmp_path / "c.mp4").exists()
+    assert tries == ["a", "b", "c"] and refetched == [1]
+    assert got == ["a.mp4", "b.mp4"] and not (tmp_path / "c.mp4").exists()
 
 
 def test_translate_only_non_korean_when_source_changed_and_never_fails_job(monkeypatch):
@@ -545,6 +569,10 @@ def test_failed_proofread_keeps_the_script_and_waits_for_a_human(monkeypatch):
     assert job.data["review"] is True and not job.doc("proofread.json")["rounds"][0]["passed"]
     last = job.tail()[-1]
     assert "불통과" in last and "장면 1「가」: 반전이 아님 → 가2" in last and "검수는 고치지 않아요" in last
+    # 완성 뒤 고치기(script_note)에서 떨어지면 지적만 남기고 확정 대기로 돌리지 않는다
+    job.update(review=False, script_note="더 짧게")
+    pipeline.step_proofread(job, sv)
+    assert not job.data["review"] and "검수는 고치지 않아요" not in job.tail()[-1]
 
 
 def test_old_job_without_proofread_step_is_filled_from_script(db):

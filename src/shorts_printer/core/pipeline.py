@@ -78,8 +78,15 @@ def step_research(job: Job, sv: Services) -> str:
     return usage["model"]
 
 
+def _unverified(notes: list[str]) -> list[str]:
+    """조사 메모에서 "확인 못 함: <주장>" 줄의 주장만. 한 메모에 여러 줄이 붙어 오기도 해서 줄마다 본다."""
+    return list(dict.fromkeys(c for n in notes for x in n.splitlines()
+                              if x.strip().startswith("확인 못 함:") and (c := x.split(":", 1)[1].strip())))
+
+
 def step_script(job: Job, sv: Services) -> str:
-    facts = (job.doc("facts.json") or {}).get("facts", [])   # 예전 작업엔 없다
+    research_doc = job.doc("facts.json") or {}   # 예전 작업엔 없다
+    facts = research_doc.get("facts", [])
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
         draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
         s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft),
@@ -89,7 +96,8 @@ def step_script(job: Job, sv: Services) -> str:
         job.log(f"대본 고침: {note}")
         translate(job, sv)
         return usage["model"]
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv), facts=facts)
+    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv), facts=facts,
+                            unverified=_unverified(research_doc.get("notes", [])))
     job.put("script.json", s.flat())
     job.update(usage=add_usage(job.data.get("usage"), usage))
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
@@ -125,6 +133,8 @@ def step_proofread(job: Job, sv: Services) -> str:
     if verdict.passed:
         job.log(f"통과 {verdict.summary()}" +
                 (f", 남은 지적 {len(feedback)}개:\n" + "\n".join(feedback) if feedback else ""))
+    elif job.data.get("script_note"):   # 완성 뒤 고치기: 클립이 이미 있어 확정을 기다리게 하지 않는다
+        job.log(f"불통과 {verdict.summary()}, 지적 {len(feedback)}개:\n" + "\n".join(feedback))
     else:
         job.update(review=True)   # 확정 전엔 장면 영상을 만들지 않는다(스케줄 작업도 여기서 멈춘다)
         job.log(f"불통과 {verdict.summary()}, 지적 {len(feedback)}개:\n" + "\n".join(feedback) +

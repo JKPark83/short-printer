@@ -406,6 +406,7 @@ def test_script_edit_direct_and_revise():
     d = job.data
     assert d["script_note"] == "더 짧게" and d["steps"]["script"]["status"] == "pending"
     assert d["steps"]["footage"]["status"] == "done"
+    assert d["steps"]["proofread"]["status"] == "pending"   # 고친 대본도 다시 검수한다
     assert web.q._q.get_nowait() == ("run", job.id)
     # 처음부터 다시 쓰기: 클립을 만든 뒤에는 막는다(장면이 어긋난다)
     job.update(status="done")

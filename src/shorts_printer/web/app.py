@@ -690,9 +690,10 @@ def revise_script(job_id: str, note: str = Form("")):
     if not (note := _note(note)):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
     review = in_review(_load(Job, job_id).data)
-    _redo(job_id, ("script", "voice", "subtitles", "render"), script_note=note)
-    return {"ok": True, "msg": "Claude가 대본을 고치고 음성·자막을 다시 만들어요. 끝나면 다시 확인해 주세요" if review
-            else "Claude가 대본을 고친 뒤 음성·자막·렌더를 다시 해요"}
+    # 고친 문장에서 새 흠이 생길 수 있어 검수도 다시 한다(장면 클립·썸네일은 그대로)
+    _redo(job_id, ("script", "proofread", "voice", "subtitles", "render"), script_note=note)
+    return {"ok": True, "msg": "Claude가 대본을 고치고 검수·음성·자막을 다시 만들어요. 끝나면 다시 확인해 주세요"
+            if review else "Claude가 대본을 고친 뒤 검수·음성·자막·렌더를 다시 해요"}
 
 
 @app.post("/api/jobs/{job_id}/script/rewrite")

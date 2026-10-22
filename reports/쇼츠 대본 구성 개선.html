@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>대본 구성 개선</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fbfaf7;
+  --surface: #ffffff;
+  --text: #1d1d1f;
+  --muted: #5f6368;
+  --border: #e3e0d8;
+  --accent: #b4532a;
+  --accent-soft: #f6e7dd;
+  --ok: #2e7d4f;
+  --ok-soft: #e3f2e8;
+  --bad: #b3261e;
+  --bad-soft: #fbe5e3;
+  --code-bg: #f2efe9;
+  --p0: #b3261e; --p1: #c26a00; --p2: #3b6fb6; --p3: #6b6b6b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181a; --surface: #202124; --text: #e8e6e1; --muted: #a3a3a0; --border: #3a3b3e;
+    --accent: #e88a5c; --accent-soft: #3a2a20; --ok: #6cc28c; --ok-soft: #1f3327;
+    --bad: #f08b84; --bad-soft: #3b2220; --code-bg: #2a2b2e;
+    --p0: #f08b84; --p1: #f0b35c; --p2: #8fb4ea; --p3: #b0b0b0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17181a; --surface: #202124; --text: #e8e6e1; --muted: #a3a3a0; --border: #3a3b3e;
+  --accent: #e88a5c; --accent-soft: #3a2a20; --ok: #6cc28c; --ok-soft: #1f3327;
+  --bad: #f08b84; --bad-soft: #3b2220; --code-bg: #2a2b2e;
+  --p0: #f08b84; --p1: #f0b35c; --p2: #8fb4ea; --p3: #b0b0b0;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Noto Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-size: 16px; line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere;
+}
+main { max-width: 900px; margin: 0 auto; padding: 32px 16px 80px; }
+h1 { font-size: 1.75rem; line-height: 1.35; margin: 0 0 8px; }
+h2 { font-size: 1.3rem; line-height: 1.4; margin: 48px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+h3 { font-size: 1.05rem; margin: 28px 0 8px; }
+p { margin: 0 0 14px; }
+a { color: var(--accent); }
+.sub { color: var(--muted); font-size: .92rem; margin-bottom: 24px; }
+.bluf { background: var(--accent-soft); border: 1px solid var(--border); padding: 16px 18px; border-radius: 6px; }
+.bluf p:last-child { margin-bottom: 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; background: var(--code-bg); padding: 2px 6px; border-radius: 4px; }
+pre { background: var(--code-bg); padding: 14px; border-radius: 6px; overflow-x: auto; font-size: .84rem; line-height: 1.55; white-space: pre-wrap; }
+pre code { background: none; padding: 0; }
+.table-wrap { width: 100%; overflow-x: auto; margin: 12px 0 20px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; line-height: 1.55; }
+th, td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 700; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+td.num { white-space: nowrap; text-align: center; }
+.scenes td:nth-child(4) { min-width: 220px; }
+.scenes td:nth-child(6) { min-width: 240px; }
+.bad { color: var(--bad); }
+.tag { display: inline-block; font-size: .78rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; color: var(--surface); white-space: nowrap; }
+.p0 { background: var(--p0); } .p1 { background: var(--p1); } .p2 { background: var(--p2); } .p3 { background: var(--p3); }
+.flow-grid { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 16px 0 24px; }
+@media (min-width: 720px) { .flow-grid { grid-template-columns: 1fr 1fr; } }
+.flow { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.flow h3 { margin: 0 0 10px; font-size: 1rem; }
+.flow.before h3 { color: var(--bad); }
+.flow.after h3 { color: var(--ok); }
+.box { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: .88rem; line-height: 1.5; background: var(--bg); }
+.box b { display: block; font-size: .92rem; }
+.box.warn { border-color: var(--bad); background: var(--bad-soft); }
+.box.new { border-color: var(--ok); background: var(--ok-soft); }
+.arrow { text-align: center; color: var(--muted); font-size: .85rem; line-height: 1.2; padding: 4px 0; }
+ul, ol { padding-left: 1.3em; margin: 0 0 14px; }
+li { margin-bottom: 6px; }
+.note { color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>칸을 채우지 말고 답 하나로 꿰기</h1>
+<div class="sub">shorts-printer 대본 단계 진단 · 2026-10-23 · 대상 작업 20261023-061011-afe1(손짓), 20261023-060939-1b86(다리 떨기)</div>
+
+<div class="bluf">
+<p>손짓 대본이 어색하게 들리는 까닭은 문장력이 모자라서가 아니다. 이야기의 <b>뼈대</b>(주제 찾기 brief), <b>재료</b>(조사 사실 시트), <b>칸</b>(11장면과 장면 번호별 역할)을 서로 다른 단계가 따로 정하고, 셋을 맞춰 보는 단계가 하나도 없기 때문이다. 손짓 작업에서는 brief가 기댄 주장 셋 가운데 둘이 "확인 못 함"이 됐는데도 뼈대는 그대로 넘어갔다. 그 결과 3~6장면(약 30초)이 훅을 다시 증명했고, 제목의 물음은 7장면에야 나왔으며, 답은 35자에 몰렸다.</p>
+<p>새로 찾은 버그도 하나 있다. 조사 어댑터가 응답을 인용 단위로 쪼개는 바람에 한국어 사실 문장과 근거 꼬리표가 <b>최근 12건 모두</b>에서 메모로 빠졌고, 대본 작가는 영어 원문 조각만 받았다. 고칠 순서는 이렇다. <b>P0</b> 어댑터 수정과 확인 못 한 주장 전달 → <b>P1</b> 쓰기 전 "물음 → 답 → 고리" 개요와 조건부 칸 규칙 → <b>P2</b> 검수 구성 항목과 고친 뒤 재검수.</p>
+</div>
+
+<h2>1. 대본은 네 단계를 거치지만 뼈대는 세 곳에서 따로 정해진다</h2>
+<p>작업 단계는 <code>research → script → proofread → voice …</code>이고(<code>core/pipeline.py:13</code>), 그 앞에 주제 찾기가 따로 돈다.</p>
+<div class="table-wrap"><table>
+<tr><th>단계</th><th>파일</th><th>정하는 것</th><th>넘기는 것</th></tr>
+<tr><td>주제 찾기</td><td><code>prompts/trend_idea.md</code></td><td><b>뼈대</b>: 아는 것 → 뒤집히는 사실 → 원리 → 써먹을 것</td><td>brief(방향, 핵심 답, 확인할 주장 3~5개)</td></tr>
+<tr><td>자료 조사</td><td><code>prompts/research.md</code>, <code>adapters/claude_research.py</code></td><td><b>재료</b>: 인용 사실 최대 12개, 근거 꼬리표, 최근 5년 논문</td><td><code>facts</code>(대본에 감), <code>notes</code>(안 감)</td></tr>
+<tr><td>대본</td><td><code>prompts/script.md</code>, <code>channels/ko-40sec-facts/script.md</code>, <code>core/script.py</code></td><td><b>칸</b>: 11장면, 장면당 56~63자, 장면 번호별 역할, 고정 멘트 둘</td><td>script.json</td></tr>
+<tr><td>검수</td><td><code>prompts/script_proofread_ko.md</code></td><td>이웃 문장 흐름, 사실 강도, 재미. 지적만 한다</td><td>proofread.json</td></tr>
+</table></div>
+<p>대본은 한 번의 구조화 호출로 11장면을 바로 쓴다. 전체 개요 필드는 없고, 장면마다 쓰는 <code>link</code>는 저장되지 않는다(<code>script.py:19-20</code>). 검수에서 떨어져도 음성 단계는 돈다. 운영자가 고치면 장면 수와 순서는 그대로 두고(<code>prompts/script_revise_draft.md</code>), 고친 뒤 다시 검수하지 않는다.</p>
+
+<h3>11칸 배분</h3>
+<div class="table-wrap"><table>
+<tr><th>장면</th><th>정해진 역할</th><th>사실 몫</th></tr>
+<tr><td class="num">1</td><td>훅 "~죠?" + 이상한 점</td><td>훅</td></tr>
+<tr><td class="num">2</td><td>수치·역설·지금 따라 해 보기</td><td>56~63자</td></tr>
+<tr><td class="num">3</td><td>멘트가 뒤집을 통념</td><td>통념</td></tr>
+<tr><td class="num">4</td><td>"그런데 몸 안을 들여다보면 이야기가 달라집니다."(26자) + 반전</td><td class="bad"><b>30~37자</b></td></tr>
+<tr><td class="num">5~7</td><td>몸 안의 원리</td><td>56~63자씩</td></tr>
+<tr><td class="num">8</td><td>두 번째 다시 걸기</td><td>물음</td></tr>
+<tr><td class="num">9~10</td><td>한 방</td><td>56~63자씩</td></tr>
+<tr><td class="num">11</td><td>답 + "내 몸이 더 궁금하다면 구독, 좋아요 눌러 주세요!"(28자)</td><td class="bad"><b>28~35자</b></td></tr>
+</table></div>
+<p>반전(4장면)과 결론(11장면)에 돌아가는 글자가 가장 적다. <code>prompts/script.md:20-22</code>의 예시는 아직 "13장면이면 5번째·10번째·11~12번째"로 남아 있어, 채널 규칙(4·8번째)과 숫자가 엇갈린다.</p>
+
+<h2>2. 한국어 사실과 꼬리표는 대본 작가에게 가지 않는다</h2>
+<p>조사 지시문은 사실을 한국어 한 문장으로 쓰고 "(연구 1편, n명)" 같은 꼬리표를 붙이게 한다(<code>prompts/research.md:13, 19</code>). 그런데 <code>adapters/claude_research.py</code>의 <code>parse()</code>는 text 블록을 하나씩 따로 본다. 인용이 붙은 블록만 사실로 삼고 나머지는 메모로 보낸다. 인용 기능은 한 줄을 "한국어 문장 / 인용된 원문 / (꼬리표)"로 쪼개 돌려주므로, 사실로 남는 건 가운데 영어 조각뿐이다. <code>sheet_block()</code>은 facts만 넘긴다(<code>core/script.py:84</code>).</p>
+<div class="table-wrap"><table>
+<tr><th>작업</th><th>사실 수</th><th>한국어 사실</th><th>꼬리표가 메모로 빠진 수</th></tr>
+<tr><td>7d74</td><td class="num">10</td><td class="num">10</td><td class="num">2</td></tr>
+<tr><td><b>afe1(손짓)</b></td><td class="num">13</td><td class="num bad">0</td><td class="num">12</td></tr>
+<tr><td><b>1b86(다리)</b></td><td class="num">11</td><td class="num bad">0</td><td class="num">8</td></tr>
+<tr><td>842a</td><td class="num">14</td><td class="num bad">0</td><td class="num">12</td></tr>
+<tr><td>9716</td><td class="num">8</td><td class="num bad">0</td><td class="num">8</td></tr>
+<tr><td>cd0b</td><td class="num">14</td><td class="num">14</td><td class="num">4</td></tr>
+<tr><td>6463</td><td class="num">13</td><td class="num">13</td><td class="num">0</td></tr>
+<tr><td>d174</td><td class="num">17</td><td class="num bad">0</td><td class="num">12</td></tr>
+<tr><td>6c28</td><td class="num">8</td><td class="num bad">0</td><td class="num">12</td></tr>
+<tr><td>8ac8</td><td class="num">12</td><td class="num">12</td><td class="num">1</td></tr>
+<tr><td>e7d8</td><td class="num">12</td><td class="num">12</td><td class="num">2</td></tr>
+<tr><td>884e</td><td class="num">26</td><td class="num bad">0</td><td class="num">14</td></tr>
+</table></div>
+<p>사실 문장에 꼬리표가 붙은 작업은 <b>12건 중 0건</b>이다. MAX_FACTS=12는 지시문에만 있어서 884e에는 사실이 26개 들어갔다. 꼬리표가 없으니 대본 작가는 강도를 판단할 근거가 없고, 그래서 "한 연구에서는"을 기본값으로 쓴다. 확인 못 한 brief 주장을 알리는 경로도 없다. 조사 단계는 사실이 0개일 때만 멈춘다(<code>pipeline.py:72-74</code>).</p>
+
+<h2>3. 손짓 대본: 30초 동안 훅을 다시 증명하고 답을 35자에 몰았다</h2>
+<p>brief 뼈대: 허공 손짓 → 시각장애인 반전 → 손 묶기 실험 → 손 깔고 길 설명. 근거 셋 가운데 2001·1996년 연구는 확인되지 않았다. 검수는 75점 불통과였는데 <b>흐름은 25/25</b>였다.</p>
+<div class="table-wrap"><table class="scenes">
+<tr><th>#</th><th>자</th><th>fact</th><th>대본(최종)</th><th>정해진 역할</th><th>실제 역할과 문제</th></tr>
+<tr><td class="num">1</td><td class="num">58</td><td>F5</td><td>통화하면서 허공에 손짓하죠? 수화기 너머 상대는 내 손을 볼 수도 없는데, 손은 혼자 바쁘게 움직입니다.</td><td>훅</td><td>좋은 훅이다. 다만 핵심 관찰을 여기서 이미 다 보여 줬다</td></tr>
+<tr><td class="num">2</td><td class="num">58</td><td class="bad">없음</td><td>지금 두 손을 깔고 앉아 보세요. 그대로 집에서 역까지 가는 길을 설명하면, 손이 자꾸 빠져나오려 하죠.</td><td>체감</td><td class="bad">확인 안 된 1996년 연구에 기댄 brief 마무리를 앞으로 당겼다. 시트에 없는 단정이고, 뒤에서 다시 꺼내지 않는다</td></tr>
+<tr><td class="num">3</td><td class="num">58</td><td>F5</td><td>보통 손짓은 듣는 사람 보라고 하는 거죠. 그렇다면 얼굴을 마주 볼 때만 손이 움직여야 앞뒤가 맞습니다.</td><td>통념</td><td class="bad">1장면이 이미 깬 통념을 다시 세운다</td></tr>
+<tr><td class="num">4</td><td class="num">61</td><td>F1</td><td>그런데 몸 안을 들여다보면 이야기가 달라집니다. 한 연구에서는 날 때부터 앞을 못 본 사람도 손짓을 했습니다.</td><td>멘트 + 반전</td><td class="bad">"몸 안"을 약속했는데 행동 연구가 온다. 35자로는 왜 이 이야기를 하는지 말하지 못한다</td></tr>
+<tr><td class="num">5</td><td class="num">58</td><td>F1</td><td>남의 손짓을 본 적도 없는데요. 듣는 사람마저 앞을 못 보는 상황에서도, 손은 그대로 바쁘게 움직였고요.</td><td>원리</td><td>4장면을 늘였다. 칸을 채우는 문장이다</td></tr>
+<tr><td class="num">6</td><td class="num">58</td><td>F4·F5</td><td>보고 배울 것도, 봐 줄 사람도 필요 없다는 거죠. 그래서 얼굴이 안 보이는 통화에서도 손짓이 나옵니다.</td><td>원리</td><td class="bad">1장면의 전제를 결론처럼 되풀이한다. 3~6장면이 부정 명제 하나에 30초를 썼다</td></tr>
+<tr><td class="num">7</td><td class="num">60</td><td>F6</td><td>그럼 이 손짓은 대체 누굴 위한 걸까요? 내가 힘주어 말하는 바로 그 소리에, 손이 정확히 맞춰 떨어집니다.</td><td>원리</td><td class="bad">진짜 물음이 약 55초에 처음 나온다. "정확히"는 시트의 "typically"보다 세다</td></tr>
+<tr><td class="num">8</td><td class="num">63</td><td>F10</td><td>목 아래로 팔 위치를 못 느끼는 남성이 있습니다. 눈을 가리면 물건은 거의 못 집는데, 손짓은 대체로 그대로였죠.</td><td>다시 걸기</td><td class="bad">물음이 없다. 새 인물을 소개 없이 들이고, 무엇을 보여 주는 사례인지 말하지 않는다</td></tr>
+<tr><td class="num">9</td><td class="num">64</td><td>F7</td><td>한 연구에서는 손짓하며 말한 낱말에서 혀와 턱이 더 크게 움직였습니다. 입놀림의 박자도 더 흔들림 없이 유지됐고요.</td><td>한 방</td><td>결과만 나열하고 "그러니까"가 없다. 63자를 넘는다</td></tr>
+<tr><td class="num">10</td><td class="num">63</td><td>F12·F13</td><td>말이 혀끝에 맴돌 때 손짓을 막으면요? 한 연구에선 단기 기억이 약한 사람만 말을 덜 찾았고, 논란도 남았습니다.</td><td>한 방</td><td class="bad">확인 안 된 실험 자리를 2차 인용과 각주 조각으로 메웠다. 결론 직전에 답을 약하게 만든다</td></tr>
+<tr><td class="num">11</td><td class="num">63</td><td>F5·F7·F8</td><td>통화 중 허공의 손짓은 내 말을 돕는 몸짓일 가능성이 큽니다. 내 몸이 더 궁금하다면 구독, 좋아요 눌러 주세요!</td><td>답 + 멘트</td><td class="bad">답에 35자만 남았다. F8은 본문에서 말한 적이 없고, 2장면도 다시 꺼내지 않는다</td></tr>
+</table></div>
+<p>다리 떨기(1b86)도 같은 순서로 무너졌다. brief 주장 셋 가운데 둘이 확인되지 않았고, 대본은 동맥 전단율 연구 하나로 11칸을 채웠다. 제목은 "왜 떨리나"를 물었지만 본문은 "떨면 무슨 일이 생기나"에 답했다(검수 주제·제목 7/15).</p>
+
+<h2>4. 끼워 맞추기의 다섯 가지 원인</h2>
+<ol>
+<li><b>뼈대가 재료보다 먼저 굳는다.</b> 주장이 떨어져도 뼈대는 남는다. 그리고 "최근 5년 논문 하나 이상" 규칙(<code>research.md:20</code>)이 답과 상관없는 세부를 시트로 끌어들인다. STORM 평가에서도 "관계없는 사실을 억지로 엮음"이 남은 문제로 꼽혔다(<a href="https://arxiv.org/abs/2402.14207">STORM</a>).</li>
+<li><b>장면 번호마다 역할이 고정돼 있다.</b> 훅이 통념을 이미 깬 주제에도 통념 칸과 반전 칸이 요구된다. Harp와 Mayer의 실험에서는 흥미롭지만 관계없는 일화를 뺀 수업이 핵심 내용 회상을 약 3배 높였다(<a href="https://www.growthengineering.co.uk/seductive-details/">Growth Engineering</a>, <a href="https://en.wikipedia.org/wiki/Seductive_details">Wikipedia</a>).</li>
+<li><b>글자 배분이 거꾸로다.</b> 고정 멘트가 4·11장면의 40~45%를 먹는다. 덜 중요한 칸은 56자 하한을 채우려고 늘어진다. "몸 안" 멘트는 행동 연구가 답인 주제와 맞지 않는다.</li>
+<li><b>형식 부담이 한 호출에 몰려 있다.</b> JSON 형식을 강제하면 추론 성능이 떨어진다는 결과가 있다(Claude-3-Haiku GSM8K 86.51% → 23.44%, <a href="https://arxiv.org/html/2408.02442v1">Let Me Speak Freely?</a>). 모델은 길이도 잘 세지 못한다(<a href="https://arxiv.org/abs/2505.16234">LIFEBench</a>, <a href="https://arxiv.org/pdf/2406.17744">Length Constraints</a>).</li>
+<li><b>검수와 고치기가 구성을 보지 못한다.</b> 검수는 앞 문장과의 관계만 읽는다(<code>script_proofread_ko.md:11</code>). 고치기는 순서를 그대로 두고, 고친 뒤 다시 검수하지 않는다.</li>
+</ol>
+
+<h2>5. 바꾼 뒤의 파이프라인</h2>
+<p>계획 → 쓰기로 나누면 구성 평가가 오른다는 결과가 여럿 있다. STORM은 구성 평가 +25%p(<a href="https://arxiv.org/abs/2402.14207">2402.14207</a>), DOC는 일관성 +22.5%p·재미 +20.7%p(<a href="https://arxiv.org/abs/2212.10077">2212.10077</a>), Re3는 +14%p(<a href="https://arxiv.org/abs/2210.06774">2210.06774</a>)를 보였다. 다만 모두 긴 글에서 잰 값이다. Anthropic 가이드도 체이닝은 중간 결과를 검사해야 할 때 쓰라고 한다(<a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices">best practices</a>). 과학 커뮤니케이션 쪽 근거는 But/Therefore 규칙(<a href="https://perell.com/note/but-therefore-rule/">Perell</a>, <a href="https://ncse.ngo/and-therefore-randy-olson-and-art-science-storytelling-part-1">Olson ABT</a>), 서사 형식의 이해 효과(<a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4183170">Dahlstrom 2014</a>), Kurzgesagt의 초안 12번과 소스 시트(<a href="https://kurzgesagt.org/youtube/">Kurzgesagt</a>)다.</p>
+
+<div class="flow-grid">
+  <div class="flow before">
+    <h3>지금</h3>
+    <div class="box"><b>주제 찾기</b>4박자 뼈대 + 확인 전 주장 3~5개</div>
+    <div class="arrow">↓ brief 원문 그대로</div>
+    <div class="box warn"><b>자료 조사</b>주장 2개 "확인 못 함" · <code>parse()</code>가 한국어 문장·꼬리표를 메모로 보냄</div>
+    <div class="arrow">↓ 영어 원문 조각만 (메모·미확인 목록 없음)</div>
+    <div class="box warn"><b>대본(한 호출)</b>장면 번호별 역할에 사실을 바로 배정 · 11칸 × 56~63자 · 개요 없음</div>
+    <div class="arrow">↓</div>
+    <div class="box warn"><b>검수</b>이웃 문장만 봄 · 흐름 25/25</div>
+    <div class="arrow">↓ 운영자 고침(순서 고정)</div>
+    <div class="box warn"><b>음성</b>재검수 없이 진행</div>
+  </div>
+  <div class="flow after">
+    <h3>바꾼 뒤</h3>
+    <div class="box"><b>주제 찾기</b>답이 (반론 있음)뿐인 주제는 거르거나 솔직하게 잡는다 <span class="tag p3">P3</span></div>
+    <div class="arrow">↓</div>
+    <div class="box new"><b>자료 조사</b>줄 단위로 합쳐 한국어 사실 + 꼬리표 유지 <span class="tag p0">P0</span> · 사실 12개로 자르기 <span class="tag p3">P3</span></div>
+    <div class="arrow">↓ 사실 시트 + "확인 못 함" 목록 <span class="tag p0">P0</span></div>
+    <div class="box new"><b>대본: 개요 먼저</b>question · answer · chain(그래서/그런데 + F번호) · unused <span class="tag p1">P1</span></div>
+    <div class="arrow">↓ 같은 호출 안에서</div>
+    <div class="box new"><b>대본: 칸 맞추기</b>고리를 11칸에 나눈다 · 조건부 칸 역할 <span class="tag p1">P1</span></div>
+    <div class="arrow">↓</div>
+    <div class="box new"><b>검수</b>12번 "구성" 항목 <span class="tag p2">P2</span></div>
+    <div class="arrow">↓ 고친 뒤 재검수 <span class="tag p2">P2</span> · 구성 지적만 한 번 자동 고침 <span class="tag p3">P3</span></div>
+    <div class="box"><b>음성</b></div>
+  </div>
+</div>
+
+<p>개요는 별도 호출이 아니라 <code>Script</code> 스키마의 <code>scenes</code> 앞 필드로 두는 편이 싸다. 구조화 출력은 필드 순서대로 생성되기 때문이다. 자동 고쳐 쓰기는 근거가 엇갈린다. <a href="https://arxiv.org/html/2303.17651">Self-Refine</a>은 약 +20%p를 보였지만 실패의 94%가 잘못된 피드백에서 나왔고, 외부 기준 없는 자기 수정은 효과가 없었다(<a href="https://arxiv.org/abs/2310.01798">Huang et al.</a>). 그래서 맨 뒤 순위에 둔다.</p>
+
+<h2>6. 우선순위별로 고칠 곳</h2>
+<div class="table-wrap"><table>
+<tr><th>순위</th><th>할 일</th><th>파일</th><th>확인 방법</th></tr>
+<tr><td><span class="tag p0">P0-1</span></td><td>인용 블록을 줄 단위로 합쳐 한국어 문장 + 꼬리표를 사실 하나로 남긴다. 원문은 <code>quote</code>로 따로 둔다</td><td><code>adapters/claude_research.py</code> <code>parse()</code>, <code>tests/test_research.py</code></td><td>가짜 응답 테스트에서 사실 1개 = 한국어 + 꼬리표인지 본다. 손짓 주제로 조사를 다시 돌린다</td></tr>
+<tr><td><span class="tag p0">P0-2</span></td><td>"확인 못 함" 주장을 대본에 넘기고, 거기 기댄 방향은 버리게 한다</td><td><code>core/script.py</code> <code>write(unverified=…)</code>, <code>core/pipeline.py</code> <code>step_script</code></td><td>user 메시지에 목록이 들어가는지 테스트한다. "손 깔고 앉기" 장면이 사라지는지 본다</td></tr>
+<tr><td><span class="tag p1">P1-1</span></td><td>개요 필드 <code>question·answer·chain·unused</code>를 <code>scenes</code> 앞에 두고 <code>plan</code>으로 저장한다</td><td><code>core/script.py</code> <code>Script</code>, <code>prompts/script.md</code> 흐름 절</td><td>첫 물음이 3장면 안에 나오는지, 곁가지가 unused로 가는지 본다</td></tr>
+<tr><td><span class="tag p1">P1-2</span></td><td>칸 역할에 조건을 단다(3장면 물음, 멘트 뒤는 몸 안, 8장면 물음, 답은 10~11장면)</td><td><code>channels/ko-40sec-facts/script.md</code> 37·38·41·44줄</td><td>손짓·다리를 다시 생성해 되풀이와 빈 반전이 사라졌는지 본다</td></tr>
+<tr><td><span class="tag p1">P1-3</span></td><td>"13장면이면" 예시를 지우거나 고친다</td><td><code>prompts/script.md</code> 20~22줄</td><td><code>tests/test_prompts.py</code></td></tr>
+<tr><td><span class="tag p2">P2-1</span></td><td>검수에 12번 "구성" 항목을 더한다</td><td><code>prompts/script_proofread_ko.md</code></td><td>손짓 초안의 흐름 점수가 25/25에서 내려가는지 본다</td></tr>
+<tr><td><span class="tag p2">P2-2</span></td><td>운영자가 고친 뒤 검수를 다시 돌린다</td><td><code>core/pipeline.py</code> revise 경로</td><td>로그에 통과/불통과가 다시 찍히는지 본다</td></tr>
+<tr><td><span class="tag p3">P3-1</span></td><td>"최근 5년 논문"은 답을 받칠 때만 넣고, 사실은 코드로 12개까지 자른다</td><td><code>prompts/research.md</code> 20·27줄, <code>core/research.py</code></td><td>시트 사실이 12개 이하인지 본다</td></tr>
+<tr><td><span class="tag p3">P3-2</span></td><td>답이 (반론 있음)뿐인 주제를 거르거나 "논란" 각도로 잡는다</td><td><code>prompts/trend_idea.md</code></td><td>추천 목록에서 그런 주제가 줄었는지 본다</td></tr>
+<tr><td><span class="tag p3">P3-3</span></td><td>구성 지적만 한 번 자동으로 고치고, 재검수 점수가 오를 때만 받는다</td><td><code>core/pipeline.py</code> <code>step_proofread</code></td><td>5편을 원판과 나란히 듣고 고른다</td></tr>
+</table></div>
+
+<h3>P1-1 개요 필드</h3>
+<pre><code>class Plan(BaseModel):
+    question: str = Field(description="첫 장면이 여는 물음 한 줄(제목과 같은 물음)")
+    answer: str = Field(description="마지막 장면에서 줄 답 한 문장. 사실 시트의 강도 그대로")
+    chain: list[str] = Field(description="물음에서 답까지 '그래서/그런데'로 이어지는 고리 3~5개. 고리마다 끝에 (F번호)")
+    unused: list[str] = Field(description="시트에 있지만 쓰지 않을 사실 번호와 이유 한마디")</code></pre>
+
+<h3>P2-1 검수 12번 항목</h3>
+<pre><code>12. 구성이 첫 물음을 향해 가는가. 대본 전체를 읽은 뒤 본다. "예"면 "흐름"으로 지적한다.
+   - 제목이 묻는 물음이 4번째 장면 뒤에야 처음 들리는가. (큼)
+   - 훅이 이미 보여 준 관찰을 다른 사실로 두 장면 넘게 다시 증명하는가. (큼)
+   - 두 번째로 다시 거는 장면에 물음이 없는가. (작음)
+   - 새 인물·사례·실험이 답에 무엇을 보태는지 그 장면이나 다음 장면에서 말하지 않는가. (큼)
+   - 마지막 장면 바로 앞에서 답을 약하게 만드는 조건·반론이 처음 나오는가. (작음)</code></pre>
+<p class="note">P0-2 user 메시지 문구, P1-1 지시문, P1-2 채널 규칙 문안 전체는 같은 폴더의 .md 보고서에 있다. 고정 멘트 "몸 안을 들여다보면"을 주제 중립 문구로 바꿀지는 채널 운영자가 정할 일이다.</p>
+
+<h2>7. 같은 사실로 다시 짠 손짓 개요</h2>
+<p>논지: <b>통화 중 손짓은 상대에게 보여 주려는 것이라기보다 내 말과 한 묶음으로 움직인다(가능성).</b> 새 사실은 더하지 않았다. F8·F9·F11·F12·F13은 unused로 돌렸다.</p>
+<div class="table-wrap"><table>
+<tr><th>장면</th><th>역할</th><th>사실</th><th>내용</th></tr>
+<tr><td class="num">1</td><td>훅</td><td>F5</td><td>통화 중 허공 손짓(지금과 같음)</td></tr>
+<tr><td class="num">2</td><td>따라 해 보기</td><td>F6</td><td>"정말 중요해"를 힘주어 말하면 손이 강세에 맞춰 떨어진다(대개)</td></tr>
+<tr><td class="num">3</td><td>첫 물음</td><td>-</td><td>보여 주려는 거라면 통화 중엔 멈춰야 한다. 그럼 누구를 위한 걸까(약 20초)</td></tr>
+<tr><td class="num">4</td><td>멘트 + 몸 안</td><td>F7</td><td>손짓한 낱말에서 혀와 턱이 더 크게 움직였다(한 연구)</td></tr>
+<tr><td class="num">5</td><td>그래서</td><td>F7</td><td>입놀림 박자도 더 고르게 유지됐다. 손과 입이 같은 박자</td></tr>
+<tr><td class="num">6</td><td>그런데</td><td>F1</td><td>태어날 때부터 앞을 못 본 사람도, 상대가 못 봐도 손짓했다</td></tr>
+<tr><td class="num">7</td><td>그래서</td><td>F4</td><td>본보기도 봐 줄 상대도 필요 없다. 남는 건 말하는 나</td></tr>
+<tr><td class="num">8</td><td>다시 걸기(물음)</td><td>F10</td><td>손이 말에 묶였다는 건 어떻게 알까? 목 아래 감각을 잃은 한 남성</td></tr>
+<tr><td class="num">9</td><td>한 방 준비</td><td>F10</td><td>눈을 가리면 물건 집는 동작이 거의 무너진다</td></tr>
+<tr><td class="num">10</td><td>한 방</td><td>F10</td><td>그런데 말에 맞춘 손짓은 대체로 그대로였다</td></tr>
+<tr><td class="num">11</td><td>답 + 멘트</td><td>F5·F6·F10</td><td>내 말의 박자를 따라 움직이는 몸짓일 가능성이 크다 + 고정 멘트</td></tr>
+</table></div>
+
+<h2>8. 이전 보고서와 달라진 점</h2>
+<ul>
+<li>이전 보고서 「과학 쇼츠 대본 재미 높이기」는 근거 꼬리표가 정확성을 지킨다고 전제했다. 실제로 꼬리표는 12건 중 한 건도 대본 작가에게 닿지 않았다.</li>
+<li>이전 보고서가 미뤘던 계획 필드(S1)를 P1으로 올린다. 문장 규칙을 반영한 뒤에도 두 작업이 같은 구조로 무너졌기 때문이다.</li>
+<li>이전 보고서가 넣은 1~3장면 역할과 8장면 다시 걸기 규칙은 사실이 맞을 때만 돕는다. 그래서 이번에는 조건을 단다.</li>
+<li>그대로 두는 것: 고정 멘트, 사실 시트만 쓰는 규칙, 코드로 글자 수 세기, 검수가 지적만 하는 기본 구조.</li>
+</ul>
+
+<h2>9. 결론과 검증</h2>
+<p>끼워 맞추기는 모델의 문장 버릇이 아니라 설계의 빈칸이다. 뼈대·재료·칸이 만나는 지점에 "이 재료로 이 물음에 어떤 답을 할 수 있나"를 정하는 한 줄이 없다. 개요 필드가 그 한 줄을 먼저 쓰게 하고, P0이 그 한 줄을 올바른 재료 위에 세운다. 그러니 P0과 P1은 함께 넣어야 효과가 난다.</p>
+<p>검증은 afe1·1b86을 같은 시트로 다시 생성해 비교한다. 볼 것은 첫 물음이 나오는 장면 번호, 쓰인 사실 수, 12번 항목에 걸린 개수, 그리고 사람이 들어 본 판단이다. 계획 단계의 효과는 긴 글에서만 측정됐다. 칸 규칙을 느슨하게 했을 때 리듬이 무너지는지는 Studio 유지율 곡선의 4~8장면 구간(약 30~65초)으로 판정한다.</p>
+
+</main>
+</body>
+</html>

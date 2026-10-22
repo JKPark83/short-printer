@@ -153,6 +153,26 @@ def test_flat_and_draft_carry_fact_ids_and_prompts_ko(ko):
     assert script.unverified(new, FACTS) == []
 
 
+def test_plan_comes_before_scenes_and_is_saved(ko):
+    """개요가 장면보다 먼저 생성되게(필드 순서대로 쓴다) scenes 앞에 두고, script.json에 plan으로 남긴다."""
+    fields = list(script.Script.model_fields)
+    assert fields.index("plan") < fields.index("scenes")
+    assert list(script.Plan.model_fields) == ["question", "answer", "chain", "unused"]
+    plan = script.Plan(question="왜?", answer="그래서", chain=["그런데 (F1)"], unused=["F2: 곁가지"])
+    assert OK.model_copy(update={"plan": plan}).flat()["plan"] == plan.model_dump()
+    assert OK.flat()["plan"] == {"question": "", "answer": "", "chain": [], "unused": []}   # 빠져도 깨지지 않는다
+
+
+def test_write_tells_unverified_claims_only_when_given(ko):
+    llm = FakeLLM()
+    script.write(llm, ko, "손짓", brief="방향", unverified=["손을 묶으면 말이 막힌다(1996)"])
+    script.write(llm, ko, "손짓", brief="방향")
+    text = llm.calls[0]["text"]
+    assert "조사에서 확인하지 못한 주장" in text and "시트에 없는 주장에 기댄 장면·마무리는 버리고" in text
+    assert "\n- 손을 묶으면 말이 막힌다(1996)" in text and text.index("방향") < text.index("확인하지 못한")
+    assert "확인하지 못한" not in llm.calls[1]["text"]
+
+
 def test_unverified_flags_number_sentences_without_known_facts():
     s = {"sentences": ["물은 100도에서 끓는다", "3월에 올랐다", "숫자 없음", "２배다", "1분이면 된다"],
          "fact_ids": [["F1"], ["F9"], [], [], ["F1", "F2"]]}

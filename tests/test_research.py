@@ -39,7 +39,7 @@ def test_claude_research_collects_cited_sentences_over_pause_turn(monkeypatch):
     second = NS(stop_reason="end_turn", model="claude-opus-5-5", usage=_usage(2000, 200, 1), content=[
         NS(type="web_fetch_tool_result", content=page),
         NS(type="text", text="얼음은 0도에서 녹는다.", citations=[_cite(type="char_location", document_index=0)]),
-        NS(type="text", text="확인 못 함: 달은 치즈다", citations=None),
+        NS(type="text", text="\n확인 못 함: 달은 치즈다", citations=None),   # 실제 응답처럼 줄바꿈으로 나뉜다
     ])
     calls, resps = [], [first, second]
 
@@ -91,6 +91,40 @@ def test_claude_research_without_domains_has_no_allowed_domains(monkeypatch):
     # 도구 오류가 메모로 남아 못 찾은 이유를 알 수 있다
     assert [f["text"] for f in facts] == ["도구: 검색 0번, 열람 1쪽",
                                           "열람 'https://a.kr/p' 오류: url_not_accessible"]
+
+
+def test_parse_joins_split_citation_blocks_into_one_fact_per_line():
+    """인용 경계로 쪼개진 줄(afe1 F1 모양): 한국어 문장 + 꼬리표가 사실, 원문 조각은 quote로."""
+    from shorts_printer.adapters.claude_research import parse
+    en = ("congenitally blind speakers gesture despite their lack of a visual model, "
+          "even when they speak to a blind listener")
+    hit = NS(type="web_search_result_location", url="https://nature.com/a", title="Nature",
+             cited_text=f"We show that {en}.")
+    ko = NS(type="web_search_result_location", url="https://ncbi.nlm.nih.gov/b", title="StatPearls",
+            cited_text="Normal urine odor is described as urinoid.")
+    facts = parse([[
+        NS(type="text", text="앞을 못 본 사람도 손짓을 했다고 한 연구가 보고했다. ", citations=None),
+        NS(type="text", text=en, citations=[hit]),
+        NS(type="text", text=" (연구 1편, 28명, 1998 Nature)\nStatPearls 소변검사 항목에서 ", citations=None),
+        NS(type="text", text="정상 소변 냄새는 \"Urinoid\"로 적혀 있다", citations=[ko]),   # 모델이 쓴 한국어 인용
+        NS(type="text", text=" (교과서).\n확인 못 함: 손을 묶으면 말이 막힌다", citations=None),
+    ]])[1:]
+    assert facts == [
+        {"text": "앞을 못 본 사람도 손짓을 했다고 한 연구가 보고했다. (연구 1편, 28명, 1998 Nature)",
+         "url": "https://nature.com/a", "title": "Nature", "published": "", "retrieved_at": "", "quote": en},
+        {"text": "StatPearls 소변검사 항목에서 정상 소변 냄새는 \"Urinoid\"로 적혀 있다 (교과서).",
+         "url": "https://ncbi.nlm.nih.gov/b", "title": "StatPearls", "published": "", "retrieved_at": ""},
+        {"text": "확인 못 함: 손을 묶으면 말이 막힌다", "url": "", "title": "", "published": "", "retrieved_at": ""},
+    ]
+    # 한국어 원문 구절·숫자를 문장 가운데 인용하면 문장에 그대로 남는다
+    kdca = NS(type="web_search_result_location", url="https://kdca.go.kr/c", title="질병관리청",
+              cited_text="예방접종 후 면역은 약 6개월 정도 지속됩니다.")
+    mid = parse([[NS(type="text", text="면역은 ", citations=None), NS(type="text", text="6개월", citations=[kdca]),
+                  NS(type="text", text=" 정도 간다 (교과서)\n", citations=None)]])
+    assert mid[1]["text"] == "면역은 6개월 정도 간다 (교과서)" and "quote" not in mid[1]
+    # 원문 조각만 있고 문장이 꼬리표뿐이면 원문이 곧 사실 문장
+    only = parse([[NS(type="text", text=en, citations=[hit]), NS(type="text", text=" (교과서)", citations=None)]])
+    assert only[1]["text"] == f"{en} (교과서)" and "quote" not in only[1]
 
 
 class FakeResearcher:
@@ -165,3 +199,10 @@ def test_research_cfg_normalizes_domains():
                     news=["https://Yna.co.kr/"])
     assert r.domains == ["kdca.go.kr", "a.kr", "b.kr", "c.kr", "d.kr"] and r.news == ["yna.co.kr"]
     assert "kdca.go.kr" in channel.load(CH).research.domains   # 채널 허용 목록도 같은 검증을 지난다
+
+
+def test_gather_caps_facts_and_keeps_quote():
+    rs = FakeResearcher([_f(f"사실 {i}", f"https://kdca.go.kr/{i}") | {"quote": "원문"} for i in range(15)])
+    doc, _ = research.gather(rs, _ch(domains=["kdca.go.kr"]), "독감", None)
+    assert len(doc["facts"]) == research.MAX_FACTS and doc["facts"][-1]["text"] == "사실 11"
+    assert doc["facts"][0]["quote"] == "원문" and "사실 15개 가운데 앞 12개만 썼다" in doc["notes"]
