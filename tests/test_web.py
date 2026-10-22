@@ -96,6 +96,23 @@ def test_job_page_api_and_retry_rules():
     assert client.get("/jobs/..%2Fetc").status_code == 404 and client.get("/api/jobs/nope").status_code == 404
 
 
+
+def test_cancel_takes_queued_job_out_and_asks_running_job_to_stop():
+    job = done_job()
+    assert client.post(f"/api/jobs/{job.id}/cancel").status_code == 409   # 완성된 건 취소할 게 없다
+    job.update(status="queued")
+    assert 'data-retry="cancel"' in client.get(f"/jobs/{job.id}").text
+    assert client.post(f"/api/jobs/{job.id}/cancel").json() == {"ok": True}
+    web.q.run_one(job.id)   # 큐에 남은 몫은 건너뛴다
+    d = job.data
+    assert d["status"] == "interrupted" and d["cancel"]
+    assert client.get(f"/api/jobs/{job.id}").json()["sig"].endswith(":취소")
+    html = client.get(f"/jobs/{job.id}").text
+    assert "취소했어요" in html and "data-retry>" in html and 'data-retry="cancel"' not in html
+    job.update(status="running", cancel=None)
+    client.post(f"/api/jobs/{job.id}/cancel")
+    assert job.data["status"] == "running" and "취소하는 중이에요" in client.get(f"/jobs/{job.id}").text
+
 def test_job_page_shows_facts_refs_unverified_and_description_preview():
     job = done_job()
     job.edit("script.json", lambda s: s | {"sentences": ["물은 100도", "2배 비싸다"], "fact_ids": [["F1"], []],
@@ -598,3 +615,54 @@ def test_job_cost_adds_research_and_page_shows_step():
     job.update(research_usage={"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.05})
     assert web.job_cost(job.data) == 0.06
     assert "자료 조사" in client.get(f"/jobs/{job.id}").text
+
+
+def test_credits_shows_shorts_left(monkeypatch):
+    """장면 11개·문장 56~63자 → 한 편 ElevenLabs 654자, Flow 132크레딧. 적은 쪽이 편수를 정한다."""
+    from shorts_printer.adapters.elevenlabs import ElevenLabs
+    from shorts_printer.adapters.flow_auto import FlowAuto
+    monkeypatch.setattr(web, "_left_cache", {})
+    monkeypatch.delenv("ANTHROPIC_ADMIN_API_KEY", raising=False)   # Claude 줄은 설정이 없으면 안 뜬다
+    monkeypatch.setattr(FlowAuto, "ready", lambda self: True)
+    monkeypatch.setattr(ElevenLabs, "credits", lambda self: 6540)
+    monkeypatch.setattr(FlowAuto, "credits", lambda self: 5883)
+    assert 'data-src="/credits"' in client.get("/").text   # 대시보드는 자리만 두고 바로 그린다
+    html = client.get("/credits").text
+    assert "6,540" in html and "편당 654 · 10편" in html and "편당 132 · 44편" in html
+    assert "약 <strong>10편</strong>" in html and "ElevenLabs가 먼저" in html
+
+    def broken(self):
+        raise RuntimeError("전용 Chrome이 꺼져 있어요")
+    monkeypatch.setattr(web, "_left_cache", {})
+    monkeypatch.setattr(FlowAuto, "credits", broken)
+    html = client.get("/credits").text
+    assert "전용 Chrome이 꺼져 있어요" in html and "만들 수 있어요" not in html   # 하나라도 모르면 편수를 말하지 않는다
+
+
+def test_credits_shows_claude_balance_from_cost_report(monkeypatch):
+    """$50에서 비용 보고서 두 쪽(150.5 + 49.5센트)을 빼 $48.00. 최근 작업 평균 $0.01이라 4,800편."""
+    import io
+    import json
+
+    from shorts_printer.adapters import claude
+    from shorts_printer.adapters.elevenlabs import ElevenLabs
+    from shorts_printer.adapters.flow_auto import FlowAuto
+    monkeypatch.setattr(web, "_left_cache", {})
+    monkeypatch.setattr(FlowAuto, "ready", lambda self: True)
+    monkeypatch.setattr(ElevenLabs, "credits", lambda self: 654_000_000)
+    monkeypatch.setattr(FlowAuto, "credits", lambda self: 132_000_000)
+    monkeypatch.setenv("ANTHROPIC_ADMIN_API_KEY", "sk-ant-admin01-x")
+    monkeypatch.setattr(config, "CLAUDE_CREDIT_USD", "50")
+    monkeypatch.setattr(config, "CLAUDE_CREDIT_SINCE", "2026-10-01")
+    urls = []
+
+    def urlopen(req, timeout):
+        urls.append(req.full_url)
+        last = "page=p2" in req.full_url
+        return io.BytesIO(json.dumps({"data": [{"results": [{"amount": "49.5" if last else "150.5"}]}, {"results": []}],
+                                      "has_more": not last, "next_page": None if last else "p2"}).encode())
+    monkeypatch.setattr(claude, "urlopen", urlopen)
+    done_job()
+    html = client.get("/credits").text
+    assert "starting_at=2026-10-01T00%3A00%3A00Z" in urls[0] and len(urls) == 2
+    assert "$48.00" in html and "편당 $0.01 · 4800편" in html and "Claude가 먼저" in html

@@ -80,7 +80,7 @@ def test_tick_fires_list_in_order_and_records_missed(q, sent):
     assert run["result"] == "started" and run["topic"] == "커피" and d["topics"] == ["우유"]
     assert d["last_slot"] == at(FRI, "09:00").isoformat()
     job = Job.load(run["job"]).data
-    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "8QclKarwLctvzN2plke3"
+    assert job["status"] == "queued" and job["source"] == {"schedule": s.id} and job["voice"] == "PDoCXqBQFGsvfO0hNkEs"
     assert q._q.get_nowait() == ("run", run["job"])
     schedule.tick(q, sent.append, at(FRI, "09:01"))   # 같은 시각은 한 번만
     assert len(s.data["runs"]) == 1
@@ -295,6 +295,7 @@ def test_worker_runs_hooks_and_swallows_errors(monkeypatch, sent):
     monkeypatch.setattr(schedule, "after_job", boom)
     monkeypatch.setattr(schedule, "after_trend", boom)
     job, t = Job.create(CH, "커피", "v"), Trend.create(CH)
+    job.update(status="queued")
     q.run_one(job.id)   # 훅이 터져도 작업 스레드는 산다
     q.run_one(t.id, "trend")
     assert [(a[0].id, a[-2], a[-1]) for a in calls] == [(job.id, q, sent.append), (t.id, q, sent.append)]

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import secrets
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +25,7 @@ from ..core.pipeline import LABELS, STEPS, Job, in_review, in_voice_review
 from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
-from ..infra.store import migrate, upload_state
+from ..infra.store import migrate, redact, upload_state
 from ..ports.llm import add_usage
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ ALL = "all"   # 채널 고르기의 "전체 채널"
 COOKIE = "sp_channel"   # 고른 채널을 기억한다
 ACTIVE = ("queued", "running")
 MAX_CLIP = 200 * 1024 * 1024   # 클립 한 개 상한(app.js에도 같은 값)
+CREDIT_TTL = 60   # 초. 남은 크레딧을 이만큼 기억한다(Flow는 화면을 열어 읽어 몇 초 걸린다)
 MAX_NOTE = 300   # 썸네일·대본 수정 요청 글자 수 상한(job.html maxlength와 같은 값)
 STATUS = {"draft": "준비", "queued": "대기 중", "running": "제작 중", "done": "완성",
           "failed": "실패", "interrupted": "중단", "waiting": "클립 대기"}
@@ -113,10 +115,12 @@ def icon(name: str, size: int = 16, cls: str = "") -> Markup:
 def sig(data: dict) -> str:
     """화면 조각을 다시 그려야 하는지 가르는 값. 템플릿과 상태 API가 같은 함수를 쓴다."""
     return (f'{data["status"]}:{"".join(data["steps"][s]["status"][0] for s in STEPS)}:{len(data["notices"])}'
-            f':{(data.get("upload") or {}).get("status", "-")}')
+            f':{(data.get("upload") or {}).get("status", "-")}' + (":취소" if data.get("cancel") else ""))
 
 
 def status_label(data: dict) -> str:
+    if data["status"] == "interrupted" and data.get("cancel"):
+        return "취소"
     return "대본 확인" if in_review(data) else "음성 확인" if in_voice_review(data) else STATUS[data["status"]]
 
 
@@ -359,6 +363,50 @@ def _checks(cid: str) -> list[tuple[str, str, str]]:
     ]
 
 
+_left_cache: dict[str, tuple[float, int | str]] = {}
+
+
+def _left(p) -> int | str:
+    """공급자 남은 크레딧. 못 읽으면 오류 문구. CREDIT_TTL 동안 기억한다."""
+    at, v = _left_cache.get(p.label, (0.0, ""))
+    if time.monotonic() - at > CREDIT_TTL:
+        try:
+            v = p.credits()
+        except Exception as e:  # noqa: BLE001 — 한 공급자가 실패해도 나머지는 보인다
+            v = redact(str(e)) or type(e).__name__
+        _left_cache[p.label] = (time.monotonic(), v)
+    return v
+
+
+def _credits(cid: str) -> dict | None:
+    """고른 채널(전체면 첫 채널) 공급자의 남은 크레딧과 지금 만들 수 있는 편수. 셀 수 있는 공급자가 없으면 None."""
+    try:
+        sv = registry.services(channel.ids()[0] if cid == ALL else cid)
+    except (KeyError, ValueError, RuntimeError):
+        return None
+    sc = sv.channel.script
+    # 한 편 글자 수: 문장 길이 가운데 × 장면 수. 낱말 단위면 낱말 하나를 띄어쓰기까지 6자로 친다
+    # ponytail: 다시 읽기·다시 만들기는 세지 않는다. 모자라면 최근 작업의 실제 사용량으로 잴 것
+    chars = sc.scenes * sum(sc.sentence) // 2 * (1 if sc.unit == "chars" else 6)
+    rows = []
+    for p, n in ((sv.tts, chars), (sv.video, sc.scenes)):
+        if hasattr(p, "credits"):
+            left, per = _left(p), p.cost(n)
+            rows.append({"label": p.label, "left": left, "per": per,
+                         "shorts": left // per if isinstance(left, int) else None})
+    if hasattr(sv.llm, "credits") and (left := _left(sv.llm)) is not None:
+        # 한 편 Claude 비용: 이 채널 최근 끝난 작업 10개 평균(센트). 작업이 없으면 편수를 모른다
+        costs = [c for j in Job.all() if j.data.get("channel") == sv.channel.id and (c := job_cost(j.data))][-10:]
+        per = max(1, round(sum(costs) / len(costs) * 100)) if costs else None
+        rows.append({"label": sv.llm.label, "left": left, "per": per, "usd": True,
+                     "shorts": left // per if isinstance(left, int) and per else None})
+    if not rows:
+        return None
+    known = [r for r in rows if r["shorts"] is not None]
+    low = min(known, key=lambda r: r["shorts"]) if len(known) == len(rows) else None
+    return {"channel": sv.channel, "chars": chars, "rows": rows, "low": low}
+
+
 def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
     """대시보드에 띄울, 고른 채널의 최신 완료 추천 상위 3개. 지웠거나 설정이 틀린 채널 것은 뺀다."""
     for t in reversed(Trend.all()):
@@ -400,6 +448,12 @@ def index(request: Request):
     return _page(request, "index.html", {
         "jobs": jobs, "stats": _stats(jobs, goal), "ch": ch, "llm_ok": _checks(sel)[0][0] == "ok",
         "active": any(j["status"] in ACTIVE for j in jobs), "rec": _latest_picks(sel, chs)})
+
+
+@app.get("/credits")
+def credits_part(request: Request):
+    """대시보드 남은 크레딧 칸. 공급자를 부르느라 느려 화면을 그린 뒤 app.js가 따로 받는다."""
+    return templates.TemplateResponse(request, "_credits.html", {"credits": _credits(_sel(request))})
 
 
 @app.post("/jobs")
@@ -462,6 +516,25 @@ def retry(job_id: str):
     job = _load(Job, job_id)
     if not q.enqueue(job_id):
         raise HTTPException(409, "이미 완성된 작업이에요" if job.data["status"] == "done" else "이미 제작 중이에요")
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel(job_id: str):
+    """대기 중이면 바로 빼고, 제작 중이면 지금 단계(장면 영상은 지금 장면)를 마친 뒤 멈춘다.
+    스레드를 끊지 않는 건 넣은 영상 크레딧과 반쯤 쓴 파일을 버리지 않으려서다. [다시 시도]로 이어 간다."""
+    job = _load(Job, job_id)
+    with q.lock:   # 작업 스레드가 queued → running으로 바꾸는 것과 엇갈리지 않게
+        status = job.data["status"]
+        if status == "queued":
+            job.interrupt()
+            job.update(cancel=True)
+            job.log("취소: 대기 중에 뺐어요")
+        elif status == "running":
+            job.update(cancel=True)
+            job.log("취소 요청: 지금 단계를 마치면 멈춰요")
+        else:
+            raise HTTPException(409, "대기·제작 중인 작업만 취소할 수 있어요")
     return {"ok": True}
 
 

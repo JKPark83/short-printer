@@ -168,6 +168,8 @@ Kind = Literal["주제·제목", "흐름", "사실", "문장", "낭독·자막",
 SCORES: dict[str, int] = {"주제·제목": 15, "흐름": 25, "사실": 20, "문장": 15, "낭독·자막": 10, "재미": 15}
 PENALTY = {"큼": 8, "작음": 3}
 PASS = 70
+# 총점이 넘어도 이 분야가 이 점수 아래면 떨어진다(흐름 3/25로도 통과하던 것을 막는다: 처음 듣는 시청자가 뜻을 놓친다)
+FLOOR = {"흐름": 10}
 
 
 class Issue(BaseModel):
@@ -198,7 +200,9 @@ class Verdict(BaseModel):
     def passed(self) -> bool:
         # 사실을 시트보다 세게 말한 것, 문장과 다른 부위를 보여 주는 화면은 점수와 상관없이 고친다
         # (건강 채널에서 틀린 말·엉뚱한 해부 장면은 못 내보낸다)
-        return self.total >= PASS and not any(i.kind in ("사실", "화면") for i in self.issues)
+        scores = self.scores()
+        return (sum(scores.values()) >= PASS and all(scores[k] >= v for k, v in FLOOR.items())
+                and not any(i.kind in ("사실", "화면") for i in self.issues))
 
     def lines(self, sentences: Sequence[str]) -> list[str]:
         """로그·화면에 남기는 꼴. 원문을 같이 적어 장면 번호 없이도 무엇을 고칠지 알게 한다."""

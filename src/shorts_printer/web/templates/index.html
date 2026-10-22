@@ -24,6 +24,7 @@
         <p class="empty">새 쇼츠는 채널을 하나 고른 뒤 만들 수 있어요. 위 채널 목록에서 골라 주세요.</p>
         {% endif %}
       </section>
+      {% with pending = true %}{% include "_credits.html" %}{% endwith %}
     </div>
     <div class="col">
       <section id="stats" class="tiles" aria-label="요약">

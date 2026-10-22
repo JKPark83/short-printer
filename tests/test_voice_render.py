@@ -106,10 +106,10 @@ def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_p
     assert [r.split("/")[-2] for r in urls[1:]] == ["envID", "iWLjl1zCuqXRkW6494ve"]
 
 
-def test_voices_default_eungwang(ch):
+def test_voices_default_chris(ch):
     assert list(ch.tts.voices.values()) == [
         "크리스", "미스터킴", "이하나", "지수", "민성", "미나", "민우", "은광", "미스터최"]
-    assert ch.tts.default == "8QclKarwLctvzN2plke3"
+    assert ch.tts.default == "PDoCXqBQFGsvfO0hNkEs"
 
 
 def test_synth_refuses_old_voice_and_missing_key(tmp_path, ch):

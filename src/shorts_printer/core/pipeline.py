@@ -44,6 +44,10 @@ class Wait(Exception):
     """사람 손이 필요해 멈춘다(클립 올리기). 실패가 아니다."""
 
 
+class Canceled(Exception):
+    """운영자가 취소했다(cancel). 단계 사이·장면 클립 사이에서만 멈춰 이미 넣은 영상 크레딧을 버리지 않는다."""
+
+
 def in_review(data: dict) -> bool:
     """대본·음성·자막을 사람이 확정하기를 기다리는 중."""
     return data["status"] == "waiting" and bool(data.get("review")) and not data.get("confirmed")
@@ -102,7 +106,8 @@ def _recent(job: Job, sv: Services) -> list[str]:
 
 
 def step_proofread(job: Job, sv: Services) -> str:
-    """대본을 원어민 편집자 눈으로 검수만 한다. 지적마다 분야·무게로 깎아 100점 만점 70점(script.PASS) 이상이면 통과.
+    """대본을 원어민 편집자 눈으로 검수만 한다. 지적마다 분야·무게로 깎아 100점 만점 70점(script.PASS) 이상이고
+    흐름이 바닥(script.FLOOR) 위면 통과.
     고치지는 않는다: 모델이 고치면 새 문장에서 새 흠이 생기고 앞뒤가 다시 어긋난다.
     떨어지면 지적을 남기고 사람 확인으로 멈춘다(운영자가 읽고 고치거나 그대로 확정한다)."""
     facts = (job.doc("facts.json") or {}).get("facts", [])
@@ -162,6 +167,8 @@ def step_footage(job: Job, sv: Services) -> str:
     todo = scenes.scenes(job.doc("script.json"), job.doc("timing.json"))
     for c in p.make([s for s in todo if not (d / s["file"]).exists()], d, job.log):
         scenes.set_clip(job, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
+        if job.data.get("cancel"):   # 받은 장면까지 남기고 다음 장면은 넣지 않는다
+            raise Canceled
     if miss := missing_clips(job):
         raise Wait(f"장면 클립 {len(todo) - len(miss)}/{len(todo)}개")
     got = {c["file"]: c for c in job.doc("clips.json", [])}
@@ -232,11 +239,18 @@ def run_steps(rec, steps, labels: dict, run: dict, done_msg: str) -> None:
     for name in steps:
         if rec.data["steps"][name]["status"] == "done":
             continue
-        rec.step(name, status="running", engine=None, sec=None)
-        rec.log(f"{labels[name]} 시작")
         t0 = time.monotonic()
         try:
+            if rec.data.get("cancel"):
+                raise Canceled
+            rec.step(name, status="running", engine=None, sec=None)
+            rec.log(f"{labels[name]} 시작")
             engine = run[name](rec)
+        except Canceled:   # 실패가 아니라 중단. [다시 시도]하면 이 단계부터 이어서
+            rec.step(name, status="pending")
+            rec.log(f"취소: {labels[name]} 전에 멈췄어요")
+            rec.update(status="interrupted")
+            return
         except Wait as w:   # 클립 대기: 실패가 아니라 멈춤. 클립이 다 오면 다시 큐에 넣는다
             rec.step(name, status="pending")
             rec.log(f"{labels[name]} 대기: {w}")

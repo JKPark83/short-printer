@@ -89,6 +89,10 @@ function kickList() {
 }
 kickList();
 
+// ── 대시보드 남은 크레딧: 공급자를 부르느라 느려(Flow 몇 초) 화면을 그린 뒤 따로 받는다
+const credits = $('#credits[data-src]');
+if (credits) swap(credits.dataset.src, ['credits']).catch(() => { $('.empty', credits).textContent = '남은 크레딧을 불러오지 못했어요'; });
+
 // ── 상세 화면(작업·주제 찾기)
 const api = page?.dataset.api;
 let tick = () => {};

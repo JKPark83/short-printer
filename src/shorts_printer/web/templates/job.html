@@ -29,6 +29,8 @@
       <span class="badge b-{{ job.status }}">{{ status_label(job) }}</span>
       {% if job.status in ('failed', 'interrupted', 'draft', 'waiting') and not review and not vreview %}
       <button id="retry" class="btn btn-secondary" type="button" data-retry>{{ icon('rotate') }}다시 시도</button>
+      {% elif job.status in ACTIVE and not job.cancel %}
+      <button class="btn btn-secondary" type="button" data-retry="cancel" data-done="취소했어요. 대기 중이면 바로, 제작 중이면 지금 단계를 마치고 멈춰요">{{ icon('x') }}취소</button>
       {% endif %}
     </div>
   </header>
@@ -80,9 +82,12 @@
       <div class="banner banner-bad" role="alert">{{ icon('alert', 18) }}
         <div><strong>실패: {{ LABELS[job.error.step] or '채널 설정' }}</strong><p class="err">{{ job.error.message }}</p>
           <p class="muted">[다시 시도]를 누르면 이 단계부터 이어서 해요.</p></div></div>
+      {% elif job.status == 'running' and job.cancel %}
+      <div class="banner banner-warn">{{ icon('loader', 18, 'spin') }}
+        <div><strong>취소하는 중이에요</strong><p class="muted">지금 단계를 마치면 멈춰요. 장면 영상은 지금 만드는 장면을 받은 뒤 멈춰서, 이미 쓴 크레딧을 버리지 않아요.</p></div></div>
       {% elif job.status == 'interrupted' %}
       <div class="banner banner-warn">{{ icon('alert', 18) }}
-        <div><strong>서버가 꺼져 멈췄어요</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
+        <div><strong>{{ '취소했어요' if job.cancel else '서버가 꺼져 멈췄어요' }}</strong><p class="muted">[다시 시도]를 누르면 끝난 단계는 건너뛰고 이어서 해요.</p></div></div>
       {% elif review and script %}
       <div class="banner banner-warn" role="alert">{{ icon('pencil', 18) }}
         <div><strong>대본·음성·자막을 확인해 주세요</strong><p class="muted">문장·목소리·자막을 바로 고치거나 Claude에게 수정 요청을 할 수 있어요(문장·목소리를 바꾸면 음성·자막을 다시 만들어요). {% if job.voice_draft %}지금 음성은 무료 초안이에요. 확정하면 채널 목소리로 실제 음성을 만들고, 들어 본 뒤 [음성 확정]을 눌러야 영상을 만들어요.{% else %}확정하면 장면 영상·썸네일을 차례로 만들어요(이때부터 영상 크레딧이 들어요).{% endif %}</p>
@@ -177,7 +182,7 @@
           <dl class="scores">{% for k, top in proofread.max.items() %}
             <dt>{{ k }}</dt><dd><meter min="0" max="{{ top }}" value="{{ pr.scores[k] }}" low="{{ top * 0.6 }}" high="{{ top * 0.9 }}" optimum="{{ top }}"></meter><span class="mono">{{ pr.scores[k] }}/{{ top }}</span></dd>{% endfor %}
           </dl>
-          {% if not pr.passed and pr.total >= proofread.pass %}<p class="muted">사실·화면 지적이 있으면 점수와 상관없이 불통과예요.</p>{% endif %}
+          {% if not pr.passed and pr.total >= proofread.pass %}<p class="muted">사실·화면 지적이 있거나 흐름 점수가 너무 낮으면 총점과 상관없이 불통과예요.</p>{% endif %}
           {% if proofread.rounds|length > 1 %}<p class="muted">회차별 총점: {% for r in proofread.rounds %}{{ r.total }}{{ ' → ' if not loop.last }}{% endfor %}</p>{% endif %}
           {% if pr.issues %}<ul class="facts">{% for i in pr.issues %}
             <li><p><span class="chip">{{ i.kind }}</span> <span class="chip{{ ' chip-bad' if i.severity == '큼' }}">{{ i.severity }}</span> {{ i.text }}</p></li>{% endfor %}

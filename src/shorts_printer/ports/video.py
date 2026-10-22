@@ -10,6 +10,9 @@ class VideoProvider(Protocol):
 
     def ready(self) -> bool: ...
 
+    # 선택: 크레딧을 세는 유료 공급자만 둔다. 있으면 대시보드에 남은 크레딧·만들 수 있는 편수가 뜬다
+    # credits() -> int: 남은 크레딧(못 읽으면 한국어 RuntimeError). cost(n: int) -> int: 장면 n개에 드는 크레딧
+
     def make(self, scenes: list[dict], out: Path, log) -> Iterable[dict]:
         """없는 장면만 온다({i, file, sentence, prompt, sec}). 만든 것은 out/장면 file에 원자적으로 쓰고
         하나마다 clips.json 항목을 yield.

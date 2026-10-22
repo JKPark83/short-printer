@@ -9,13 +9,13 @@ llm = "claude"
 
 [script]
 scenes = 11
-sentence = [52, 58]   # 크리스 기준 초당 약 7.1자: 한 장면이 7.3~8.2초, 11장면이 약 80~90초
+sentence = [56, 63]   # 크리스·eleven_v4 기준 초당 약 7.7자: 한 장면이 7.3~8.2초, 11장면이 약 80~90초
 unit = "chars"
 duration = "80~90초"
 
 [tts]
 provider = "elevenlabs"
-default = "8QclKarwLctvzN2plke3"
+default = "PDoCXqBQFGsvfO0hNkEs"
 sample = "안녕하세요. 오늘은 매일 겪는 몸 현상, 그때 몸 안에서 무슨 일이 일어나는지 보여 드릴게요."
 
 [tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID

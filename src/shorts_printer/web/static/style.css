@@ -112,6 +112,14 @@ select { cursor: pointer; }
 .t-num { font: 600 24px var(--mono); font-variant-numeric: tabular-nums; }
 .t-num small { color: var(--muted-fg); font-size: 14px; font-weight: 400; }
 .t-bad { color: var(--bad); }
+.credit-list { display: grid; gap: var(--s3); margin: 0; padding: 0; list-style: none; }
+.credit-list li { display: grid; grid-template-columns: 1fr auto; gap: 0 var(--s3); align-items: baseline; }
+.cr-name { font-size: 14px; }
+.cr-num { font: 600 20px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.cr-meta { grid-column: 1 / -1; justify-self: end; color: var(--muted-fg); font: 12px var(--mono); }
+.cr-err { grid-column: 1 / -1; display: inline-flex; gap: var(--s2); align-items: center; color: var(--warn); font-size: 13px; }
+.cr-total { margin: var(--s4) 0 0; padding-top: var(--s4); border-top: 1px solid var(--border); }
+.cr-basis { margin: var(--s2) 0 0; color: var(--muted-fg); font-size: 12px; }
 .bar { height: 4px; background: var(--muted); border-radius: 2px; overflow: hidden; }
 .bar span { display: block; height: 100%; background: var(--accent); }
 

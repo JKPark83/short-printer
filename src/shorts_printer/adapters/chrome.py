@@ -12,7 +12,7 @@ PORT = 9333
 FLOW = "https://flow.google.com/"
 
 
-def _up() -> bool:
+def up() -> bool:
     try:
         with urlopen(f"http://127.0.0.1:{PORT}/json/version", timeout=2):
             return True
@@ -22,7 +22,7 @@ def _up() -> bool:
 
 def open_chrome() -> None:
     """전용 Chrome을 디버그 포트로 띄운다. 이미 떠 있으면 그대로 둔다. 서버와 따로 산다."""
-    if _up():
+    if up():
         # 맥은 창을 다 닫아도 프로세스가 남는데, 창이 없으면 CDP로 붙지 못한다
         with urlopen(f"http://127.0.0.1:{PORT}/json/list", timeout=2) as r:
             if not any(t["type"] == "page" for t in json.load(r)):
@@ -33,7 +33,7 @@ def open_chrome() -> None:
                       "--no-first-run", "--no-default-browser-check", FLOW],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
     for _ in range(30):
-        if _up():
+        if up():
             return
         time.sleep(0.5)
     raise RuntimeError("Flow용 Chrome을 띄우지 못했어요")

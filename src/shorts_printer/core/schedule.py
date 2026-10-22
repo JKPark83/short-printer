@@ -369,5 +369,5 @@ def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
         # 처음 완성될 때만 올린다. 올린 뒤 상세 화면에서 고쳐 다시 만든 것(uploaded_before)은 사람이 올린다
         if d.get("upload") is None and not d.get("uploaded_before"):
             q.enqueue_upload(job.id)
-    elif d["status"] == "interrupted":   # 앱이 켜질 때 recover()가 넘긴다
+    elif d["status"] == "interrupted" and not d.get("cancel"):   # 앱이 켜질 때 recover()가 넘긴다. 취소는 사람이 했다
         notify(_msg(sd, "실패", "제작 중단: 서버가 꺼져 멈췄어요. 작업 화면에서 다시 시도하세요.", d["topic"], link))

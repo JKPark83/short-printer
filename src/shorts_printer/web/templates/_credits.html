@@ -1,0 +1,26 @@
+{# 대시보드 남은 크레딧 칸. pending이면 자리만 두고 app.js가 /credits에서 받아 바꾼다 #}
+<section id="credits" class="card" aria-labelledby="h-credits"{% if pending %} data-src="/credits" aria-busy="true"{% endif %}>
+  <h2 id="h-credits">남은 크레딧</h2>
+  {% if pending %}
+  <p class="empty">{{ icon('loader', 16, 'spin') }} 불러오는 중…</p>
+  {% elif not credits %}
+  <p class="empty">이 채널 공급자는 남은 크레딧을 셀 수 없어요.</p>
+  {% else %}
+  <ul class="credit-list">
+    {% for r in credits.rows %}
+    <li>
+      <span class="cr-name">{{ r.label }}</span>
+      {% if r.left is string %}<span class="cr-err">{{ icon('alert', 14) }}{{ r.left }}</span>
+      {% elif r.usd %}<span class="cr-num">${{ '{:,.2f}'.format(r.left / 100) }}</span>
+      {% if r.per %}<span class="cr-meta">편당 ${{ '{:.2f}'.format(r.per / 100) }} · {{ r.shorts }}편</span>{% endif %}
+      {% else %}<span class="cr-num">{{ '{:,}'.format(r.left) }}</span>
+      <span class="cr-meta">편당 {{ '{:,}'.format(r.per) }} · {{ r.shorts }}편</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if credits.low %}
+  <p class="cr-total">지금 크레딧으로 약 <strong>{{ credits.low.shorts }}편</strong> 만들 수 있어요{% if credits.rows|length > 1 %} · {{ credits.low.label }}가 먼저 떨어져요{% endif %}</p>
+  {% endif %}
+  <p class="cr-basis">{{ credits.channel.name }} 기준 한 편 = 장면 {{ credits.channel.script.scenes }}개 · 약 {{ '{:,}'.format(credits.chars) }}자 · 다시 읽기·다시 만들기는 빼고 셌어요</p>
+  {% endif %}
+</section>

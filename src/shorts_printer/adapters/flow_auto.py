@@ -5,10 +5,11 @@ import os
 import time
 from pathlib import Path
 
-from .chrome import CHROME, FLOW, PORT, open_chrome
+from .chrome import CHROME, FLOW, PORT, open_chrome, up
 
-# 설정 팝오버 radio 이름. 순서가 중요하다(동영상을 골라야 나머지가 나온다). 장면 하나에 6크레딧
-SETTINGS = ("동영상", "소재", "9:16", "360p", "8초", "x1")
+# 설정 팝오버 radio 이름. 순서가 중요하다(동영상을 골라야 나머지가 나온다). 장면 하나에 SCENE_CREDITS
+SETTINGS = ("동영상", "소재", "9:16", "720p", "8초", "x1")
+SCENE_CREDITS = 12
 MODEL = "Omni 1.1 Flash"
 GEN_TIMEOUT = 360   # 초. 보통 2분 안팎
 RETRY_AFTER = 300   # 초. 실패한 장면은 이만큼 뒤 한 번만 다시
@@ -36,7 +37,7 @@ def _settings(page) -> None:
         page.get_by_text(MODEL, exact=True).last.click()
     page.keyboard.press("Escape")
     got = page.locator('button[aria-label="설정 트리거"]').inner_text()
-    if not all(w in got for w in ("동영상", "360p", "8초", "crop_9_16", "x1")):
+    if not all(w in got for w in ("동영상", "720p", "8초", "crop_9_16", "x1")):
         raise RuntimeError(f"Flow 설정을 맞추지 못했어요: {got}")
 
 
@@ -91,25 +92,61 @@ def _download(page, path: Path) -> None:
     if kind == "error":
         raise Refused(" ".join(text.split()) or "Flow가 이 프롬프트를 거절했어요")
     tile = page.locator(TILE).filter(has_not=page.locator(TILE)).first
-    tile.hover()
-    with page.expect_download(timeout=60_000) as d:
-        tile.locator('button[aria-label="옵션 더보기"]').click()
-        page.locator('[role="menuitem"]', has_text="다운로드").first.hover()
-        page.locator('[role="menuitem"]', has_text="원본 크기").first.click()
     tmp = path.with_suffix(".tmp.mp4")
-    d.value.save_as(tmp)
-    if not tmp.stat().st_size:   # 다운로드가 끊기면 0바이트가 남는다. 완료로 치지 않고 다시 받게 던진다
+    # 다운로드는 페이지가 받아 둔 영상(blob:)을 저장한다. 타일이 막 끝나면 아직 비어 0바이트가 오니
+    # 조금 기다렸다 다시 받는다(받기는 크레딧이 들지 않는다)
+    for wait in (0, 5, 15, 30):
+        page.wait_for_timeout(wait * 1000)
+        tile.hover()
+        with page.expect_download(timeout=60_000) as d:
+            tile.locator('button[aria-label="옵션 더보기"]').click()
+            page.locator('[role="menuitem"]', has_text="다운로드").first.hover()
+            page.locator('[role="menuitem"]', has_text="원본 크기").first.click()
+        d.value.save_as(tmp)
+        if tmp.stat().st_size:
+            os.replace(tmp, path)
+            return
         tmp.unlink()
-        raise RuntimeError(f"Flow 다운로드가 비었어요({d.value.failure() or '0바이트'})")
-    os.replace(tmp, path)
+    raise RuntimeError(f"Flow 다운로드가 비었어요({d.value.failure() or '0바이트'})")
+
+
+def _count(text: str) -> int:
+    """"Google Flow 크레딧 5,883개" → 5883."""
+    digits = "".join(c for c in text if c.isdigit())
+    if not digits:
+        raise RuntimeError(f"Flow 크레딧 문구를 못 읽었어요: {text}")
+    return int(digits)
 
 
 class FlowAuto:
     label = "Google Flow(자동)"
-    hint = "Flow 크레딧 · 장면마다 6크레딧 · 처음 한 번 uv run sp chrome으로 띄운 창에서 Google 로그인"
+    hint = f"Flow 크레딧 · 장면마다 {SCENE_CREDITS}크레딧 · 처음 한 번 uv run sp chrome으로 띄운 창에서 Google 로그인"
 
     def ready(self) -> bool:
         return Path(CHROME).exists()
+
+    def cost(self, n: int) -> int:
+        """장면 n개를 만드는 크레딧."""
+        return n * SCENE_CREDITS
+
+    def credits(self) -> int:
+        """계정 패널의 "Google Flow 크레딧 5,883개"를 읽는다. 전용 Chrome이 꺼져 있으면 띄우지 않고 던진다."""
+        from playwright.sync_api import sync_playwright  # 이 공급자를 쓸 때만 불러온다
+
+        if not up():
+            raise RuntimeError("전용 Chrome이 꺼져 있어요. uv run sp chrome으로 띄우면 보여요")
+        with sync_playwright() as p:
+            page = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0].new_page()
+            try:
+                page.goto(FLOW)
+                try:
+                    page.locator('[aria-label="계정 세부정보"]').first.click(timeout=20_000)
+                    text = page.locator(".credits-count").first.inner_text(timeout=10_000)
+                except Exception:  # noqa: BLE001 — 로그인 화면이거나 화면이 바뀌었다
+                    raise RuntimeError("Flow 크레딧을 읽지 못했어요. 전용 Chrome에서 로그인했는지 봐 주세요") from None
+            finally:
+                page.close()
+        return _count(text)
 
     def make(self, scenes, out, log):
         from playwright.sync_api import sync_playwright  # 이 공급자를 쓸 때만 불러온다

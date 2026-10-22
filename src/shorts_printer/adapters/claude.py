@@ -1,8 +1,12 @@
 """LLM 구현: Claude API. 대본·썸네일·주제 찾기가 같이 쓴다."""
 import base64
+import json
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import anthropic
 import pydantic
@@ -14,6 +18,7 @@ PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haik
 SEARCH_USD = 0.01   # 웹 검색 한 번
 WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜세요."
+COST_REPORT = "https://api.anthropic.com/v1/organizations/cost_report"   # Admin API. SDK에 없어 HTTP로 부른다
 BLOCKED = re.compile(r"not accessible to our user agent: \[([^\]]*)\]")
 
 
@@ -92,6 +97,29 @@ class Claude:
 
     def cost(self, input_tokens: int, output_tokens: int) -> float | None:
         return cost(self.model, input_tokens, output_tokens)
+
+    def credits(self) -> int | None:
+        """남은 크레딧(센트). API에 잔액 조회가 없어 CLAUDE_CREDIT_SINCE 날의 잔액에서 그날부터 쓴 돈을 뺀다.
+        Admin 키·잔액·날짜 중 하나라도 없으면 None."""
+        # ponytail: 날 단위라 SINCE 날 잔액을 적기 전에 쓴 돈도 빠진다. 정확히 하려면 잔액을 적은 다음 날을 SINCE로
+        key, usd, since = config.secret("ANTHROPIC_ADMIN_API_KEY"), config.CLAUDE_CREDIT_USD, config.CLAUDE_CREDIT_SINCE
+        if not (key and usd and since):
+            return None
+        spent, q = 0.0, {"starting_at": f"{since}T00:00:00Z", "limit": 31}
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+        while True:
+            req = Request(f"{COST_REPORT}?{urlencode(q)}", headers=headers)
+            try:
+                with urlopen(req, timeout=10) as r:
+                    d = json.load(r)
+            except HTTPError as e:
+                if e.code in (401, 403):
+                    raise RuntimeError("Admin 키가 맞지 않아요. .env의 ANTHROPIC_ADMIN_API_KEY를 확인하세요") from None
+                raise RuntimeError(f"Claude 비용 보고서 {e.code}: {e.read()[:200].decode(errors='replace')}") from None
+            spent += sum(float(x["amount"]) for b in d["data"] for x in b["results"])
+            if not d["has_more"]:
+                return round(float(usd) * 100 - spent)
+            q["page"] = d["next_page"]
 
     def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = (),
             web: bool | Sequence[str] = False):

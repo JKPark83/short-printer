@@ -56,7 +56,7 @@ def test_write_without_style_keeps_prompt(tmp_path):
 
 def test_ko_system_keeps_every_old_rule(ko):
     sys = script.system(ko)
-    for rule in ["80~90초", "정확히 11개", "52~58자", "58자를 넘지", "이모지·해시태그·괄호", "80~110단어",
+    for rule in ["80~90초", "정확히 11개", "56~63자", "63자를 넘지", "이모지·해시태그·괄호", "80~110단어",
                  "photoreal", "주인공·장소·시대·옷차림", "앞 5초", "No on-screen text, no numbers, no logos.",
                  "실존 인물의 얼굴", "No dialogue, no voices, no music.",
                  "훅", "존댓말", "사실 시트", "fact_ids", "prompt_ko",
@@ -319,12 +319,13 @@ def test_verdict_passes_at_70_points_unless_a_fact_is_flagged():
     def issue(kind, severity="큼"):
         return script.Issue(scene=1, kind=kind, severity=severity, problem="p", fix="f")
     assert script.Verdict().total == 100 and script.Verdict().passed
-    v = script.Verdict(issues=[issue("흐름")] * 3 + [issue("재미", "작음")])
-    assert v.scores()["흐름"] == 1 and v.total == 73 and v.passed
-    v.issues.append(issue("흐름"))   # 분야 점수는 0 아래로 가지 않는다
-    assert v.scores()["흐름"] == 0 and v.total == 72 and v.passed
+    v = script.Verdict(issues=[issue("흐름")] * 2 + [issue("재미", "작음"), issue("주제·제목")])
+    assert v.scores()["흐름"] == 9 and v.total == 73 and not v.passed   # 총점이 넘어도 흐름이 바닥(10) 아래면 떨어진다
+    v = script.Verdict(issues=[issue("흐름"), issue("흐름", "작음")] + [issue("재미")] * 2)
+    # 분야 점수는 0 아래로 가지 않는다
+    assert v.scores()["흐름"] == 14 and v.scores()["재미"] == 0 and v.total == 74 and v.passed
     v.issues.append(issue("주제·제목"))
-    assert v.total == 64 and not v.passed
+    assert v.total == 66 and not v.passed
     # 사실을 시트보다 세게 말한 것은 점수가 높아도 떨어진다
     assert not script.Verdict(issues=[issue("사실", "작음")]).passed
     # 문장과 다른 부위를 보여 주는 화면도 점수와 상관없이 떨어진다(점수 분야는 아니다)

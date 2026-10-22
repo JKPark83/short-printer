@@ -90,6 +90,12 @@ class LocalQueue:
         return True
 
     def run_one(self, job_id: str, kind: str = "run") -> None:
+        if kind == "run":
+            with self.lock:   # 대기 중에 취소됐거나 같은 작업이 두 번 들어왔으면 건너뛴다
+                job = pipeline.Job.load(job_id)
+                if job.data["status"] != "queued":
+                    return
+                job.update(status="running", cancel=None)
         try:
             rec = (trends.Trend if kind == "trend" else pipeline.Job).load(job_id)
             try:

@@ -39,6 +39,10 @@ def secret(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
+# Claude 남은 크레딧(선택): ANTHROPIC_ADMIN_API_KEY로 비용 보고서를 읽어 SINCE(YYYY-MM-DD) 날의 잔액 USD에서 뺀다
+CLAUDE_CREDIT_USD = os.environ.get("CLAUDE_CREDIT_USD") or None
+CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
+
 # ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"

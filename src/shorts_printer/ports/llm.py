@@ -14,6 +14,9 @@ class LLM(Protocol):
 
     def ready(self) -> bool: ...
 
+    # 선택: credits() -> int | None: 남은 크레딧(센트). 셀 설정이 없으면 None, 못 읽으면 한국어 RuntimeError.
+    # 있으면 대시보드에 남은 금액·최근 작업 평균 비용으로 만들 수 있는 편수가 뜬다
+
     def ask(self, system: str, text: str, schema: type[T], *, refusal: str, what: str,
             images: Sequence[bytes | str] = (), web: bool | Sequence[str] = False) -> tuple[T, dict]:
         """(구조화 결과, 사용량). images는 JPEG 바이트 또는 URL, 글 앞에 붙는다.

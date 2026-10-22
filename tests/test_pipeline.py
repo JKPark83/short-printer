@@ -182,6 +182,40 @@ def test_auto_provider_fills_what_it_can_then_waits():
     assert [c["source"] for c in job.doc("clips.json")] == ["Fake", "직접 올림"]
 
 
+
+def test_cancel_stops_after_current_clip_and_retry_resumes(monkeypatch):
+    """취소는 받은 장면까지 남기고 다음 장면을 넣지 않는다(이미 쓴 크레딧을 버리지 않게). 다시 돌리면 이어서."""
+    job = scene_job("script", "voice", "subtitles")
+    ran = footage_only(monkeypatch)
+    made = []
+
+    class Fake:
+        label = "Fake"
+        press = True
+
+        def ready(self):
+            return True
+
+        def make(self, todo, out, log):
+            for s in todo:
+                made.append(s["i"])
+                (out / s["file"]).write_bytes(b"x")
+                if self.press:   # 첫 장면을 만드는 중에 취소를 눌렀다
+                    job.update(cancel=True)
+                yield {"file": s["file"], "source": "Fake"}
+
+    sv = services(video=Fake())
+    pipeline.run(job, sv)
+    d = job.data
+    assert made == [0] and d["status"] == "interrupted" and d["steps"]["footage"]["status"] == "pending"
+    assert [c["file"] for c in job.doc("clips.json")] == ["clip0.mp4"] and ran == []
+    pipeline.run(job, sv)   # 취소가 남아 있으면 단계 앞에서 바로 멈춘다
+    assert made == [0] and job.data["status"] == "interrupted"
+    job.update(cancel=None)   # 다시 시도하면 작업 스레드가 지운다
+    sv.video.press = False
+    pipeline.run(job, sv)
+    assert made == [0, 1] and job.data["status"] == "done" and ran == ["thumbnail", "render"]
+
 def test_flow_auto_without_chrome_falls_back_to_flow(monkeypatch):
     ch = channel.load(CH)
     ch = ch.model_copy(update={"video": ch.video.model_copy(update={"provider": "flow-auto"})})
@@ -223,6 +257,7 @@ def test_queue_resolves_services_by_job_channel(monkeypatch):
     monkeypatch.setattr(pipeline, "publish", lambda job, sv: got.append(("upload", job.id, sv.cid)))
     monkeypatch.setattr(trends, "run", lambda t, sv: got.append(("trend", t.id, sv.cid)))
     a, b, t = Job.create("ch-a", "주제", "v"), Job.create("ch-b", "주제", "v"), trends.Trend.create("ch-c")
+    a.update(status="queued")   # 제작은 큐에 넣은 것만 돈다
     q.run_one(a.id)
     q.run_one(b.id, "upload")
     q.run_one(t.id, "trend")
@@ -235,6 +270,7 @@ def test_queue_marks_failed_when_channel_cannot_resolve():
         raise KeyError("채널이 없어요")
     q = LocalQueue(resolve)
     a, b, t = Job.create("gone", "주제", "v"), Job.create("gone", "주제", "v"), trends.Trend.create("gone")
+    a.update(status="queued")
     q.run_one(a.id)
     q.run_one(b.id, "upload")
     q.run_one(t.id, "trend")
