@@ -32,6 +32,7 @@ elevenlabs = "미스터최"
 
 [video]
 provider = "flow-auto"
+season = "halloween"   # 시즌 연출: "halloween"·"christmas"(seasons/*.md). Dot 옷·배경 분위기가 바뀐다. 비우면 평소
 style = "Clean stylized 3D animated explainer with bold toy-like silhouettes. Smooth matte vinyl and satin silicone materials without fine micro-texture, one clear hero subject large in frame, crisp studio rim lighting against a clean minimal studio backdrop, limited palette of deep teal, cream, coral and mustard yellow, signs and screens plain and blank, no blood, no gore, no realistic wounds."
 
 [style]

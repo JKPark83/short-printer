@@ -42,6 +42,7 @@
 | `[tts.voices]` | `{목소리 키: 화면 이름}`. ElevenLabs는 목소리 ID(`elevenlabs` 키는 `.env`의 `ELEVENLABS_VOICE_ID`), Typecast는 `tc_…` ID |
 | `[video]` `provider` | `flow`(사람이 올림) · `flow-auto`(전용 Chrome). 쓸 수 없으면 flow |
 | `[video]` `style` | 모든 장면 프롬프트 앞 머리말. 영어 |
+| `[video]` `season` | 시즌 연출 `seasons/<이름>.md`(예 `halloween`·`christmas`). 마스코트 옷·배경 분위기를 바꾸는 규칙이 장면 규칙 뒤에 붙는다. 비우면 평소대로 |
 | `[style]` `font` | 글꼴. 비우면 언어 기본(ko Apple SD Gothic Neo · ja Hiragino Sans · en Helvetica Neue) |
 | `[style]` `accent` / `background` | 강조색 `#RRGGBB` / 클립 없을 때 배경 그라데이션 두 색 |
 | `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본 |

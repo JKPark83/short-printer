@@ -45,6 +45,7 @@ class TTSCfg(BaseModel):
 class VideoCfg(BaseModel):
     provider: str = "flow"
     style: str = ""   # 모든 장면 프롬프트 앞 머리말(영어)
+    season: str = ""   # 시즌 연출 seasons/<이름>.md(할로윈 복장·분위기 등). 비우면 평소대로
 
 
 class StyleCfg(BaseModel):
@@ -133,6 +134,11 @@ class Channel(BaseModel):
         """글 파일 본문. 부를 때마다 읽어 고치면 바로 반영된다. 앞머리(--- … ---)가 있으면 뺀다."""
         return prompts.body(self.dir / name)
 
+    def video_rules(self) -> str:
+        """장면 영상 규칙. 시즌이 켜져 있으면 seasons/<이름>.md를 뒤에 붙여 마스코트 옷·배경을 바꾼다."""
+        rules = self.text("video_style.md")
+        return f"{rules}\n\n{self.text(f'seasons/{s}.md')}" if (s := self.video.season) else rules
+
 
 def root() -> Path:
     return config.CHANNELS_DIR   # 테스트가 바꾸므로 부를 때마다 읽는다
@@ -146,7 +152,10 @@ def load(cid: str) -> Channel:
         data = tomllib.load(f)
     if miss := [n for n in TEXTS if not (d / n).exists()]:
         raise ValueError(f"채널 {cid}에 {', '.join(miss)} 파일이 없어요")
-    return Channel(id=cid, dir=d, **data)
+    ch = Channel(id=cid, dir=d, **data)
+    if (s := ch.video.season) and not (d / "seasons" / f"{s}.md").exists():
+        raise ValueError(f"채널 {cid}에 video.season 파일 seasons/{s}.md가 없어요")
+    return ch
 
 
 def load_all() -> list[Channel]:

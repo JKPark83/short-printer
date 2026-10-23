@@ -22,5 +22,5 @@ def test_every_prompt_file_renders_for_a_real_channel():
               prompts.render("script_proofread_ko", lang=ch.lang_name, limit=10),
               thumbnail.system(ch), trends.system_idea(ch), research.system(ch),
               research.system(opened), prompts.render("translate", lang=ch.lang_name),
-              prompts.render("scene_reprompt", channel_video=ch.text("video_style.md"))):
+              prompts.render("scene_reprompt", channel_video=ch.video_rules())):
         assert s and "${" not in s and "---" not in s.splitlines()[0]

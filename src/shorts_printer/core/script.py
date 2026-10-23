@@ -62,7 +62,7 @@ def system(ch: Channel) -> str:
     lo, hi = c.sentence
     return prompts.render("script", lang=ch.lang_name, duration=c.duration, scenes=c.scenes, lo=lo, hi=hi,
                           unit=UNITS[c.unit], total_lo=lo * c.scenes, total_hi=hi * c.scenes,
-                          channel_script=ch.text("script.md"), channel_video=ch.text("video_style.md"))
+                          channel_script=ch.text("script.md"), channel_video=ch.video_rules())
 
 
 class Revision(BaseModel):
@@ -153,7 +153,7 @@ def reprompt(llm: LLM, ch: Channel, prompt: str, reason: str) -> tuple[Reprompt,
     text = (f"거절 사유: {reason}\n\n" + (f"고정 머리말(앱이 붙인다, 바꿀 수 없다): {style}\n\n" if style else "")
             + f"거절된 프롬프트:\n{body}")
     refusal = f"{llm.label}가 이 장면 프롬프트를 고치지 않았어요. 클립을 직접 올려 주세요."
-    out, usage = llm.ask(prompts.render("scene_reprompt", channel_video=ch.text("video_style.md")), text, Reprompt,
+    out, usage = llm.ask(prompts.render("scene_reprompt", channel_video=ch.video_rules()), text, Reprompt,
                          refusal=refusal, what="고친 장면 프롬프트")
     out.prompt = out.prompt.strip()
     if not out.prompt:

@@ -1,4 +1,5 @@
 import contextlib
+import re
 from types import SimpleNamespace
 
 import anthropic
@@ -371,3 +372,18 @@ def test_proofread_flags_scenes_over_the_length_limit_even_when_the_model_passes
     assert out.scores()["낭독·자막"] == 2
     en = make_channel(tmp_path, script={"sentence": [1, 2], "unit": "words"})
     assert [i.scene for i in script.too_long(en, ["one two", "one two three"])] == [2]
+
+
+def test_season_appends_its_rules_to_scene_rules(ko, tmp_path, monkeypatch):
+    off, on = (ko.model_copy(update={"video": ko.video.model_copy(update={"season": s})}) for s in ("", "halloween"))
+    assert "## 시즌 연출" not in script.system(off)
+    assert "## 시즌 연출: 할로윈" in script.system(on) and "wizard hat" in on.video_rules()
+    d = tmp_path / "ko-x"
+    d.mkdir()
+    for name in channel.TEXTS:
+        (d / name).write_text("x", encoding="utf-8")
+    (d / "channel.toml").write_text(re.sub(r'(?m)^season = ".*?"', 'season = "nope"',
+                                           (ko.dir / "channel.toml").read_text()), encoding="utf-8")
+    monkeypatch.setattr(config, "CHANNELS_DIR", tmp_path)
+    with pytest.raises(ValueError, match="seasons/nope.md"):
+        channel.load("ko-x")
