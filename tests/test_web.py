@@ -599,7 +599,8 @@ def test_translate_saves_ko_shows_it_and_marks_stale(two_channels, monkeypatch):
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 2, "cost_usd": 0.02}
     llm = SimpleNamespace(label="Claude", ask=lambda *a, **kw: (out, usage))
     with monkeypatch.context() as m:   # 화면의 환경 점검은 진짜 services를 쓴다
-        m.setattr(registry, "services", lambda cid: SimpleNamespace(llm=llm, channel=channel.load(cid)))
+        m.setattr(registry, "services", lambda cid: SimpleNamespace(llm=llm, script_llm=llm,
+                                                                    channel=channel.load(cid)))
         assert client.post(f"/api/jobs/{job.id}/translate").json()["msg"] == "한국어로 옮겼어요"
     html = client.get(f"/jobs/{job.id}").text
     assert "한글 제목" in html and "어색한 곳" in html and "다시 옮기기" in html and "바뀌었어요" not in html

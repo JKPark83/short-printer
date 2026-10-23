@@ -21,7 +21,7 @@ from markupsafe import Markup
 from .. import config, registry
 from ..core import channel, pipeline, scenes, schedule, script, subtitles, trends, voice
 from ..core.channel import Channel
-from ..core.pipeline import LABELS, STEPS, Job, in_review, in_voice_review
+from ..core.pipeline import LABELS, STEPS, Job, in_review, in_voice_review, upload_of, uploading
 from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
@@ -115,7 +115,9 @@ def icon(name: str, size: int = 16, cls: str = "") -> Markup:
 def sig(data: dict) -> str:
     """화면 조각을 다시 그려야 하는지 가르는 값. 템플릿과 상태 API가 같은 함수를 쓴다."""
     return (f'{data["status"]}:{"".join(data["steps"][s]["status"][0] for s in STEPS)}:{len(data["notices"])}'
-            f':{(data.get("upload") or {}).get("status", "-")}' + (":취소" if data.get("cancel") else ""))
+            f':{(data.get("upload") or {}).get("status", "-")}'
+            + "".join(f":{k}={v['status']}" for k, v in (data.get("uploads") or {}).items())
+            + (":취소" if data.get("cancel") else ""))
 
 
 def status_label(data: dict) -> str:
@@ -214,6 +216,9 @@ def recover() -> None:
             job.update(upload=upload_state(
                 "failed", error="서버가 꺼져 멈췄어요. 올라갔는지 YouTube 스튜디오에서 먼저 확인하세요."))
             schedule.after_job(job, "upload", q, q.notify)
+        for name, up in (job.data.get("uploads") or {}).items():   # 더 올리는 곳은 알림 없이 상태만
+            if up["status"] in ACTIVE:
+                job.set_upload(name, upload_state("failed", error="서버가 꺼져 멈췄어요. 올라갔는지 먼저 확인하세요."))
     for root in (config.JOBS_DIR, config.TRENDS_DIR):
         for pattern in ("*.tmp", "*.tmp.mp4"):
             for p in root.rglob(pattern):
@@ -265,7 +270,7 @@ templates.env.globals |= {
     "ACTIVE": ACTIVE, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS, "ALL": ALL, "LANGS": channel.LANGS,
     "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON,
     "schedule": schedule, "PHASES": PHASES, "status_label": status_label, "in_review": in_review,
-    "in_voice_review": in_voice_review,
+    "in_voice_review": in_voice_review, "uploading": uploading,
 }
 templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "at": at, "until": until}
 
@@ -351,6 +356,7 @@ def _checks(cid: str) -> list[tuple[str, str, str]]:
                for k, p in registry.VIDEOS.items()]
     pub = sv.publisher
     on = [n.label for n in registry.NOTIFIERS.values() if n.ready()]
+    checks += [("ok" if p.ready() else "warn", f"{p.label} 업로드", p.hint) for p in sv.also.values()]
     return checks + [
         ("ok" if sv.tts.ready() else "bad", f"음성 · {sv.tts.label}", sv.tts.hint),
         ("ok" if sv.research.ready() else "bad", f"조사 · {sv.research.label}", sv.research.hint)
@@ -419,8 +425,7 @@ def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
 def _can_upload(data: dict) -> bool:
     """클립을 올리거나 바꿀 수 있나: 대본을 확정했고, 만들거나 YouTube에 올리는 중이 아닐 때
     (올린 뒤에 바꾸면 새로 올린다)."""
-    return (data["status"] not in ACTIVE and not in_review(data) and not in_voice_review(data)
-            and (data.get("upload") or {}).get("status") not in ACTIVE)
+    return data["status"] not in ACTIVE and not in_review(data) and not in_voice_review(data) and not uploading(data)
 
 
 def _scenes(job: Job) -> list[dict]:
@@ -432,7 +437,9 @@ def _scenes(job: Job) -> list[dict]:
     if job.data["steps"]["footage"]["status"] == "done" and len(clips) != len(s["sentences"]):
         return []
     out = scenes.scenes(s, job.doc("timing.json"))
+    refused = {r["i"]: r["reason"] for r in job.data.get("refused") or []}
     for x in out:
+        x["refused"] = refused.get(x["i"])   # 영상 공급자가 정책으로 거절한 사유
         p = job.dir / "clips" / x["file"]
         x["v"] = p.stat().st_mtime_ns if p.exists() else None   # 미리보기 캐시 깨기(같은 초에 바꿔도)
         x["clip"] = clips.get(x["file"])   # 출처(스톡 촬영자 등)
@@ -495,6 +502,7 @@ def job_page(request: Request, job_id: str):
         "facts": facts, "unverified": script.unverified(s, facts) if s and facts else [],
         "desc": pipeline.description(job, ch) if s else "",
         "job": job.data, "ch": ch, "publisher": registry.publisher(ch),
+        "also": {n: registry.publisher(ch, n) for n in ch.publish.also},
         "script": s, "clips": job.doc("clips.json"),
         "cues": cues, "has_thumb": (job.dir / "thumbnail.jpg").exists(),
         "thumb": thumb, "log": _tail(job),
@@ -544,7 +552,7 @@ def delete_job(job_id: str):
     job = _load(Job, job_id)
     with q.lock:   # 검사와 지우기 사이에 작업이 시작되지 않게
         data = job.data
-        if data["status"] in ACTIVE or (data.get("upload") or {}).get("status") in ACTIVE:
+        if data["status"] in ACTIVE or uploading(data):
             raise HTTPException(409, "제작·업로드 중인 작업은 지울 수 없어요")
         job.delete()
     return {"ok": True}
@@ -715,7 +723,7 @@ def translate(job_id: str):
         raise HTTPException(409, "대본이 아직 없어요")
     sv = registry.services(job.data["channel"])
     try:
-        ko, usage = script.translate(sv.llm, sv.channel, s, job.doc("thumb.json"),
+        ko, usage = script.translate(sv.script_llm or sv.llm, sv.channel, s, job.doc("thumb.json"),
                                      [c["text"] for c in job.doc("cues.json") or []])
     except RuntimeError as e:
         raise HTTPException(502, str(e)) from None
@@ -725,15 +733,20 @@ def translate(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/upload")
-def upload(job_id: str, again: bool = False):
+def upload(job_id: str, again: bool = False, target: str | None = None):
+    """target 없으면 채널 업로드 공급자, 있으면 채널 publish.also의 더 올리는 곳(사람이 눌러야만 올린다)."""
     job = _load(Job, job_id)
-    pub = registry.publisher(_channel(job.data.get("channel")))
+    ch = _channel(job.data.get("channel"))
+    if target is not None and target not in ch.publish.also:
+        raise HTTPException(400, "이 채널이 올리는 곳이 아니에요")
+    pub = registry.publisher(ch, target)
     if not pub.ready():
         raise HTTPException(400, f"{pub.label} 연결이 안 돼 있어요. {pub.hint}")
-    if not q.enqueue_upload(job_id, again):
+    if not q.enqueue_upload(job_id, again, target):
         data = job.data
         raise HTTPException(409, "완성된 영상만 올릴 수 있어요" if data["status"] != "done"
-                            else "이미 올렸어요" if data["upload"]["status"] == "done" else "이미 올리는 중이에요")
+                            else "이미 올렸어요" if upload_of(data, target).get("status") == "done"
+                            else "이미 올리는 중이에요")
     return {"ok": True}
 
 

@@ -133,7 +133,8 @@ if (api) {
       } catch { /* 다음 차례에 다시 */ }
     }
     const busy = st => st === 'queued' || st === 'running';
-    if (busy(d.status) || busy(d.upload?.status) || d.sig !== sig) timer = setTimeout(tick, 1500);
+    const ups = [d.upload, ...Object.values(d.uploads || {})];
+    if (busy(d.status) || ups.some(u => busy(u?.status)) || d.sig !== sig) timer = setTimeout(tick, 1500);
   };
   if (page.dataset.active === '1') tick();
   // 휴대폰에서 Flow 앱을 다녀오면 화면이 묵어 있다
@@ -284,9 +285,13 @@ document.addEventListener('click', async e => {
     if (up.dataset.ask && !confirm(up.dataset.ask)) return;
     up.disabled = true;
     try {
-      const r = await fetch(`${api}/upload${'again' in up.dataset ? '?again=true' : ''}`, { method: 'POST' });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'YouTube에 올리지 못했어요');
-      toast('YouTube에 올리기 시작했어요');
+      const qs = new URLSearchParams();
+      if ('again' in up.dataset) qs.set('again', 'true');
+      if (up.dataset.target) qs.set('target', up.dataset.target);   // publish.also의 더 올리는 곳
+      const where = up.dataset.label || 'YouTube';
+      const r = await fetch(`${api}/upload${qs.size ? '?' + qs : ''}`, { method: 'POST' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `${where}에 올리지 못했어요`);
+      toast(`${where}에 올리기 시작했어요`);
       await tick(true);
       if (!up.isConnected) $('#upload-box')?.focus();   // 버튼이 스피너로 바뀌면 업로드 상태 칸으로
     } catch (err) {

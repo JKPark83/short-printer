@@ -215,6 +215,7 @@ def test_after_job_uploads_and_notifies(q, sent):
     job.update(status="done")
     schedule.after_job(job, "run", q, sent.append)
     assert job.data["upload"]["status"] == "queued" and q._q.get_nowait() == ("upload", job.id)
+    assert q._q.empty() and not job.data.get("uploads")   # publish.also(인스타)는 바로 공개라 사람이 올린다
     assert sent == [f"[제작 완료] {NAME} · 아침 상식\n커피의 비밀\n작업: {config.URL}/jobs/{job.id}"]
 
     job.update(upload=upload_state("done", video_id="VID"))

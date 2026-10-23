@@ -19,7 +19,7 @@ CH = "ko-40sec-facts"
 
 
 class Publisher:
-    label, hint = "가짜올림", ""
+    label, hint, private = "가짜올림", "", True
 
     def __init__(self, fail_thumb=False):
         self.sent, self.thumbs, self.fail_thumb = [], [], fail_thumb
@@ -35,6 +35,9 @@ class Publisher:
         if self.fail_thumb:
             raise RuntimeError("forbidden")
         self.thumbs.append((video_id, path.name))
+
+    def link(self, video_id):
+        return f"https://v/{video_id}"
 
 
 def services(**kw) -> Services:
@@ -254,7 +257,7 @@ def test_queue_resolves_services_by_job_channel(monkeypatch):
     seen, got = [], []
     q = LocalQueue(lambda cid: seen.append(cid) or SimpleNamespace(cid=cid))
     monkeypatch.setattr(pipeline, "run", lambda job, sv: got.append(("run", job.id, sv.cid)))
-    monkeypatch.setattr(pipeline, "publish", lambda job, sv: got.append(("upload", job.id, sv.cid)))
+    monkeypatch.setattr(pipeline, "publish", lambda job, sv, target=None: got.append(("upload", job.id, sv.cid)))
     monkeypatch.setattr(trends, "run", lambda t, sv: got.append(("trend", t.id, sv.cid)))
     a, b, t = Job.create("ch-a", "주제", "v"), Job.create("ch-b", "주제", "v"), trends.Trend.create("ch-c")
     a.update(status="queued")   # 제작은 큐에 넣은 것만 돈다
@@ -348,6 +351,30 @@ def test_publish_uses_channel_publisher():
     assert up["status"] == "done" and "forbidden" in up["note"] and "가짜올림에서" in up["note"]
 
 
+def test_extra_target_keeps_its_own_state_and_schedule_uploads_only_primary(monkeypatch):
+    job = scene_job(*STEPS)
+    job.put("script.json", {"title": "제목", "description": "설명", "tags": [], "sentences": ["x"]})
+    job.update(status="done")
+    extra = Publisher()
+    extra.label, extra.private = "인스타", False
+    sv = services(also={"instagram": extra})
+    q = LocalQueue(lambda cid: sv)
+    assert q.enqueue_upload(job.id, target="instagram") and q._q.get_nowait() == ("upload:instagram", job.id)
+    assert not q.enqueue_upload(job.id, target="instagram")   # 올리는 중이면 다시 못 넣는다
+    after = []
+    monkeypatch.setattr(q, "_after", lambda *a: after.append(a))
+    q.run_one(job.id, "upload:instagram")
+    d = job.data
+    assert d["upload"] is None and extra.sent and not sv.publisher.sent
+    up = d["uploads"]["instagram"]
+    assert up["status"] == "done" and up["video_id"] == "VID" and up["url"] == "https://v/VID"
+    tail = "\n".join(job.tail())
+    assert after == [] and "인스타 업로드 완료: VID" in tail and "(비공개)" not in tail   # 공개라 붙이지 않는다
+
+    assert q.redo(job.id) and job.data["uploads"] is None   # 다시 만들면 더 올린 기록도 옮긴다
+    assert job.data["uploads_before"]["instagram"]["video_id"] == "VID"
+
+
 def test_publish_appends_channel_footer_to_description():
     job = scene_job(*STEPS)
     s = {"title": "제목", "description": "설명\n", "tags": [], "sentences": ["x"]}
@@ -416,9 +443,10 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
     monkeypatch.setattr(fa, "_generate", gen)
     todo = [{"i": i, "prompt": p, "file": f"{p}.mp4"} for i, p in enumerate("abcd")]
     logs, got = [], []
-    with pytest.raises(RuntimeError, match="장면 1, 4을 못 만들었어요"):
+    with pytest.raises(RuntimeError, match="장면 1, 4을 못 만들었어요") as e:
         for c in fa.FlowAuto().make(todo, tmp_path, logs.append):
             got.append(c["file"])
+    assert e.value.scenes == {3: "미성년자 정책"}   # 거절 사유는 core가 프롬프트를 고치도록 넘긴다
     assert tries == ["a", "b", "c", "d", "a", "b"]   # 실패한 장면만 딱 한 번 더, 거절된 d는 빼고
     assert got == ["c.mp4", "b.mp4"] and len(slept) == 2 and 0 < slept[0] <= fa.RETRY_AFTER
     assert "장면 4 거절됨(미성년자 정책)" in logs[4]
@@ -581,3 +609,72 @@ def test_old_job_without_proofread_step_is_filled_from_script(db):
     old["script"]["status"] = "done"
     db.edit("job", job.id, lambda d: d | {"steps": old})
     assert job.data["steps"]["proofread"]["status"] == "done"
+
+
+def test_refused_scene_is_recorded_then_reprompted_on_retry(monkeypatch):
+    """정책 거절은 장면별 사유로 남기고, 다시 시도하면 클립이 없는 거절 장면만 프롬프트를 고쳐 넣는다."""
+    from shorts_printer.ports.video import Refused
+
+    sent = []
+
+    class Video:
+        label = "가짜영상"
+
+        def make(self, todo, out, log):
+            sent.append([s["prompt"] for s in todo])
+            if len(sent) == 1:
+                (out / "clip0.mp4").write_bytes(b"x")
+                yield {"file": "clip0.mp4", "source": self.label}
+                raise Refused("장면 2 거절", {1: "미성년자 정책"})
+            for s in todo:
+                (out / s["file"]).write_bytes(b"y")
+                yield {"file": s["file"], "source": self.label}
+
+    asked = []
+
+    def reprompt(llm, ch, prompt, reason):
+        asked.append((prompt, reason))
+        return script_mod.Reprompt(cause="아이로 읽힘", prompt="p2 adult", prompt_ko="어른"), {
+            "model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
+    monkeypatch.setattr(pipeline.script, "reprompt", reprompt)
+    job = scene_job("script", "voice", "subtitles")
+    sv = services(video=Video())
+    with pytest.raises(Refused):
+        pipeline.step_footage(job, sv)
+    assert job.data["refused"] == [{"i": 1, "reason": "미성년자 정책"}]
+    pipeline.step_footage(job, sv)
+    assert asked == [("p2", "미성년자 정책")] and sent[1] == ["p2 adult"]
+    assert job.doc("script.json")["prompts"] == ["p1", "p2 adult"] and job.data["refused"] is None
+
+
+def test_flow_auto_fetches_submitted_scene_from_old_project_before_generating(monkeypatch, tmp_path):
+    """넣었지만 못 받은 장면(clip.task)은 다시 넣지 않고 지난 프로젝트에서 받는다. 못 찾으면 새로 만든다."""
+    import json
+    from unittest.mock import MagicMock
+
+    import playwright.sync_api
+
+    fa = flow_auto
+    monkeypatch.setattr(fa, "open_chrome", lambda: None)
+    monkeypatch.setattr(fa, "_settings", lambda page: None)
+    monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
+    made, fetched = [], []
+
+    def gen(page, prompt, path):
+        made.append(prompt)
+        path.write_bytes(prompt.encode())
+
+    def refetch(page, pos, path):
+        fetched.append(pos)
+        if pos == 9:
+            raise TimeoutError("타일 없음")
+        path.write_bytes(b"old")
+        path.with_suffix(".task").unlink()
+    monkeypatch.setattr(fa, "_generate", gen)
+    monkeypatch.setattr(fa, "_refetch", refetch)
+    for i, pos in ((0, 2), (1, 9)):
+        (tmp_path / f"clip{i}.task").write_text(json.dumps({"url": "https://flow/project/old", "pos": pos}))
+    todo = [{"i": i, "prompt": p, "file": f"clip{i}.mp4"} for i, p in enumerate("abc")]
+    got = [c["file"] for c in fa.FlowAuto().make(todo, tmp_path, lambda line: None)]
+    assert fetched == [2, 9] and made == ["b", "c"]   # a는 받기만, b는 못 찾아 새로
+    assert got == ["clip0.mp4", "clip1.mp4", "clip2.mp4"] and not list(tmp_path.glob("*.task"))

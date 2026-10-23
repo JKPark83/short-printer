@@ -2,10 +2,10 @@
 {% block title %}{{ job.topic }} · shorts-printer{% endblock %}
 {% block main %}
 {% set up = job.upload or {} %}
-{% set busy = job.status in ACTIVE or up.status in ACTIVE %}
+{% set busy = job.status in ACTIVE or uploading(job) %}
 {% set review = in_review(job) %}
 {% set vreview = in_voice_review(job) %}
-{% set editable = (job.status in ('done', 'failed', 'interrupted') or review or vreview) and up.status not in ACTIVE %}
+{% set editable = (job.status in ('done', 'failed', 'interrupted') or review or vreview) and not uploading(job) %}
 {% set locked %}<p class="empty-stage">{{ '음성' if vreview else '대본' }}을 확정하면 시작해요</p>{% endset %}
 {% set next_btn %}{% if vreview %}<div class="form-actions"><button class="btn btn-primary" type="button" data-retry="confirm" data-done="음성을 확정했어요. 영상을 만들어요">{{ icon('check') }}음성 확정하고 영상 만들기</button>
 <button class="btn btn-secondary" type="button" data-retry="voice/redo" data-done="같은 목소리로 다시 읽어요">{{ icon('rotate') }}음성 다시 만들기</button></div>
@@ -289,6 +289,11 @@
             {% if s.clip and s.clip.user %}<p class="scene-src"><span class="chip">{{ s.clip.term }}</span> 촬영 <a href="{{ s.clip.user_url }}" target="_blank" rel="noopener">{{ s.clip.user }}</a> ({{ s.clip.source }})</p>
             {% elif s.clip %}<p class="scene-src">{{ s.clip.source }}</p>{% endif %}
             {% endif %}
+            {% if not s.v and job.status == 'failed' and job.error.step == 'footage' %}
+            {% if s.refused %}<p class="err">Flow가 거절했어요: {{ s.refused }}</p>{% endif %}
+            <p class="muted">{{ '다시 시도하면 Claude가 거절 사유를 피하게 프롬프트를 고쳐 다시 만들어요.' if s.refused else '다시 시도하면 Flow에 만들어 둔 영상이 있는지 먼저 보고, 있으면 받아 오고 없으면 새로 만들어요.' }}</p>
+            <button class="btn btn-secondary" type="button" data-retry data-done="{{ '프롬프트를 고쳐 다시 만들어요' if s.refused else '다시 시도해요' }}">{{ icon('rotate') }}{{ '정책 피해 다시 시도' if s.refused else '다시 시도' }}</button>
+            {% endif %}
             {% if can_upload %}<label class="btn {{ 'btn-secondary' if s.v else 'btn-primary' }}">{{ icon('upload') }}{{ '클립 바꾸기' if s.v else '클립 올리기' }}
               <input class="sr-only" type="file" accept="video/mp4,video/quicktime,video/*" data-clip="{{ s.i }}" aria-label="장면 {{ s.i + 1 }} 클립 {{ '바꾸기' if s.v else '올리기' }}"></label>{% endif %}
           </li>{% endfor %}</ol>
@@ -382,6 +387,25 @@
           <p class="muted">{{ publisher.label }}에 올리려면: {{ publisher.hint }}</p>
           {% endif %}
           {% endif %}
+          {% for name, p in also.items() %}{% set u = (job.uploads or {}).get(name) or {} %}{% set before = (job.uploads_before or {}).get(name) %}
+          {% set how = '비공개로 올라가요' if p.private else '바로 공개로 올라가요(비공개가 없어요)' %}
+          {% if u.status in ACTIVE %}
+          <p class="muted">{{ icon('loader', 16, 'spin') }} {{ p.label }}에 올리는 중…</p>
+          {% elif u.status == 'done' %}
+          {% if u.url %}<p class="links"><a href="{{ u.url }}" target="_blank" rel="noopener" aria-label="{{ p.label }}에서 열기 (새 창)">{{ icon('external') }}{{ p.label }}에서 열기</a></p>
+          {% else %}<p class="muted">{{ p.label }}에 올라갔어요(<span class="mono">{{ u.video_id }}</span>).</p>{% endif %}
+          {% if u.note %}<p class="err">{{ u.note }}</p>{% endif %}
+          {% if p.ready() %}<button class="btn btn-secondary" type="button" data-upload data-again data-target="{{ name }}" data-label="{{ p.label }}" data-ask="지금 영상을 {{ p.label }}에 새로 올릴까요?&#10;{{ how }}. 지금 올라가 있는 게시물은 그대로 남아요.">{{ icon('rotate') }}{{ p.label }}에 다시 올리기</button>{% endif %}
+          {% else %}
+          {% if before %}<p class="muted">예전에 올린 {% if before.url %}<a href="{{ before.url }}" target="_blank" rel="noopener">{{ p.label }} 게시물</a>{% else %}{{ p.label }} 게시물{% endif %}은 그대로 있어요. 필요 없으면 {{ p.label }}에서 지우세요.</p>{% endif %}
+          {% if u.status == 'failed' %}<p class="err">{{ u.error }}</p>{% endif %}
+          {% if p.ready() %}
+          <button class="btn btn-secondary" type="button" data-upload data-target="{{ name }}" data-label="{{ p.label }}" data-ask="{{ p.label }}에 올릴까요?&#10;{{ how }}.">{{ icon('rotate' if u.status == 'failed' else 'upload') }}{{ p.label ~ '에 다시 올리기' if u.status == 'failed' else '승인하고 ' ~ p.label ~ '에 올리기' }}</button>
+          {% else %}
+          <p class="muted">{{ p.label }}에 올리려면: {{ p.hint }}</p>
+          {% endif %}
+          {% endif %}
+          {% endfor %}
         </div>
         {% else %}
         <div class="video video-empty">{{ icon('play', 28) }}<p>렌더가 끝나면 여기에 나와요</p></div>

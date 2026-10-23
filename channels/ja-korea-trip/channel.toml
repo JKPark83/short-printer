@@ -20,6 +20,7 @@ scenes = 13
 sentence = [50, 56]   # 미나미 기준 초당 약 7.0자: 13장면이 약 95~105초
 unit = "chars"
 duration = "100~110초"
+llm = "claude-code"   # 대본만 Claude 구독으로(.env CLAUDE_CODE_MODEL·EFFORT)
 
 [tts]
 provider = "elevenlabs"
@@ -46,6 +47,7 @@ max_total = 18
 
 [publish]
 provider = "youtube"
+also = ["instagram"]   # 더 올리는 곳. Instagram은 바로 공개라 작업 화면에서 눌러야 올라간다
 category = "19"
 footer = "※映像はAIで再現したイメージです。"
 channel_id = "UCRYIJCDhM7pS3S7JB2aHTKw"

@@ -18,3 +18,12 @@ class VideoProvider(Protocol):
         하나마다 clips.json 항목을 yield.
         못 만든 장면은 log 남기고 건너뛴다(사람이 올린다). 일시 오류는 안에서 재시도, 인증 오류는 던진다.
         결과는 1080x880 가운데로 잘린다: 소리 없이."""
+
+
+class Refused(RuntimeError):
+    """공급자가 정책으로 장면을 거절했다. 같은 프롬프트로는 또 거절되므로 core가 프롬프트를 고쳐 다시 시도한다.
+    scenes = {장면 번호(0부터): 거절 사유}."""
+
+    def __init__(self, msg: str, scenes: dict[int, str]):
+        super().__init__(msg)
+        self.scenes = scenes

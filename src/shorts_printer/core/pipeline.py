@@ -3,8 +3,9 @@
 import time
 from typing import ClassVar
 
-from ..infra.store import Record, now, redact, upload_state
+from ..infra.store import Record, now, redact, store, upload_state
 from ..ports.llm import add_usage
+from ..ports.video import Refused
 from . import render, research, scenes, script, subtitles, thumbnail, voice
 from .channel import Channel
 from .services import Services
@@ -38,6 +39,26 @@ class Job(Record):
         review: 사람이 대본·음성·자막을 확정(confirmed)해야 영상 소스부터 만든다
         (화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다)."""
         return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source, review=review)
+
+    def set_upload(self, target: str | None, state: dict | None, **fields) -> None:
+        """올리기 상태. target None은 채널 업로드 공급자(upload), 나머지는 더 올리는 곳(uploads[target]).
+        uploads는 읽고 고쳐 쓰기를 한 트랜잭션으로(다른 곳 상태를 덮지 않게)."""
+        if target is None:
+            self.update(upload=state, **fields)
+            return
+        store().edit(self.KIND, self.id,
+                     lambda d: self._fix(d) | {"uploads": (d.get("uploads") or {}) | {target: state}} | fields)
+
+
+def upload_of(data: dict, target: str | None = None) -> dict:
+    """올리기 상태 하나(없으면 {}). target None은 채널 업로드 공급자."""
+    return (data.get("upload") if target is None else (data.get("uploads") or {}).get(target)) or {}
+
+
+def uploading(data: dict) -> bool:
+    """어디든 올리는 중(대기 포함). 그동안 영상을 바꾸거나 지우지 않는다."""
+    ups = [data.get("upload") or {}, *(data.get("uploads") or {}).values()]
+    return any(u.get("status") in ("queued", "running") for u in ups)
 
 
 class Wait(Exception):
@@ -89,14 +110,15 @@ def step_script(job: Job, sv: Services) -> str:
     facts = research_doc.get("facts", [])
     if note := job.data.get("script_note"):   # 완성 뒤 고치기(/script/revise만 이 단계를 되돌린다)
         draft = job.data.get("review") and not job.data.get("confirmed")   # 확정 전: 장면 프롬프트도 고친다
-        s, usage = script.revise(sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft),
+        s, usage = script.revise(sv.script_llm or sv.llm, sv.channel, job.doc("script.json"), note, draft=bool(draft),
                                   facts=facts)
         job.put("script.json", s)
         job.update(usage=add_usage(job.data["usage"], usage))
         job.log(f"대본 고침: {note}")
         translate(job, sv)
         return usage["model"]
-    s, usage = script.write(sv.llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv), facts=facts,
+    s, usage = script.write(sv.script_llm or sv.llm, sv.channel, job.data["topic"], job.data.get("brief"),
+                            _recent(job, sv), facts=facts,
                             unverified=_unverified(research_doc.get("notes", [])))
     job.put("script.json", s.flat())
     job.update(usage=add_usage(job.data.get("usage"), usage))
@@ -120,7 +142,7 @@ def step_proofread(job: Job, sv: Services) -> str:
     떨어지면 지적을 남기고 사람 확인으로 멈춘다(운영자가 읽고 고치거나 그대로 확정한다)."""
     facts = (job.doc("facts.json") or {}).get("facts", [])
     s = job.doc("script.json")
-    verdict, usage = script.proofread(sv.llm, sv.channel, s, sv.splitter,
+    verdict, usage = script.proofread(sv.script_llm or sv.llm, sv.channel, s, sv.splitter,
                                       sv.channel.style.subtitle_limit or sv.splitter.limit, facts=facts,
                                       topic=job.data["topic"])
     job.update(usage=add_usage(job.data["usage"], usage))
@@ -153,7 +175,7 @@ def translate(job: Job, sv: Services) -> None:
     if ko and ko["src"] == script.ko_source(s, thumb) and ko["cues"] == cues:
         return
     try:
-        ko, usage = script.translate(sv.llm, sv.channel, s, thumb, cues)
+        ko, usage = script.translate(sv.script_llm or sv.llm, sv.channel, s, thumb, cues)
     except Exception as e:
         job.log(f"한국어 뜻 실패: {redact(str(e)) or type(e).__name__}")
         return
@@ -174,17 +196,40 @@ def step_footage(job: Job, sv: Services) -> str:
     p = sv.video
     d = job.dir / "clips"
     d.mkdir(exist_ok=True)
+    reprompt(job, sv)
     todo = scenes.scenes(job.doc("script.json"), job.doc("timing.json"))
-    for c in p.make([s for s in todo if not (d / s["file"]).exists()], d, job.log):
-        scenes.set_clip(job, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
-        if job.data.get("cancel"):   # 받은 장면까지 남기고 다음 장면은 넣지 않는다
-            raise Canceled
+    try:
+        for c in p.make([s for s in todo if not (d / s["file"]).exists()], d, job.log):
+            scenes.set_clip(job, c)   # 하나씩 기록: 중간에 실패해도 만든 장면은 남는다
+            if job.data.get("cancel"):   # 받은 장면까지 남기고 다음 장면은 넣지 않는다
+                raise Canceled
+    except Refused as e:   # 다시 시도하면 reprompt가 고친다. 화면은 장면마다 사유를 보여 준다
+        job.update(refused=[{"i": i, "reason": r} for i, r in sorted(e.scenes.items())])
+        raise
     if miss := missing_clips(job):
         raise Wait(f"장면 클립 {len(todo) - len(miss)}/{len(todo)}개")
     got = {c["file"]: c for c in job.doc("clips.json", [])}
     # 장면 순서로 다시 쓴다. 기록 없이 파일만 있는 장면(손으로 넣은 파일)은 직접 올림으로
     job.put("clips.json", [got.get(s["file"], {"file": s["file"], "source": "직접 올림"}) for s in todo])
     return f"{p.label} {len(todo)}개"
+
+
+def reprompt(job: Job, sv: Services) -> None:
+    """지난번 정책으로 거절된 장면 중 아직 클립이 없는 것만 사유를 피하게 프롬프트를 고쳐 둔다.
+    같은 프롬프트는 또 거절되고, 고친 프롬프트는 화면에서 보고 다르면 클립을 직접 올릴 수 있다."""
+    refused = [r for r in job.data.get("refused") or [] if not (job.dir / "clips" / f"clip{r['i']}.mp4").exists()]
+    if not refused:
+        job.update(refused=None)
+        return
+    s = job.doc("script.json")
+    shots, ko = list(s["prompts"]), list(s.get("prompts_ko") or [""] * len(s["prompts"]))
+    for r in refused:
+        out, usage = script.reprompt(sv.script_llm or sv.llm, sv.channel, shots[r["i"]], r["reason"])
+        shots[r["i"]], ko[r["i"]] = out.prompt, out.prompt_ko
+        job.update(usage=add_usage(job.data.get("usage"), usage))
+        job.log(f"장면 {r['i'] + 1} 프롬프트 고침(거절 이유로 본 것: {out.cause}): {out.prompt_ko}")
+    job.put("script.json", s | {"prompts": shots, "prompts_ko": ko})
+    job.update(refused=None)
 
 
 def step_voice(job: Job, sv: Services) -> str:
@@ -305,11 +350,11 @@ def description(job: Job, ch: Channel) -> str:
     return out   # 그래도 넘으면 어댑터가 자른다
 
 
-def publish(job: Job, sv: Services) -> None:
-    """완성 영상을 채널 업로드 공급자로 비공개로 올린다. 실패하면 failed로 남겨 다시 올릴 수 있게 한다.
-    대체 경로(스튜디오 화면 등)는 공급자 안에서 고른다."""
-    p = sv.publisher
-    job.update(upload=upload_state("running"))
+def publish(job: Job, sv: Services, target: str | None = None) -> None:
+    """완성 영상을 올린다. target None은 채널 업로드 공급자(YouTube는 비공개), 나머지는 더 올리는 곳(publish.also).
+    실패하면 failed로 남겨 다시 올릴 수 있게 한다. 대체 경로(스튜디오 화면 등)는 공급자 안에서 고른다."""
+    p = sv.publisher if target is None else sv.also[target]
+    job.set_upload(target, upload_state("running"))
     job.log(f"{p.label} 업로드 시작")
     s = job.doc("script.json")
     meta = {k: s[k] for k in ("title", "description", "tags")} | {"description": description(job, sv.channel)}
@@ -317,10 +362,15 @@ def publish(job: Job, sv: Services) -> None:
         video_id = p.upload(job.dir / "final.mp4", meta, job.log)
     except BaseException as e:   # Ctrl+C도 실패로 남긴다
         msg = redact(str(e)) or type(e).__name__
-        job.update(upload=upload_state("failed", error=msg, at=now()))
+        job.set_upload(target, upload_state("failed", error=msg, at=now()))
         job.log(f"{p.label} 업로드 실패: {msg}")
         raise
-    job.log(f"{p.label} 업로드 완료: {video_id} (비공개)")
+    job.log(f"{p.label} 업로드 완료: {video_id}" + (" (비공개)" if p.private else ""))
+    try:   # 이미 올라갔으니 주소를 못 받아도 업로드는 done
+        url = p.link(video_id)
+    except Exception as e:
+        url = None
+        job.log(f"{p.label} 주소를 못 받았어요: {redact(str(e)) or type(e).__name__}")
     note, thumb = None, job.dir / "thumbnail.jpg"
     if thumb.exists():
         # 영상은 이미 올라갔으니 썸네일 실패로 업로드를 failed로 두지 않는다(다시 올리면 중복된다)
@@ -331,4 +381,4 @@ def publish(job: Job, sv: Services) -> None:
             note = (f"썸네일은 못 붙였어요({redact(str(e)) or type(e).__name__}). "
                     f"{p.label}에서 thumbnail.jpg를 직접 올리세요.")
             job.log(note)
-    job.update(upload=upload_state("done", video_id=video_id, at=now(), note=note))
+    job.set_upload(target, upload_state("done", video_id=video_id, at=now(), note=note, url=url))

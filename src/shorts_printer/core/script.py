@@ -139,6 +139,29 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False,
     return s | new, usage
 
 
+
+class Reprompt(BaseModel):
+    cause: str = Field(description="거절을 부른 것으로 보이는 표현·그림 한 줄(한국어)")
+    prompt: str = Field(description="고친 영어 영상 생성 프롬프트, 스타일 머리말 없이")
+    prompt_ko: str = Field(description="prompt를 한국어로 짧게. 검수용")
+
+
+def reprompt(llm: LLM, ch: Channel, prompt: str, reason: str) -> tuple[Reprompt, dict]:
+    """영상 공급자가 정책으로 거절한 장면 프롬프트를 사유를 피하게 고친다. 머리말(video.style)은 떼고 보내 다시 붙인다."""
+    style = ch.video.style
+    body = prompt.removeprefix(style).strip() if style else prompt
+    text = (f"거절 사유: {reason}\n\n" + (f"고정 머리말(앱이 붙인다, 바꿀 수 없다): {style}\n\n" if style else "")
+            + f"거절된 프롬프트:\n{body}")
+    refusal = f"{llm.label}가 이 장면 프롬프트를 고치지 않았어요. 클립을 직접 올려 주세요."
+    out, usage = llm.ask(prompts.render("scene_reprompt", channel_video=ch.text("video_style.md")), text, Reprompt,
+                         refusal=refusal, what="고친 장면 프롬프트")
+    out.prompt = out.prompt.strip()
+    if not out.prompt:
+        raise RuntimeError("고친 장면 프롬프트가 비었어요. 다시 시도하세요.")
+    if style and not out.prompt.startswith(style):
+        out.prompt = f"{style} {out.prompt}"
+    return out, usage
+
 class Translation(BaseModel):
     title: str = Field(description="제목 한국어")
     description: str = Field(description="설명 한국어")

@@ -25,6 +25,7 @@ class ScriptCfg(BaseModel):
     sentence: tuple[int, int] = (48, 55)   # 문장 하나 길이(unit 기준)
     unit: Literal["chars", "words"] = "chars"
     duration: str = "40~50초"
+    llm: str = ""   # 대본 쓰기·고치기·검수·번역 LLM(registry LLMS 이름). 비우면 채널 llm
 
 
 class TTSCfg(BaseModel):
@@ -69,6 +70,7 @@ class PublishCfg(BaseModel):
     channel_id: str = ""   # UC… 스튜디오 화면으로 올릴 때 이 채널로 간다
     footer: str = ""   # 설명 맨 끝에 붙는 문구(AI 표시 등). LLM이 빼먹지 않게 코드로 붙인다
     sources_heading: str = ""   # 설명란 출처 머리말(출처 / 出典). 비우면 붙이지 않는다
+    also: list[str] = []   # 더 올리는 곳(registry PUBLISHERS 이름). 스케줄은 provider만 올린다
 
 
 class ResearchCfg(BaseModel):

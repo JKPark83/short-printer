@@ -43,6 +43,10 @@ def secret(name: str) -> str | None:
 CLAUDE_CREDIT_USD = os.environ.get("CLAUDE_CREDIT_USD") or None
 CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
 
+# Claude Code(구독): channel.toml [script] llm = "claude-code"일 때 대본 모델·생각 깊이(low·medium·high·xhigh·max)
+CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL") or "claude-opus-5-5"
+CLAUDE_CODE_EFFORT = os.environ.get("CLAUDE_CODE_EFFORT") or "high"
+
 # ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"

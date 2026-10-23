@@ -1,5 +1,5 @@
 """sp web: 화면 띄우기 / sp run "주제": 화면 없이 한 편 만들기 / sp trends ["추가 요청"]: 주제 찾기 /
-sp youtube-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기 / sp channels: 채널 목록 /
+sp youtube-login·instagram-login: 업로드 권한 받기 / sp chrome: Flow 자동용 Chrome 띄우기 / sp channels: 채널 목록 /
 sp migrate: 예전 폴더(json·log.txt)를 DB로."""
 import argparse
 import sys
@@ -36,7 +36,8 @@ def main() -> None:
     tr = sub.add_parser("trends", help="채널 기본 추천 기준(+추가 요청)으로 주제를 추천한다")
     tr.add_argument("keyword", nargs="?", default="", help="기본 기준에 더해 따를 추가 요청(선택)")
     login = sub.add_parser("youtube-login", help="채널 업로드 권한을 받는다")
-    for sp in (run, tr, login):
+    ig = sub.add_parser("instagram-login", help="채널 Instagram(페이스북 페이지) 업로드 권한을 받는다")
+    for sp in (run, tr, login, ig):
         sp.add_argument("--channel", help="채널 id(channels/ 폴더 이름). 채널이 하나뿐이면 빼도 된다")
     sub.add_parser("chrome", help="Flow 자동(video.provider = flow-auto)용 Chrome을 띄운다. 처음 한 번 Google 로그인")
     sub.add_parser("channels", help="채널 목록을 보여 준다")
@@ -78,6 +79,16 @@ def main() -> None:
         except RuntimeError as e:
             sys.exit(str(e))
         print(f"{ch.name} 연결 완료. 작업 화면에서 [승인하고 YouTube에 올리기]를 누르면 비공개로 올라가요.")
+        return
+
+    if a.cmd == "instagram-login":
+        ch = _channel(a.channel)
+        try:
+            user = registry.publisher(ch, "instagram").login()
+        except RuntimeError as e:
+            sys.exit(str(e))
+        print(f"{ch.name} ↔ @{user} 연결 완료. 작업 화면에서 [승인하고 Instagram에 올리기]를 누르면 "
+              "바로 공개로 올라가요.")
         return
 
     if a.cmd == "chrome":

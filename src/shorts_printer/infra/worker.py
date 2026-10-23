@@ -39,18 +39,20 @@ class LocalQueue:
         self._q.put(("run", job_id))
         return True
 
-    def enqueue_upload(self, job_id: str, again: bool = False) -> bool:
-        """완성된 작업만, 올리는 중이거나 이미 올린 작업은 빼고 넣는다.
-        again이면 이미 올린 작업도 새 영상으로 다시 올린다(예전 기록은 uploaded_before, 영상은 YouTube에 남는다)."""
+    def enqueue_upload(self, job_id: str, again: bool = False, target: str | None = None) -> bool:
+        """완성된 작업만, 올리는 중이거나 이미 올린 작업은 빼고 넣는다. target None은 채널 업로드 공급자,
+        나머지는 더 올리는 곳(publish.also, 큐 종류 "upload:<target>").
+        again이면 이미 올린 작업도 새 영상으로 다시 올린다(주 공급자의 예전 기록은 uploaded_before, 영상은 남는다)."""
         with self.lock:
             job = pipeline.Job.load(job_id)
             data = job.data
-            up = data.get("upload") or {}
+            up = pipeline.upload_of(data, target)
             if data["status"] != "done" or up.get("status") in ("queued", "running") \
                     or (up.get("status") == "done" and not again):
                 return False
-            job.update(upload=upload_state("queued"), **({"uploaded_before": up} if up.get("status") == "done" else {}))
-        self._q.put(("upload", job_id))
+            before = {"uploaded_before": up} if target is None and up.get("status") == "done" else {}
+            job.set_upload(target, upload_state("queued"), **before)
+        self._q.put(("upload" + (f":{target}" if target else ""), job_id))
         return True
 
     def redo(self, job_id: str, steps=("thumbnail", "render"), files: dict | None = None, **fields) -> bool:
@@ -63,8 +65,7 @@ class LocalQueue:
             job = pipeline.Job.load(job_id)
             data = job.data
             up = data.get("upload") or {}
-            if data["status"] not in ("done", "failed", "interrupted", "waiting") \
-                    or up.get("status") in ("queued", "running"):
+            if data["status"] not in ("done", "failed", "interrupted", "waiting") or pipeline.uploading(data):
                 return False
             for name, value in (files or {}).items():   # 락 안에서: 검사와 쓰기 사이에 작업이 시작되지 않게
                 job.put(name, value)
@@ -73,6 +74,8 @@ class LocalQueue:
                 return True
             if up.get("status") == "done":
                 fields |= {"upload": None, "uploaded_before": up}
+            if done := {k: v for k, v in (data.get("uploads") or {}).items() if v["status"] == "done"}:
+                fields |= {"uploads": None, "uploads_before": done}   # 더 올리는 곳도 고친 영상을 새로 올릴 수 있게
             all_steps = data["steps"]
             for s in steps:
                 all_steps[s] = {"status": "pending", "engine": None, "sec": None}
@@ -90,6 +93,8 @@ class LocalQueue:
         return True
 
     def run_one(self, job_id: str, kind: str = "run") -> None:
+        kind, _, target = kind.partition(":")   # "upload:instagram" → 더 올리는 곳
+        target = target or None
         if kind == "run":
             with self.lock:   # 대기 중에 취소됐거나 같은 작업이 두 번 들어왔으면 건너뛴다
                 job = pipeline.Job.load(job_id)
@@ -104,17 +109,20 @@ class LocalQueue:
                 msg = redact(str(e)) or type(e).__name__
                 rec.log(f"채널 설정 실패: {msg}")
                 if kind == "upload":
-                    rec.update(upload=upload_state("failed", error=msg, at=now()))
+                    rec.set_upload(target, upload_state("failed", error=msg, at=now()))
                 else:
                     rec.update(status="failed", error={"step": None, "message": msg}, finished_at=now())
                 raise
             if kind == "trend":
                 trends.run(rec, sv)
+            elif kind == "upload":
+                pipeline.publish(rec, sv, target)
             else:
-                (pipeline.publish if kind == "upload" else pipeline.run)(rec, sv)
+                pipeline.run(rec, sv)
         except Exception:  # noqa: BLE001 — pipeline이 상태·로그(키 가림)에 기록한다
             log.error("작업 실패: %s", job_id)   # 원문 traceback에는 키가 섞일 수 있어 찍지 않는다
-        self._after(job_id, kind)
+        if not target:   # 더 올리는 곳은 사람이 화면에서 눌러 올려 결과도 화면에서 본다(스케줄 알림은 주 공급자만)
+            self._after(job_id, kind)
 
     def _after(self, job_id: str, kind: str) -> None:
         """스케줄 작업이면 다음 일(작업 만들기·업로드·알림). 손으로 만든 작업은 schedule이 그냥 돌아온다."""

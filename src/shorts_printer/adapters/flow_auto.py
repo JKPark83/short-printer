@@ -2,10 +2,13 @@
 Flow는 API가 없어 화면을 누른다. 화면이 바뀌면 장면을 건너뛰어 "클립 대기"로 남고, 직접 올리면 된다."""
 import base64
 import hashlib
+import json
 import os
 import time
 from pathlib import Path
 
+from ..infra.store import atomic_write_text
+from ..ports import video
 from .chrome import CHROME, FLOW, PORT, open_chrome, up
 
 # 설정 팝오버 radio 이름. 순서가 중요하다(동영상을 골라야 나머지가 나온다). 장면 하나에 SCENE_CREDITS
@@ -88,9 +91,12 @@ def _generate(page, prompt: str, path: Path) -> None:
     page.keyboard.insert_text(prompt)
     page.locator('button[aria-label="생성 시작"]').click()
     _wait(page, lambda now: len(now) > before, 30)   # 넣었는지만 빨리 본다. 안 늘면 안 들어간 것이라 다시 넣어도 된다
+    # 넣은 자리를 남긴다: 받기 전에 서버가 꺼지거나 끝내 못 받아도 다시 시도 때 다시 넣지 않고 이 프로젝트에서 받는다
+    atomic_write_text(path.with_suffix(".task"), json.dumps({"url": page.url, "pos": pos}))
     try:
         _download(page, path)
     except Refused:
+        path.with_suffix(".task").unlink()
         raise
     except Exception as e:  # noqa: BLE001
         raise Lost(f"{type(e).__name__}: {e}", pos) from e
@@ -134,6 +140,7 @@ def _save(page, tile, path: Path) -> None:
         if data := base64.b64decode(page.evaluate(READ_BLOB, d.value.url)):
             tmp.write_bytes(data)
             os.replace(tmp, path)
+            path.with_suffix(".task").unlink(missing_ok=True)
             return
     raise RuntimeError("Flow 다운로드가 비었어요(0바이트)")
 
@@ -187,19 +194,10 @@ class FlowAuto:
             browser = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}")
             page = browser.contexts[0].new_page()
             try:
-                page.goto(FLOW)
-                new = page.locator('button:has-text("새 프로젝트")').first
-                try:
-                    new.wait_for(timeout=30_000)
-                except Exception:  # noqa: BLE001 — 로그인 화면이면 버튼이 없다
-                    raise RuntimeError("Flow에 로그인이 필요해요. uv run sp chrome으로 띄운 창에서 로그인한 뒤 다시 시도하세요") from None
-                new.click()   # 작업마다 프로젝트 하나
-                page.wait_for_url("**/project/**")
-                _settings(page)
-                log(f"Flow 프로젝트: {page.url}")
-                # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
-                failed, left, lost = [], [], []
-                seen: dict[str, int] = {}
+                failed, left, lost, refused = [], [], [], {}
+                # 이미 있는 장면 영상도 넣어 둔다: 지난 프로젝트에서 자리로 받다 잘못 짚으면 걸러 낸다
+                seen = {hashlib.md5(f.read_bytes()).hexdigest(): int(f.stem[4:])
+                        for f in out.glob("clip*.mp4") if f.stem[4:].isdigit()}
 
                 def fresh(s) -> bool:
                     """앞 장면과 같은 영상을 받았으면(타일을 잘못 짚음) 버리고 못 만든 장면으로 남긴다."""
@@ -213,13 +211,46 @@ class FlowAuto:
                     seen[digest] = s["i"]
                     return True
 
+                # 지난 시도에서 넣고 못 받은 장면은 다시 넣으면 크레딧이 또 드니, 그 프로젝트에서 먼저 찾아 받는다
+                todo = []
                 for s in scenes:
+                    task = (out / s["file"]).with_suffix(".task")
+                    if not task.exists():
+                        todo.append(s)
+                        continue
+                    t = json.loads(task.read_text())
+                    try:
+                        if page.url != t["url"]:
+                            page.goto(t["url"])
+                        _refetch(page, t["pos"], out / s["file"])
+                    except Exception as e:  # noqa: BLE001 — 프로젝트가 지워졌거나 타일이 없으면 새로 만든다
+                        log(f"Flow: 장면 {s['i'] + 1} 지난 프로젝트에서 못 받음({type(e).__name__}: {str(e)[:120]}) → 새로 만들어요")
+                        task.unlink()
+                        todo.append(s)
+                        continue
+                    if fresh(s):
+                        log(f"Flow: 장면 {s['i'] + 1} 지난 프로젝트에서 받음")
+                        yield {"file": s["file"], "source": self.label, "url": t["url"]}
+                if todo:
+                    page.goto(FLOW)
+                    new = page.locator('button:has-text("새 프로젝트")').first
+                    try:
+                        new.wait_for(timeout=30_000)
+                    except Exception:  # noqa: BLE001 — 로그인 화면이면 버튼이 없다
+                        raise RuntimeError("Flow에 로그인이 필요해요. uv run sp chrome으로 띄운 창에서 로그인한 뒤 다시 시도하세요") from None
+                    new.click()   # 작업마다 프로젝트 하나
+                    page.wait_for_url("**/project/**")
+                    _settings(page)
+                    log(f"Flow 프로젝트: {page.url}")
+                # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
+                for s in todo:
                     t0 = time.monotonic()
                     try:
                         _generate(page, s["prompt"], out / s["file"])
                     except Refused as e:
                         log(f"Flow: 장면 {s['i'] + 1} 거절됨({str(e)[:120]})")
                         left.append(s["i"] + 1)
+                        refused[s["i"]] = str(e)
                         continue
                     except Lost as e:
                         log(f"Flow: 장면 {s['i'] + 1} 넣었지만 받지 못함({str(e)[:120]}) → 다시 넣지 않고 끝에 새로 불러와 받아요")
@@ -265,7 +296,10 @@ class FlowAuto:
                     log(f"Flow: 장면 {s['i'] + 1} 새로 불러와 받음")
                     yield {"file": s["file"], "source": self.label, "url": page.url}
                 if left:   # 만든 장면은 위에서 기록됐다. 못 만든 장면은 대기로 두지 않고 실패로 알린다
-                    raise RuntimeError(f"Flow가 장면 {', '.join(map(str, sorted(left)))}을 못 만들었어요. "
-                                       "로그의 사유를 보고 프롬프트를 고쳐 다시 시도하거나 클립을 직접 올려 주세요")
+                    msg = f"Flow가 장면 {', '.join(map(str, sorted(left)))}을 못 만들었어요. "
+                    if refused:
+                        raise video.Refused(msg + "[다시 시도]하면 거절된 장면은 정책을 피하게 프롬프트를 고쳐 다시 만들어요",
+                                            refused)
+                    raise RuntimeError(msg + "로그의 사유를 보고 다시 시도하거나 클립을 직접 올려 주세요")
             finally:
                 page.close()

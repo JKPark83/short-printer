@@ -5,12 +5,14 @@ from functools import cache
 
 from . import config
 from .adapters.claude import Claude
+from .adapters.claude_code import ClaudeCode
 from .adapters.claude_research import ClaudeResearch
 from .adapters.discord import Discord
 from .adapters.elevenlabs import ElevenLabs
 from .adapters.fish_audio import FishAudio
 from .adapters.flow import Flow
 from .adapters.flow_auto import FlowAuto
+from .adapters.instagram import Instagram
 from .adapters.splitters.ja import Japanese
 from .adapters.splitters.ko import Korean
 from .adapters.splitters.whitespace import Whitespace
@@ -32,7 +34,7 @@ from .ports.splitter import Splitter
 from .ports.tts import TTS
 from .ports.video import VideoProvider
 
-LLMS: dict[str, LLM] = {"claude": Claude()}
+LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode()}
 RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast(), "fish": FishAudio()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto()}
@@ -52,7 +54,12 @@ def youtube(ch: Channel) -> YouTube:
                    language=ch.language, category=ch.publish.category, studio_channel=ch.publish.channel_id)
 
 
-PUBLISHERS = {"youtube": youtube}   # 채널 계정마다 하나라 채널을 받아 만든다
+def instagram(ch: Channel) -> Instagram:
+    return Instagram(token=config.SECRETS_DIR / "channels" / ch.id / "instagram_token.json", channel=ch.id,
+                     footer=ch.publish.footer)
+
+
+PUBLISHERS = {"youtube": youtube, "instagram": instagram}   # 채널 계정마다 하나라 채널을 받아 만든다
 
 
 def _pick(table: dict, name: str, what: str):
@@ -76,11 +83,14 @@ def services(channel_id: str) -> Services:
     ch = channel.load(channel_id)
     return Services(channel=ch, llm=_pick(LLMS, ch.llm, "LLM"), tts=_pick(TTSES, ch.tts.provider, "음성 공급자"),
                     video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language),
-                    research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"))
+                    research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"),
+                    script_llm=_pick(LLMS, ch.script.llm or ch.llm, "LLM"),
+                    also={n: publisher(ch, n) for n in ch.publish.also})
 
 
-def publisher(ch: Channel) -> Publisher:
-    return _pick(PUBLISHERS, ch.publish.provider, "업로드 공급자")(ch)
+def publisher(ch: Channel, name: str | None = None) -> Publisher:
+    """채널 업로드 공급자. name을 주면 그 이름(publish.also의 더 올리는 곳)."""
+    return _pick(PUBLISHERS, name or ch.publish.provider, "업로드 공급자")(ch)
 
 
 def notify(text: str) -> list[tuple[str, str | None]]:

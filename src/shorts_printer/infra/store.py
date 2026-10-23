@@ -33,7 +33,8 @@ def read_json(path: Path, default=None):
 def redact(text: str) -> str:
     """로그·오류 문구에 키 값이 섞이지 않게 가린다. 새 공급자 키도 이름만 이 규칙을 따르면 된다."""
     for name, key in os.environ.items():
-        if name.endswith(("_API_KEY", "_TOKEN", "_WEBHOOK_URL")) and len(key) >= 8:   # 짧은 값은 아무 낱말이나 가린다
+        # 짧은 값은 아무 낱말이나 가린다
+        if name.endswith(("_API_KEY", "_TOKEN", "_WEBHOOK_URL", "_SECRET")) and len(key) >= 8:
             text = text.replace(key, "***")
     return text
 

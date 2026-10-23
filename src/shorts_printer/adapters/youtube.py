@@ -70,13 +70,16 @@ def _token(client: dict, **form) -> dict:
     return _call(Request(TOKEN, data=body))[0]
 
 
-def _save(token: Path, refresh_token: str) -> None:
+def _save(token: Path, data: dict) -> None:
+    """토큰 파일을 나만 읽게(0600, 폴더 0700) 원자적으로 쓴다. Instagram도 같이 쓴다."""
     token.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(token.parent, 0o700)
-    fd = os.open(token, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # 처음부터 나만 읽을 수 있게 만든다
+    tmp = token.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # 처음부터 나만 읽을 수 있게 만든다
     os.fchmod(fd, 0o600)   # 예전 파일 권한이 넓었어도 쓰기 전에 좁힌다
     with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump({"refresh_token": refresh_token}, f)
+        json.dump(data, f)
+    os.replace(tmp, token)
 
 
 def login(token: Path) -> None:
@@ -116,7 +119,7 @@ def login(token: Path) -> None:
     tok = _token(client, code=got["code"], code_verifier=verifier, grant_type="authorization_code", redirect_uri=redirect)
     if not tok.get("refresh_token"):
         raise RuntimeError("refresh_token을 받지 못했어요. 다시 하세요.")
-    _save(token, tok["refresh_token"])
+    _save(token, {"refresh_token": tok["refresh_token"]})
 
 
 def _access_token(token: Path) -> str:
@@ -172,6 +175,7 @@ def set_thumbnail(token: Path, video_id: str, path: Path) -> None:
 class YouTube:
     """Publisher 구현. 채널 하나(브랜드 계정)에 토큰 하나."""
     label = "YouTube"
+    private = True
 
     def __init__(self, token: Path, channel: str, language: str, category: str, studio_channel: str = ""):
         self.token, self.channel, self.language, self.category = token, channel, language, category
@@ -208,3 +212,6 @@ class YouTube:
 
     def set_thumbnail(self, video_id: str, path: Path) -> None:
         self._run(set_thumbnail, video_id, path)
+
+    def link(self, video_id: str) -> str:
+        return f"https://youtu.be/{video_id}"

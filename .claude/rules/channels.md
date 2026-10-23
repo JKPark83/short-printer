@@ -35,6 +35,7 @@
 | `llm` | registry `LLMS` 이름(`claude`) |
 | `[script]` `scenes` | 장면(=문장) 수 |
 | `[script]` `sentence` / `unit` | 문장 하나 길이 [최소, 최대]와 단위(`chars` 글자 · `words` 낱말) |
+| `[script]` `llm` | 대본 쓰기·고치기·검수·번역만 다른 LLM으로(registry `LLMS` 이름, 예 `claude-code`는 Claude 구독으로 돈다. 모델·생각 깊이는 `.env`의 `CLAUDE_CODE_MODEL`·`CLAUDE_CODE_EFFORT`, 기본 opus 5.5·high). 비우면 `llm` |
 | `[script]` `duration` | 목표 길이 문구(지시문에 들어간다. 예: `"40~50초"`) |
 | `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs` · `typecast`) |
 | `[tts]` `default` / `sample` | 기본 목소리 키(없으면 voices 맨 앞) / 미리 듣기 문장(채널 언어) |
@@ -48,6 +49,7 @@
 | `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(띠 없이 9:16 전체, 제목은 처음 1초만 보이고 사라진다, 썸네일은 band) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
+| `[publish]` `also` | 더 올리는 곳 목록(registry `PUBLISHERS` 이름, 예 `["instagram"]`). 작업 화면에서 버튼을 눌러야만 올라가고 스케줄은 `provider`만 올린다. Instagram은 바로 공개, 캡션 끝에 해시태그(태그 30개까지), `footer`는 자르지 않는다. 연결은 `uv run sp instagram-login --channel <id>` |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |
 | `[publish]` `footer` | 업로드할 때 설명 맨 끝에 빈 줄 하나 두고 붙는 문구(AI 표시 등). 비우면 안 붙는다 |
 | `[publish]` `sources_heading` | 설명란 출처 머리말(`출처`·`出典`). 비우면 출처를 붙이지 않는다 |
@@ -67,6 +69,7 @@
 2. ElevenLabs에서 그 언어 목소리를 골라 ID를 `[tts.voices]`에 넣는다.
 3. `uv run sp youtube-login --channel <id>` → Google 동의 화면에서 그 브랜드 채널을 고른다. 토큰은 `.secrets/channels/<id>/youtube_token.json`.
 4. (선택) 스튜디오 대체 업로드를 쓰면 `publish.channel_id`에 `UC…`를 넣는다.
+5. (선택) Instagram에도 올리면(`publish.also`) 페이스북 페이지에 인스타 프로페셔널 계정을 연결하고 `uv run sp instagram-login --channel <id>`. 토큰은 `.secrets/channels/<id>/instagram_token.json`.
 
 ## 하지 않는 것
 

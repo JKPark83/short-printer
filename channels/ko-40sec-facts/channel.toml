@@ -12,6 +12,7 @@ scenes = 11
 sentence = [56, 63]   # 크리스·eleven_v4 기준 초당 약 7.7자: 한 장면이 7.3~8.2초, 11장면이 약 80~90초
 unit = "chars"
 duration = "80~90초"
+llm = "claude-code"   # 대본만 Claude 구독으로(.env CLAUDE_CODE_MODEL·EFFORT)
 
 [tts]
 provider = "elevenlabs"
@@ -45,6 +46,7 @@ max_total = 22
 
 [publish]
 provider = "youtube"
+also = ["instagram"]   # 더 올리는 곳. Instagram은 바로 공개라 작업 화면에서 눌러야 올라간다
 category = "27"
 footer = "※ 의학적 진단·치료 조언이 아닌 일반 정보입니다. 영상은 AI로 만든 이미지입니다."
 sources_heading = "출처"
