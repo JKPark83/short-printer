@@ -22,15 +22,21 @@
     .halo { stroke: rgba(15, 12, 10, 0.55); }
     .arrowhead { stroke: rgba(15, 12, 10, 0.55); stroke-width: calc(4px * var(--inv)); opacity: 0; }
     .flash { fill: #F6D27A; opacity: 0; }
+    .ring { fill: none; stroke: #F6D27A; opacity: 0; }
+    #map-glow { stroke: #C9302C; opacity: 0; }
+    .unit { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; opacity: 0; }
+    .u-b { position: absolute; left: -32px; top: -32px; width: 64px; height: 64px; border-radius: 50%;
+      background: rgba(15, 12, 10, 0.82); border: 4px solid var(--c); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+      display: flex; align-items: center; justify-content: center; }
+    .u-b svg { width: 44px; height: 44px; fill: #F3EFE7; }
+    .unit.f svg { transform: scaleX(-1); }
     .lab { position: absolute; width: 0; height: 0; transform: scale(var(--inv)); transform-origin: 0 0; }
     .lab-in { position: absolute; left: -7px; top: -21px; display: flex; align-items: center; gap: 10px;
-      white-space: nowrap; color: #F3EFE7; font-weight: 700; font-size: 30px; letter-spacing: -0.01em;
+      white-space: nowrap; color: #F3EFE7; font-weight: 700; font-size: 30px; letter-spacing: -0.01em; transform-origin: 7px 50%;
       text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75), 0 0 2px rgba(0, 0, 0, 0.8); }
-    .lab.l .lab-in { left: auto; right: -7px; flex-direction: row-reverse; }
+    .lab.l .lab-in { left: auto; right: -7px; flex-direction: row-reverse; transform-origin: calc(100% - 7px) 50%; }
     .lab i { width: 14px; height: 14px; border-radius: 50%; background: #F3EFE7; box-shadow: 0 0 0 3px rgba(20, 20, 20, 0.7);
       flex: none; }
-    #map-credit { position: absolute; left: 96px; bottom: 40px; padding: 6px 12px; border-radius: 4px;
-      background: rgba(10, 10, 10, 0.55); color: rgba(243, 239, 231, 0.85); font-size: 18px; font-weight: 500; }
   </style>
   <div id="root" data-composition-id="map" data-width="1920" data-height="1080">
   <div id="map-cam" data-layout-allow-overflow data-layout-ignore>
@@ -58,16 +64,23 @@
         <path id="gh-L8" class="ghost" d="M3163.0,3103.6 L3745.6,3080.6 L4073.2,3034.5 L4218.9,2988.4 L4364.5,2896.0 L4510.2,2872.9 L4655.8,2849.7 L4801.4,2780.1 L4910.6,2756.9 L5165.5,2756.9" data-sw="2.5" />
         <path id="gh-L9" class="ghost" d="M3163.0,3126.5 L3945.8,3057.5 L4138.8,2965.3 L4273.5,2849.7 L4400.9,2803.3 L4546.6,2803.3 L4655.8,2803.3 L4746.8,2687.1 L4837.8,2654.5 L5165.5,2640.6" data-sw="2.5" />
         </g>
+        <path id="map-glow" d="" />
         <path id="map-front" d="" data-sw="5" />
       </g>
       <path id="map-38" class="refline" d="M3381.5,2942.2 L4892.4,2942.2" clip-path="url(#map-38-clip)" data-sw="3.5" data-dash="16 11" />
       <path id="map-mdl" class="refline" d="M3945.8,3057.5 L4138.8,2965.3 L4273.5,2849.7 L4400.9,2803.3 L4546.6,2803.3 L4655.8,2803.3 L4746.8,2687.1 L4837.8,2654.5" clip-path="url(#map-mdl-clip)" data-sw="6" />
       <circle id="fl-0" class="flash" cx="4091.4" cy="2942.2" r="0" />
+      <circle id="fr-0" class="ring" cx="4091.4" cy="2942.2" r="0" />
       <circle id="fl-1" class="flash" cx="4346.3" cy="2933.0" r="0" />
+      <circle id="fr-1" class="ring" cx="4346.3" cy="2933.0" r="0" />
       <circle id="fl-2" class="flash" cx="4546.6" cy="2951.5" r="0" />
+      <circle id="fr-2" class="ring" cx="4546.6" cy="2951.5" r="0" />
       <circle id="fl-3" class="flash" cx="3964.0" cy="2942.2" r="0" />
+      <circle id="fr-3" class="ring" cx="3964.0" cy="2942.2" r="0" />
       <circle id="fl-4" class="flash" cx="4765.0" cy="2942.2" r="0" />
+      <circle id="fr-4" class="ring" cx="4765.0" cy="2942.2" r="0" />
       <circle id="fl-5" class="flash" cx="4218.9" cy="2942.2" r="0" />
+      <circle id="fr-5" class="ring" cx="4218.9" cy="2942.2" r="0" />
       <path id="arh-s1a" class="arrow halo" d="M4073.2,2872.9 Q4109.7,3011.5 4200.7,3117.3" pathLength="1" data-sw="13" />
       <path id="ar-s1a" class="arrow" d="M4073.2,2872.9 Q4109.7,3011.5 4200.7,3117.3" pathLength="1" stroke="#C9302C" data-sw="7" />
       <path id="ah-s1a" class="arrowhead" d="M4227.4,3148.3 L4164.9,3121.1 L4209.8,3082.4 Z" style="fill:#C9302C" />
@@ -138,19 +151,22 @@
     <div id="lab-panmun2" class="clip lab" style="left:4137.7px;top:2962.6px" data-start="135.1" data-duration="11.75" data-track-index="3"><div class="lab-in"><i></i><span>판문점</span></div></div>
     <div id="lab-p38" class="clip lab" style="left:4881.5px;top:2942.2px" data-start="152.65" data-duration="19.2" data-track-index="3"><div class="lab-in"><i></i><span>38선</span></div></div>
     <div id="lab-mdl" class="clip lab" style="left:4837.8px;top:2654.5px" data-start="155.25" data-duration="16.6" data-track-index="3"><div class="lab-in"><i></i><span>군사분계선 약 248km</span></div></div>
+
   </div>
-  <div id="map-credit" data-layout-ignore>지도 Esri, Maxar, Earthstar Geographics · 전선은 대략적 위치</div>
   </div>
   <script>
     (() => {
       const CAM = [[0, 0, 4328.1, 2965.3, 0.36], [0, 10.4, 4291.7, 3034.5, 0.44], [11.45, 2.4, 4237.1, 3163.3, 0.95], [23.3, 2.6, 4765.0, 3264.1, 0.235], [34.35, 2.4, 4473.7, 3718.8, 0.42], [42.8, 2.2, 4892.4, 3988.9, 0.78], [54.25, 2.4, 3891.2, 3355.5, 0.62], [61.65, 2.2, 4400.9, 3309.9, 0.34], [66.3, 2.8, 4218.9, 2289.1, 0.36], [76.4, 2.2, 4036.8, 1766.6, 0.5], [82.2, 2.2, 4364.5, 2052.6, 0.62], [88.45, 2.4, 4437.3, 3218.3, 0.42], [98.8, 2.4, 4400.9, 3011.5, 0.46], [108.45, 2.6, 4146.1, 2979.2, 1.15], [120.3, 2.6, 4510.2, 2849.7, 0.72], [131.8, 2.8, 4400.9, 2965.3, 1.2], [134.6, 9.0, 4419.1, 2965.3, 1.35], [147.05, 3.2, 4437.3, 2942.2, 0.3], [152.25, 2.6, 4400.9, 2872.9, 0.5], [158.85, 13.5, 4473.7, 2872.9, 0.58]];
       const FLASH = [0.7, 1.2, 2.8, 4.85, 6.32, 6.6];
       const FRONT = [[0, 0, "L0"], [8.8, 2.2, "L0b"], [14.75, 2.2, "L1"], [34.85, 3.8, "L2"], [39.95, 2.0, "L3"], [61.85, 2.6, "L4"], [67.1, 5.4, "L5"], [80.8, 3.0, "L6"], [90.45, 5.6, "L7"], [98.5, 6.0, "L8"], [121.7, 2.4, "L8b"], [126.9, 2.4, "L9"]];
-      const LINES = {"L0": [[3163.0, 2942.2], [3490.7, 2942.2], [3745.6, 2942.2], [3964.0, 2942.2], [4182.5, 2942.2], [4364.5, 2942.2], [4546.6, 2942.2], [4728.6, 2942.2], [4874.2, 2942.2], [5165.5, 2942.2]], "L0b": [[3163.0, 3011.5], [3490.7, 3011.5], [3745.6, 3034.5], [3964.0, 3011.5], [4182.5, 3043.7], [4364.5, 3011.5], [4546.6, 3025.3], [4728.6, 2988.4], [4874.2, 2997.6], [5165.5, 2988.4]], "L1": [[3163.0, 3241.2], [3745.6, 3241.2], [4109.7, 3209.2], [4218.9, 3181.6], [4328.1, 3172.5], [4473.7, 3117.3], [4601.2, 3089.8], [4728.6, 3071.4], [4892.4, 3080.6], [5165.5, 3080.6]], "L2": [[3163.0, 4033.7], [3818.4, 4033.7], [4146.1, 3944.0], [4328.1, 3786.5], [4437.3, 3741.4], [4583.0, 3696.2], [4728.6, 3673.6], [4874.2, 3628.4], [5056.3, 3605.7], [5274.7, 3628.4]], "L3": [[3163.0, 4787.0], [3891.2, 4787.0], [4473.7, 4567.0], [4765.0, 4279.1], [4772.3, 4078.4], [4757.7, 3899.1], [4837.8, 3831.6], [4983.5, 3800.1], [5129.1, 3831.6], [5274.7, 3854.1]], "L4": [[3163.0, 3149.5], [3745.6, 3126.5], [4073.2, 3080.6], [4218.9, 3057.5], [4364.5, 3080.6], [4510.2, 3034.5], [4655.8, 3011.5], [4801.4, 2965.3], [4910.6, 2942.2], [5165.5, 2942.2]], "L5": [[3163.0, 2194.7], [3527.1, 2123.7], [3745.6, 1814.5], [3836.6, 1584.1], [4036.8, 1766.6], [4291.7, 1742.7], [4546.6, 1574.5], [4837.8, 1381.2], [5165.5, 1259.9], [5675.2, 1089.1]], "L6": [[3163.0, 3126.5], [3745.6, 3103.6], [4073.2, 3057.5], [4218.9, 3011.5], [4364.5, 2942.2], [4510.2, 2896.0], [4655.8, 2872.9], [4801.4, 2849.7], [4910.6, 2849.7], [5165.5, 2849.7]], "L7": [[3163.0, 3469.5], [3818.4, 3446.7], [4146.1, 3424.0], [4284.4, 3401.2], [4437.3, 3378.4], [4583.0, 3355.5], [4728.6, 3309.9], [4874.2, 3264.1], [5045.4, 3195.4], [5274.7, 3195.4]], "L8": [[3163.0, 3103.6], [3745.6, 3080.6], [4073.2, 3034.5], [4218.9, 2988.4], [4364.5, 2896.0], [4510.2, 2872.9], [4655.8, 2849.7], [4801.4, 2780.1], [4910.6, 2756.9], [5165.5, 2756.9]], "L8b": [[3163.0, 3117.3], [3927.6, 3043.7], [4127.9, 2979.2], [4273.5, 2826.5], [4400.9, 2826.5], [4546.6, 2780.1], [4655.8, 2840.4], [4746.8, 2710.4], [4837.8, 2663.9], [5165.5, 2663.9]], "L9": [[3163.0, 3126.5], [3945.8, 3057.5], [4138.8, 2965.3], [4273.5, 2849.7], [4400.9, 2803.3], [4546.6, 2803.3], [4655.8, 2803.3], [4746.8, 2687.1], [4837.8, 2654.5], [5165.5, 2640.6]]};
+      const UNITS = [];
+      const LINES = {"L0": [[3163.0, 2942.2], [3163.0, 2942.2], [3490.7, 2942.2], [3745.6, 2942.2], [3964.0, 2942.2], [4182.5, 2942.2], [4364.5, 2942.2], [4546.6, 2942.2], [4728.6, 2942.2], [4874.2, 2942.2], [5165.5, 2942.2], [5165.5, 2942.2]], "L0b": [[3163.0, 3011.5], [3163.0, 3011.5], [3490.7, 3011.5], [3745.6, 3034.5], [3964.0, 3011.5], [4182.5, 3043.7], [4364.5, 3011.5], [4546.6, 3025.3], [4728.6, 2988.4], [4874.2, 2997.6], [5165.5, 2988.4], [5165.5, 2988.4]], "L1": [[3163.0, 3241.2], [3163.0, 3241.2], [3745.6, 3241.2], [4109.7, 3209.2], [4218.9, 3181.6], [4328.1, 3172.5], [4473.7, 3117.3], [4601.2, 3089.8], [4728.6, 3071.4], [4892.4, 3080.6], [5165.5, 3080.6], [5165.5, 3080.6]], "L2": [[3163.0, 4033.7], [3163.0, 4033.7], [3818.4, 4033.7], [4146.1, 3944.0], [4328.1, 3786.5], [4437.3, 3741.4], [4583.0, 3696.2], [4728.6, 3673.6], [4874.2, 3628.4], [5056.3, 3605.7], [5274.7, 3628.4], [5274.7, 3628.4]], "L3": [[3163.0, 4787.0], [3163.0, 4787.0], [3891.2, 4787.0], [4473.7, 4567.0], [4765.0, 4279.1], [4772.3, 4078.4], [4757.7, 3899.1], [4837.8, 3831.6], [4983.5, 3800.1], [5129.1, 3831.6], [5274.7, 3854.1], [5274.7, 3854.1]], "L4": [[3163.0, 3149.5], [3163.0, 3149.5], [3745.6, 3126.5], [4073.2, 3080.6], [4218.9, 3057.5], [4364.5, 3080.6], [4510.2, 3034.5], [4655.8, 3011.5], [4801.4, 2965.3], [4910.6, 2942.2], [5165.5, 2942.2], [5165.5, 2942.2]], "L5": [[3163.0, 2194.7], [3163.0, 2194.7], [3527.1, 2123.7], [3745.6, 1814.5], [3836.6, 1584.1], [4036.8, 1766.6], [4291.7, 1742.7], [4546.6, 1574.5], [4837.8, 1381.2], [5165.5, 1259.9], [5675.2, 1089.1], [5675.2, 1089.1]], "L6": [[3163.0, 3126.5], [3163.0, 3126.5], [3745.6, 3103.6], [4073.2, 3057.5], [4218.9, 3011.5], [4364.5, 2942.2], [4510.2, 2896.0], [4655.8, 2872.9], [4801.4, 2849.7], [4910.6, 2849.7], [5165.5, 2849.7], [5165.5, 2849.7]], "L7": [[3163.0, 3469.5], [3163.0, 3469.5], [3818.4, 3446.7], [4146.1, 3424.0], [4284.4, 3401.2], [4437.3, 3378.4], [4583.0, 3355.5], [4728.6, 3309.9], [4874.2, 3264.1], [5045.4, 3195.4], [5274.7, 3195.4], [5274.7, 3196.0]], "L8": [[3163.0, 3103.6], [3163.0, 3103.6], [3745.6, 3080.6], [4073.2, 3034.5], [4218.9, 2988.4], [4364.5, 2896.0], [4510.2, 2872.9], [4655.8, 2849.7], [4801.4, 2780.1], [4910.6, 2756.9], [5165.5, 2756.9], [5165.5, 2756.9]], "L8b": [[3163.0, 3117.3], [3163.0, 3117.3], [3927.6, 3043.7], [4127.9, 2979.2], [4273.5, 2826.5], [4400.9, 2826.5], [4546.6, 2780.1], [4655.8, 2840.4], [4746.8, 2710.4], [4837.8, 2663.9], [5165.5, 2663.9], [5165.5, 2663.9]], "L9": [[3163.0, 3126.5], [3163.0, 3126.5], [3945.8, 3057.5], [4138.8, 2965.3], [4273.5, 2849.7], [4400.9, 2803.3], [4546.6, 2803.3], [4655.8, 2803.3], [4746.8, 2687.1], [4837.8, 2654.5], [5165.5, 2640.6], [5165.5, 2640.6]]};
       const W = 8960, H = 5632, CX = 960.0, CY = 540.0;
       const camE = gsap.parseEase("power2.inOut"), frE = gsap.parseEase("power1.inOut"), flE = gsap.parseEase("power2.out");
       const cam = document.getElementById("map-cam");
       const occ = document.getElementById("map-occ"), front = document.getElementById("map-front");
+      const glow = document.getElementById("map-glow");
+      const unE = gsap.parseEase("sine.inOut");
       const strokes = [...cam.querySelectorAll("[data-sw]")];
 
       // [previous key, current key, eased progress] at time t; keys must not overlap in time
@@ -170,7 +186,13 @@
         const hw = CX / s, hh = CY / s;
         const x = Math.min(Math.max(lerp(ca[2], cb[2], cp), hw), W - hw);
         const y = Math.min(Math.max(lerp(ca[3], cb[3], cp), hh), H - hh);
-        cam.style.transform = `translate(${CX - x * s}px, ${CY - y * s}px) scale(${s})`;
+        // 포격·폭발 때 0.5초 화면이 흔들린다
+        let sx = 0, sy = 0;
+        for (const ft of FLASH) {
+          const d = t - ft;
+          if (d >= 0 && d < 0.5) { const m = 10 * (1 - d / 0.5); sx += Math.sin(d * 70) * m; sy += Math.cos(d * 55) * m; }
+        }
+        cam.style.transform = `translate(${CX - x * s + sx}px, ${CY - y * s + sy}px) scale(${s})`;
         const inv = 1 / s;
         cam.style.setProperty("--inv", inv);
         for (const el of strokes) {
@@ -182,72 +204,91 @@
           const e = flE(Math.min(1, Math.max(0, p)));
           el.setAttribute("r", 24 + 150 * e);
           el.style.opacity = p >= 0 && p < 1 ? 1 - e : 0;
+          const q = (t - ft) / 0.9, ring = document.getElementById("fr-" + i), e2 = flE(Math.min(1, Math.max(0, q)));
+          ring.setAttribute("r", 30 + 340 * e2);
+          ring.style.strokeWidth = 7 * inv;
+          ring.style.opacity = q >= 0 && q < 1 ? 0.9 * (1 - e2) : 0;
         });
+        // 병력 배지: 화살표 곡선(2차 베지어)을 따라 가서 머리 앞에 선다. 뒤 배지는 조금씩 늦다
+        for (const [id, x1, y1, qx, qy, x2, y2, a, mv, b, walk, lag, k] of UNITS) {
+          const el = document.getElementById(id);
+          const q = unE(Math.min(1, Math.max(0, (t - a) / mv))), u = q * 0.88 - lag;
+          if (t < a || t >= b || u < 0) { el.style.opacity = 0; continue; }
+          const v = 1 - u, bx = v * v * x1 + 2 * v * u * qx + u * u * x2, by = v * v * y1 + 2 * v * u * qy + u * u * y2;
+          const d = t - a, bob = q < 1 ? (walk ? -Math.abs(Math.sin(d * 9)) * 7 : Math.sin(d * 6) * 2.5) : 0;
+          el.style.opacity = Math.min(1, u / 0.04, d / 0.25, (b - t) / 0.4);
+          el.style.transform = `translate(${bx}px, ${by + bob * inv}px) scale(${inv * k})`;
+        }
         if (!FRONT.length) return;
         const [fa, fb, fp] = at(FRONT, t, frE);
         const pts = LINES[fa[2]].map((p, i) => [lerp(p[0], LINES[fb[2]][i][0], fp), lerp(p[1], LINES[fb[2]][i][1], fp)]);
-        const line = "M" + pts.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
-        const first = pts[0], last = pts[pts.length - 1];
-        front.setAttribute("d", line);
-        occ.setAttribute("d", `${line} L${last[0]},-50 L${first[0]},-50 Z`);
+        const d = (ps) => "M" + ps.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
+        const first = pts[0], last = pts[pts.length - 1];   // 닫는 점(_escape), 그 사이가 전선
+        front.setAttribute("d", d(pts.slice(1, -1)));
+        // 전선이 옮겨 가는 동안 굵은 빛이 선을 따라 부풀었다 꺼진다
+        const moving = fa !== fb && fp > 0 && fp < 1;
+        glow.setAttribute("d", moving ? d(pts.slice(1, -1)) : "");
+        glow.style.strokeWidth = 26 * inv;
+        glow.style.opacity = moving ? 0.55 * Math.sin(Math.PI * fp) : 0;
+        occ.setAttribute("d", `${d(pts)} L9010,${last[1]} L9010,-50 L-50,-50 L-50,${first[1]} Z`);
       }
 
       const tl = gsap.timeline({ paused: true });
       const clock = { t: 0 };
       tl.fromTo(clock, { t: 0 }, { t: 179.5, duration: 179.5, ease: "none", onUpdate: () => render(clock.t) }, 0);
-      tl.fromTo("#lab-38 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 4.9);
+      tl.fromTo("#lab-38 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 4.9);
       tl.to("#lab-38 .lab-in", {opacity: 0, duration: 0.3}, 12.43);
-      tl.fromTo("#lab-seoul1 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 15.95);
+      tl.fromTo("#lab-seoul1 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 15.95);
       tl.to("#lab-seoul1 .lab-in", {opacity: 0, duration: 0.3}, 23.08);
-      tl.fromTo("#lab-bridge .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 18.65);
+      tl.fromTo("#lab-bridge .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 18.65);
       tl.to("#lab-bridge .lab-in", {opacity: 0, duration: 0.3}, 23.08);
-      tl.fromTo("#lab-china .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 24.4);
+      tl.fromTo("#lab-china .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 24.4);
       tl.to("#lab-china .lab-in", {opacity: 0, duration: 0.3}, 34.03);
-      tl.fromTo("#lab-japan .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 24.4);
+      tl.fromTo("#lab-japan .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 24.4);
       tl.to("#lab-japan .lab-in", {opacity: 0, duration: 0.3}, 34.03);
-      tl.fromTo("#lab-daejeon .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 38.25);
+      tl.fromTo("#lab-daejeon .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 38.25);
       tl.to("#lab-daejeon .lab-in", {opacity: 0, duration: 0.3}, 42.88);
-      tl.fromTo("#lab-nakdong .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 40.35);
+      tl.fromTo("#lab-nakdong .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 40.35);
       tl.to("#lab-nakdong .lab-in", {opacity: 0, duration: 0.3}, 53.93);
-      tl.fromTo("#lab-busan .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 43.7);
+      tl.fromTo("#lab-busan .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 43.7);
       tl.to("#lab-busan .lab-in", {opacity: 0, duration: 0.3}, 53.93);
-      tl.fromTo("#lab-dabu .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 50.0);
+      tl.fromTo("#lab-dabu .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 50.0);
       tl.to("#lab-dabu .lab-in", {opacity: 0, duration: 0.3}, 53.93);
-      tl.fromTo("#lab-incheon .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 59.45);
+      tl.fromTo("#lab-incheon .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 59.45);
       tl.to("#lab-incheon .lab-in", {opacity: 0, duration: 0.3}, 65.78);
-      tl.fromTo("#lab-seoul2 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 64.05);
+      tl.fromTo("#lab-seoul2 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 64.05);
       tl.to("#lab-seoul2 .lab-in", {opacity: 0, duration: 0.3}, 67.78);
-      tl.fromTo("#lab-pyongyang .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 69.3);
+      tl.fromTo("#lab-pyongyang .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 69.3);
       tl.to("#lab-pyongyang .lab-in", {opacity: 0, duration: 0.3}, 76.58);
-      tl.fromTo("#lab-chosan .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 70.6);
+      tl.fromTo("#lab-chosan .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 70.6);
       tl.to("#lab-chosan .lab-in", {opacity: 0, duration: 0.3}, 79.08);
-      tl.fromTo("#lab-changjin .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 83.0);
+      tl.fromTo("#lab-changjin .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 83.0);
       tl.to("#lab-changjin .lab-in", {opacity: 0, duration: 0.3}, 88.13);
-      tl.fromTo("#lab-hungnam .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 85.9);
+      tl.fromTo("#lab-hungnam .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 85.9);
       tl.to("#lab-hungnam .lab-in", {opacity: 0, duration: 0.3}, 88.13);
-      tl.fromTo("#lab-seoul3 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 90.75);
+      tl.fromTo("#lab-seoul3 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 90.75);
       tl.to("#lab-seoul3 .lab-in", {opacity: 0, duration: 0.3}, 97.68);
-      tl.fromTo("#lab-pyeongtaek .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 94.75);
+      tl.fromTo("#lab-pyeongtaek .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 94.75);
       tl.to("#lab-pyeongtaek .lab-in", {opacity: 0, duration: 0.3}, 98.88);
-      tl.fromTo("#lab-samcheok .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 95.25);
+      tl.fromTo("#lab-samcheok .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 95.25);
       tl.to("#lab-samcheok .lab-in", {opacity: 0, duration: 0.3}, 98.88);
-      tl.fromTo("#lab-seoul4 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 100.8);
+      tl.fromTo("#lab-seoul4 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 100.8);
       tl.to("#lab-seoul4 .lab-in", {opacity: 0, duration: 0.3}, 108.13);
-      tl.fromTo("#lab-kaesong .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 110.35);
+      tl.fromTo("#lab-kaesong .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 110.35);
       tl.to("#lab-kaesong .lab-in", {opacity: 0, duration: 0.3}, 119.98);
-      tl.fromTo("#lab-panmun1 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 113.05);
+      tl.fromTo("#lab-panmun1 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 113.05);
       tl.to("#lab-panmun1 .lab-in", {opacity: 0, duration: 0.3}, 119.98);
-      tl.fromTo("#lab-baekma .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 127.2);
+      tl.fromTo("#lab-baekma .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 127.2);
       tl.to("#lab-baekma .lab-in", {opacity: 0, duration: 0.3}, 131.48);
-      tl.fromTo("#lab-bloody .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 125.0);
+      tl.fromTo("#lab-bloody .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 125.0);
       tl.to("#lab-bloody .lab-in", {opacity: 0, duration: 0.3}, 131.48);
-      tl.fromTo("#lab-heart .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 126.0);
+      tl.fromTo("#lab-heart .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 126.0);
       tl.to("#lab-heart .lab-in", {opacity: 0, duration: 0.3}, 131.48);
-      tl.fromTo("#lab-panmun2 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 135.1);
+      tl.fromTo("#lab-panmun2 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 135.1);
       tl.to("#lab-panmun2 .lab-in", {opacity: 0, duration: 0.3}, 146.53);
-      tl.fromTo("#lab-p38 .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 152.65);
+      tl.fromTo("#lab-p38 .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 152.65);
       tl.to("#lab-p38 .lab-in", {opacity: 0, duration: 0.3}, 171.53);
-      tl.fromTo("#lab-mdl .lab-in", {opacity: 0, y: 12}, {opacity: 1, y: 0, duration: 0.35, ease: "power3.out"}, 155.25);
+      tl.fromTo("#lab-mdl .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 155.25);
       tl.to("#lab-mdl .lab-in", {opacity: 0, duration: 0.3}, 171.53);
       tl.fromTo(["#arh-s1a", "#ar-s1a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 8.8);
       tl.fromTo("#ah-s1a", {opacity: 0}, {opacity: 1, duration: 0.12}, 9.6);

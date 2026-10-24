@@ -67,7 +67,7 @@ def parts(p, script=None, timing=None):
 def test_plan_world_then_one_call_per_chapter():
     world = mapplan.World(box=[139.5, 32.5, 116, 44], zoom=12, detail=[120, 45, 131.4, 32.9], land=["KOR"],
                           border=[], side="north", places=[mapplan.Place(id="seoul", name="서울", lng=127, lat=37.5)],
-                          states=[mapplan.State(name="L0", points=[[124, 38], [130, 38]])])
+                          states=[mapplan.State(name="L0", when="1950. 6. 25 38선", points=[[124, 38], [130, 38]])])
     ch1 = mapplan.Chapter(scenes=[mapplan.SceneMap(scene=1, front="L0"), mapplan.SceneMap(scene=3, front="L0")])
     ch2 = mapplan.Chapter(scenes=[mapplan.SceneMap(scene=2, front="L0")])
     llm = FakeLLM(world, ch1, ch2)
@@ -77,7 +77,8 @@ def test_plan_world_then_one_call_per_chapter():
     assert "F1. 1950년 6월 25일 개전" in llm.calls[0]["text"] and "지도로 보는 역사" in llm.calls[0]["system"]
     # 장마다 그 장의 장면만, 지명·상태와 함께
     assert "1. [map" in llm.calls[1]["text"] and "2. [map" not in llm.calls[1]["text"]
-    assert "3. [clip" in llm.calls[2]["text"] and "seoul: 서울" in llm.calls[2]["text"] and "L0" in llm.calls[2]["text"]
+    assert "3. [clip" in llm.calls[2]["text"] and "seoul: 서울" in llm.calls[2]["text"]
+    assert "- L0: 1950. 6. 25 38선" in llm.calls[2]["text"]   # 상태마다 언제 어떤 선인지
     w = p["world"]
     assert w["box"] == [116, 44, 139.5, 32.5] and w["zoom"] == 9 and w["detail"] == [120, 44, 131.4, 32.9]
     assert w["places"]["seoul"] == {"name": "서울", "lng": 127, "lat": 37.5}
@@ -119,7 +120,7 @@ def test_camera_keys_never_overlap_and_skip_repeats():
         assert b[0] >= round(a[0] + a[1], 2)
     # clip 장면의 카메라는 안 움직인다
     f = parts(make_plan([scene(0, camera=cams[0]), scene(3, camera=cams[3])]))
-    assert len(f["cam"]) == 2
+    assert {tuple(k[2:4]) for k in f["cam"]} == {(126.98, 37.57)}   # 머무는 동안 당겼다 물리기만 한다
 
 
 def test_scale_clamps():
@@ -137,13 +138,14 @@ def test_scale_clamps():
 def test_states_resampled_to_same_count_and_direction():
     states = {"L0": [[124, 38], [129.5, 38]], "L1": [[129.5, 36], [127, 36.5], [124, 37]],
               "L2": [[124, 35 + i * 0.01] for i in range(10)], "bad": [[124, 38]]}
-    p = make_plan([scene(1, front="L0"), scene(2, front="L1"), scene(3, front="nope")], states)
+    p = make_plan([scene(0, front="nope"), scene(1, front="L0"), scene(2, front="L1"), scene(3, front="L0")], states)
     f = parts(p)
     assert set(f["states"]) == {"L0", "L1", "L2"} and {len(v) for v in f["states"].values()} == {10}
     assert f["states"]["L1"][0] == [124, 37] and f["states"]["L1"][-1] == [129.5, 36]   # 서→동으로 뒤집었다
     assert f["states"]["L0"][1] == [124.6111, 38.0]
     assert f["front"][0] == [0, 0, "L0"] and f["front"][1][2] == "L1" and len(f["front"]) == 2
     assert any("bad" in x for x in f["warnings"]) and any("nope" in x for x in f["warnings"])
+    assert any("되돌아가는" in x for x in f["warnings"])   # L1 뒤 L0은 시간을 거슬러 뺀다
     assert any("#map-occ" in tw for tw in f["map_tweens"])   # 장면 1부터 나오니 그때까지 숨긴다
     assert f["map_credit"].endswith("전선은 대략적 위치")
 
@@ -210,3 +212,64 @@ def test_arrows_capped_and_drawn_before_they_end():
     f = parts(make_plan([scene(0, arrows=arrows)]))
     assert len(f["arrows"]) == mapplan.ARROWS and any("화살표가 많아" in w for w in f["warnings"])
     assert all(a[4] >= a[2] + a[3] + 0.5 - 0.01 for a in f["arrows"])
+
+
+def test_date_and_front_pulled_to_scene_that_says_it():
+    """clip 장면(3)이 날짜를 말하는데 모델이 다음 장면에 달면, 클립 뒤 지도에 지난 날짜가 남는다."""
+    narr = [*NARR[:3], "1951년 1월 4일 서울을 다시 내줬습니다", "물러난 선은 평택에서 멈췄습니다"]
+    script = make_script(("map", "map", "map", "clip", "map")[:4])
+    script["scenes"].append(dict(script["scenes"][3], narration=narr[4], kind="map"))
+    script["scenes"][3]["narration"] = narr[3]
+    t = make_timing(narr, ("", "", "turn", "", ""))
+    p = make_plan([scene(1, front="A")], states={"A": [[124, 38], [130, 38]], "B": [[124, 37], [130, 37]]})
+    p["scenes"].append(scene(4, front="B", date={"year": "1951", "big": "1. 4", "small": "", "at": "물러난"}))
+    f = parts(p, script, t)
+    assert f["dates"] == [[t[3]["words"][1]["start"], "1951", "1. 4", ""]]   # "1월"
+    assert f["front"][-1][2] == "B" and f["front"][-1][0] == t[3]["start"]
+    assert any("장면 3로 당겼어요" in w for w in f["warnings"])
+    assert p["scenes"][4]["date"]   # 계획은 그대로 두고 film 칸만 고친다
+
+
+def test_stats_become_counters_and_units_pass_through():
+    stats = [{"label": "피란민", "value": 30000.0, "unit": "명", "at": "38선을"},
+             {"label": "둘째", "value": 90, "at": "새벽"}]
+    arrows = [{"points": ["seoul", "busan"], "at": "새벽", "unit": "tank"},
+              {"points": ["busan", "seoul"], "at": "북한군이"}]
+    nameless, small = [{"label": "", "value": 10, "at": "서울이"}], [{"label": "작은 수", "value": 3, "at": "부산까지"}]
+    f = parts(make_plan([scene(0, arrows=arrows, stats=stats), scene(1, stats=nameless), scene(2, stats=small)]))
+    t = make_timing()
+    assert len(f["counters"]) == 1   # 장면당 하나, 이름 없는 것·STAT_MIN보다 작은 수는 버린다
+    c = f["counters"][0]
+    assert c[:4] == ["s0", "피란민", 30000, "명"] and c[4] == t[0]["words"][5]["start"]
+    assert c[5] <= c[4] + 7 and c[6:] == list(mapplan.STAT_POS)
+    assert [a[7] for a in f["arrows"]] == ["tank", ""]
+
+
+def test_shots_move_camera_inside_scene_and_long_holds_drift():
+    narr = [NARR[0], "사흘 만에 서울이 함락됐고 국군은 한강 다리를 끊은 채 남쪽으로 내려가 부산 앞까지 밀렸습니다",
+            *NARR[2:]]
+    t = make_timing(narr)
+    w = t[1]["words"]
+    shots = [{"place": "busan", "scale": 0.8, "at": "남쪽으로"}, {"place": "seoul", "scale": 0.9, "at": "서울이"},
+             {"place": "tokyo", "scale": 0.3, "at": "부산"}]
+    p = make_plan([scene(0, camera={"place": "pyongyang", "scale": 0.4}),
+                   scene(1, camera={"place": "seoul", "scale": 0.4}, shots=shots)])
+    f = parts(p, make_script(("map",) * 4), t)
+    cam = f["cam"]
+    keys = [(k[0], k[1], k[2]) for k in cam]
+    # 서울이: 장면 카메라가 아직 옮겨 가는 중이라 뺀다, 부산: 앞 shot 뒤 HOLD까지 조금 늦춰 살린다
+    assert sum("너무 빨리" in x for x in f["warnings"]) == 1
+    shot = round(w[9]["start"] - 0.3, 2)
+    assert keys[2:5] == [(round(t[1]["start"] - 0.3, 2), mapplan.MOVE, 126.98),
+                        (shot, mapplan.SHOT_MOVE, 129.07),   # 남쪽으로 → 부산
+                        (round(shot + mapplan.SHOT_MOVE + mapplan.HOLD, 2), mapplan.SHOT_MOVE, 139.5)]
+    for a, b in zip(cam, cam[1:], strict=False):
+        assert b[0] >= round(a[0] + a[1], 2) - 0.01
+
+    # 장면 1~3 내내 그대로면 같은 자리를 CUT초마다 당겼다 물린다
+    cam = parts(make_plan([scene(0, camera={"place": "seoul", "scale": 0.3})]), make_script(("map",) * 4))["cam"]
+    cuts = cam[2:]
+    assert len(cuts) >= 2 and all(c[2:4] == cam[1][2:4] for c in cuts)
+    assert cuts[0][4] > cam[1][4] and cuts[1][4] == cam[1][4]
+    for a, b in zip(cuts, cuts[1:], strict=False):
+        assert 2 <= b[0] - a[0] <= mapplan.CUT

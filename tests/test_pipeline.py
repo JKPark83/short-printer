@@ -426,7 +426,7 @@ def test_flow_auto_retries_failed_scene_once_after_delay(monkeypatch, tmp_path):
 
     fa = flow_auto
     monkeypatch.setattr(fa, "open_chrome", lambda: None)
-    monkeypatch.setattr(fa, "_settings", lambda page, aspect: None)
+    monkeypatch.setattr(fa, "_settings", lambda page, aspect, quality: None)
     monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
     slept = []
     monkeypatch.setattr(fa.time, "sleep", slept.append)
@@ -461,7 +461,7 @@ def test_flow_auto_never_resubmits_lost_and_drops_duplicate_clip(monkeypatch, tm
 
     fa = flow_auto
     monkeypatch.setattr(fa, "open_chrome", lambda: None)
-    monkeypatch.setattr(fa, "_settings", lambda page, aspect: None)
+    monkeypatch.setattr(fa, "_settings", lambda page, aspect, quality: None)
     monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
     monkeypatch.setattr(fa.time, "sleep", lambda s: None)
     tries = []
@@ -553,7 +553,7 @@ def test_step_research_without_facts_keeps_notes_and_usage():
 
 
 def test_proofread_step_only_reviews_and_passes_with_small_issues_left(monkeypatch):
-    ja = channel.load("ja-korea-trip")
+    ja = channel.load(CH).model_copy(update={"language": "ja"})
     monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
     usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": 0.01}
     monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
@@ -563,7 +563,7 @@ def test_proofread_step_only_reviews_and_passes_with_small_issues_left(monkeypat
     verdict = script_mod.Verdict(issues=[script_mod.Issue(scene=3, kind="문장", severity="작음",
                                                           problem="새 흠", fix="x")])
     monkeypatch.setattr(pipeline.script, "proofread", lambda *a, **kw: (verdict, usage))
-    job = Job.create("ja-korea-trip", "주제", "v")
+    job = Job.create(CH, "주제", "v")
     sv = services(channel=ja)
     pipeline.step_script(job, sv)
     assert pipeline.step_proofread(job, sv) == "m"
@@ -656,7 +656,7 @@ def test_flow_auto_fetches_submitted_scene_from_old_project_before_generating(mo
 
     fa = flow_auto
     monkeypatch.setattr(fa, "open_chrome", lambda: None)
-    monkeypatch.setattr(fa, "_settings", lambda page, aspect: None)
+    monkeypatch.setattr(fa, "_settings", lambda page, aspect, quality: None)
     monkeypatch.setattr(playwright.sync_api, "sync_playwright", MagicMock())
     made, fetched = [], []
 

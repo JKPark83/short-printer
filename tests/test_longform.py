@@ -55,23 +55,21 @@ def test_run_stops_before_paid_steps_without_npx(monkeypatch):
     assert "Node.js" in job.data["error"]["message"]
 
 
-def test_render_srt_uses_twice_splitter_limit_unless_channel_sets_it(monkeypatch):
-    limits = []
+def test_render_drops_old_srt_and_shoots_thumbnail_in_gap_before_turn(monkeypatch):
+    shots = []
     monkeypatch.setattr(longform.hyperframes, "render", lambda project, out, log: out)
-    monkeypatch.setattr(longform.hyperframes, "snapshot", lambda project, at, out: [out / "x.png"])
+    monkeypatch.setattr(longform.hyperframes, "snapshot", lambda project, at, out: shots.extend(at) or [out / "x.png"])
     monkeypatch.setattr(longform.ffmpeg, "text_card", lambda *a: None)
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
-    monkeypatch.setattr(longform.subtitles, "cues", lambda timing, sp, limit: limits.append(limit) or [])
     job = long_job()
     job.update(draft_ok=True)
     job.put("film.json", {"total": 10.0, "credits": []})
-    job.put("timing.json", [{"start": 1.4}])
-    job.put("script.json", {"title": "t", "scenes": [{"beat": ""}]})
-    sv = services(channel=LONG)
-    longform.step_render(job, sv)
-    style = LONG.style.model_copy(update={"subtitle_limit": 30})
-    longform.step_render(job, services(channel=LONG.model_copy(update={"style": style})))
-    assert limits == [2 * sv.splitter.limit, 30]
+    job.put("timing.json", [{"start": 1.4}, {"start": 5.0}])
+    job.put("script.json", {"title": "t", "scenes": [{"beat": ""}, {"beat": "turn"}]})
+    (job.dir / "captions.srt").write_text("1\n")   # 예전 작업: 남으면 업로드가 CC로 또 붙인다
+    longform.step_render(job, services(channel=LONG))
+    assert not (job.dir / "captions.srt").exists()
+    assert shots == [4.3]   # turn 앞 쉼(구운 자막이 없는 때)
 
 
 def test_render_waits_for_draft_approval():
@@ -198,7 +196,14 @@ def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_pa
                                       "front": "L0", "labels": [{"place": "seoul", "at": "서울"}], "arrows": [],
                                       "date": None, "flashes": [{"place": "seoul", "at": "새벽"}]},
                                      {"scene": 1, "camera": None, "front": "", "labels": [], "arrows": [],
-                                      "date": None, "flashes": []}]})
+                                      "date": None, "flashes": []}],
+                          "photos": [{"scene": 0, "query": "Seoul 1950", "caption": "1950 서울", "at": "새벽"}]})
+
+    def photo(query, dst):   # Commons 대신: 세로 사진 하나
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(b"J")
+        return {"title": "File:S.jpg", "license": "Public domain", "url": "u", "width": 1280, "height": 1600}
+    monkeypatch.setattr(longform.media, "fetch_photo", photo)
     job.put("tiles.json", {"z": 7, "x0": 108, "y0": 48, "width": 1536, "height": 1280})
     job.put("geo.json", {"crop": [0, 0, 100, 100], "land": "", "border": ""})
     for f in ("voice/s00.mp3", "voice/s01.mp3", "clips/clip1.mp4"):
@@ -214,19 +219,30 @@ def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_pa
     assert film["clips"] == [{"id": "c01", "src": "assets/clips/clip1.mp4", "start": 4.8, "duration": 1.5}]
     assert film["title"] == "A&amp;B &lt;C&gt;"   # film.build는 이스케이프하지 않는다
     assert [v["src"] for v in film["voices"]] == ["assets/voice/s00.mp3", "assets/voice/s01.mp3"]
-    assert film["credits"][:2] == ["내레이션 가짜음성", film["map_credit"]] and film["credits"][2] == "음악 " + \
+    # 사진: "새벽"(2.4초)에 떠서 다음 clip 장면 시작(4.8초)에 내린다. 세로 사진은 높이/너비 0.75로 자른다
+    assert film["photos"] == [["p0", "p0.jpg", "1950 서울", 2.4, 4.8, 1170, 170, 620, -2, 0.75, 1280, 1600]]
+    assert (project / "assets/photos/p0.jpg").exists() and any(x[1] == "sfx/shutter.mp3" for x in film["sounds"])
+    assert film["credits"][:3] == ["내레이션 가짜음성", film["map_credit"], "사진 Wikimedia Commons(퍼블릭 도메인)"]
+    assert film["credits"][3] == "음악 " + \
         longform.sound.tables()[1][LONG.long.music][0]["credit"]
     assert all((project / "assets" / s[1]).exists() for s in film["sounds"])   # 음악·효과음을 프로젝트로 복사
     assert (project / "index.html").exists() and (project / "assets/clips/clip1.mp4").exists()
     shots = job.doc("draft.json")["snapshots"]
-    assert shots == [{"chapter": 0, "title": "1장", "at": 2.9, "file": "draft/at-2.9s.png"}]
+    assert shots == [{"chapter": 0, "title": "1장", "at": 2.9, "file": "draft/at-2.9s.png"},
+                     {"chapter": None, "title": "사진 · 1950 서울", "at": 3.4, "file": "draft/at-3.4s.png"}]
     assert job.data["draft_ok"] is False   # 초안이 바뀌면 다시 승인받는다
     assert film["subtitle"] == "가"   # 끝 화면 부제는 썸네일 첫 줄(장 제목 아님)
+    # 자막은 영상에 굽는다(덩어리는 splitter 한도의 두 배)
+    assert film["captions"] == [[1.4, 3.4, "서울 새벽"], [4.8, 6.8, "끝"]]
+    assert (project / "compositions/captions.html").exists() and job.doc("cues.json")[0]["text"] == "서울 새벽"
+    style = LONG.style.model_copy(update={"subtitle_limit": 2})   # 채널이 정하면 그 길이
+    longform.step_draft(job, services(channel=LONG.model_copy(update={"style": style}), tts=TTS()))
+    assert [c[2] for c in job.doc("film.json")["captions"]] == ["서울", "새벽", "끝"]
 
     job.edit("timing.json", lambda t: [t[0] | {"duration": 5.0}, t[1]])   # 긴 장면은 가운데(지명 글씨가 뜬 뒤)
     job.edit("script.json", lambda s: s | {"thumb": ["A&B <C>"]})   # 제목과 같은 썸네일 줄은 부제로 안 쓴다
     longform.step_draft(job, sv)
-    assert job.doc("draft.json")["snapshots"][0]["at"] == 3.9 and job.doc("film.json")["subtitle"] == ""
+    assert job.doc("draft.json")["snapshots"][1]["at"] == 3.9 and job.doc("film.json")["subtitle"] == ""
 
     report["lint"] = {"errorCount": 1, "findings": [{"severity": "error", "message": "겹침"}]}
     with pytest.raises(RuntimeError, match="초안 검사 오류: 겹침"):

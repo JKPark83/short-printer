@@ -46,7 +46,7 @@
 | `[video]` `season` | 시즌 연출 `seasons/<이름>.md`(예 `halloween`·`christmas`). 마스코트 옷·배경 분위기를 바꾸는 규칙이 장면 규칙 뒤에 붙는다. 비우면 평소대로 |
 | `[style]` `font` | 글꼴. 비우면 언어 기본(ko Apple SD Gothic Neo · ja Hiragino Sans · en Helvetica Neue) |
 | `[style]` `accent` / `background` | 강조색 `#RRGGBB` / 클립 없을 때 배경 그라데이션 두 색 |
-| `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본. 롱폼은 SRT 자막 덩어리 길이(0이면 언어 기본의 2배) |
+| `[style]` `subtitle_limit` | 자막 한 덩어리 길이. 0이면 언어 기본. 롱폼은 영상에 굽는 자막 한 줄 길이(0이면 언어 기본의 2배) |
 | `[style]` `voice_lufs` / `sfx_lufs` | 목소리를 맞출 크기(0이면 원본 그대로) / 장면 클립 효과음을 맞출 크기(그 뒤 70%). LUFS, 기본 0 / -21 |
 | `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(띠 없이 9:16 전체, 제목은 처음 1초만 보이고 사라진다, 썸네일은 band) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
@@ -65,7 +65,7 @@
 | `[research]` `languages` | 검색 언어 코드 목록. 비우면 `language` |
 | `[research]` `queries_per_topic` / `max_pages` | 한 편에 쓸 검색 수(1~10, 기본 5) / 열어 볼 쪽 수(1~20, 기본 8). 비용 상한 |
 | `[long]` `minutes` | 롱폼 목표 길이 [최소, 최대]분(기본 [8, 12]). 장면 수(분×60÷11)·대본 길이를 여기서 센다 |
-| `[long]` `clip_ratio` | Flow 클립 장면 비율 상한 0~1(기본 0.2). 넘치면 코드가 장마다 첫 clip을 남기고 나머지를 지도로 바꾼다 |
+| `[long]` `max_clips` | 한 편의 Flow 클립 장면 수 상한(기본 8, 16:9 360p 장면당 6크레딧). 맨 첫 장면은 늘 clip이고(아니면 검수가 지적한다) 나머지는 고루 흩는다. 넘치면 코드가 맨 첫 장면을 남기고 고루 퍼진 clip만 남겨 나머지를 지도로 바꾼다 |
 | `[long]` `max_facts` | 자료 조사 사실 상한 1~80(기본 40). 숏폼은 12 고정 |
 | `[long]` `music` | 배경 음악 분위기, `assets/music.json` 키(기본 `war`) |
 
@@ -79,7 +79,6 @@
 4. (선택) 스튜디오 대체 업로드를 쓰면 `publish.channel_id`에 `UC…`를 넣는다.
 5. (선택) Instagram에도 올리면(`publish.also`) 페이스북 페이지에 인스타 프로페셔널 계정을 연결하고 `uv run sp instagram-login --channel <id>`. 토큰은 `.secrets/channels/<id>/instagram_token.json`.
 6. (롱폼) Node.js(`npx`)를 깐다. 초안·렌더가 `npx hyperframes`로 돈다. 없으면 작업이 첫 단계에서 멈춘다.
-7. (롱폼) 자막 업로드에 `youtube.force-ssl` 권한이 필요하다. 이 권한이 더해지기 전에 로그인한 채널은 `uv run sp youtube-login --channel <id>`를 한 번 다시 돌린다. 안 하면 영상은 올라가고 자막만 못 붙는다(작업 화면에 메모가 남는다).
 
 ## 하지 않는 것
 

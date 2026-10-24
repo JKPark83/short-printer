@@ -79,7 +79,7 @@ def values(ch: Channel) -> dict:
     return dict(lang=ch.lang_name, minutes_lo=lo, minutes_hi=hi, scenes_lo=n_lo, scenes_hi=n_hi,
                 unit=script.UNITS[ch.script.unit], scene_lo=round(SCENE_SEC[0] * rate),
                 scene_hi=round(SCENE_SEC[1] * rate), total_lo=round((lo * 60 - 8 - 0.8 * n_lo) * rate),
-                total_hi=round((hi * 60 - 8 - 0.8 * n_hi) * rate), clip_pct=round(ch.long.clip_ratio * 100),
+                total_hi=round((hi * 60 - 8 - 0.8 * n_hi) * rate), max_clips=ch.long.max_clips,
                 channel_script=ch.text("script.md"), channel_video=ch.video_rules())
 
 
@@ -93,18 +93,22 @@ def _clean(ch: Channel, sc: dict) -> dict:
 
 
 def cap_clips(ch: Channel, scenes: list[dict], prefer: Sequence[int] = ()) -> list[str]:
-    """clip이 [long] clip_ratio를 넘으면 넘친 만큼 map으로 바꾼다(제자리에서).
-    고친 장면 → 장의 첫 clip → 앞쪽 순으로 남긴다."""
+    """clip이 [long] max_clips를 넘으면 넘친 만큼 map으로 바꾼다(제자리에서).
+    고친 장면 → 맨 첫 장면을 남기고, 나머지는 이미 남긴 클립·영상 앞뒤에서 가장 먼 것부터 골라 고루 퍼뜨린다."""
     clips = [i for i, s in enumerate(scenes) if s["kind"] == "clip"]
-    room = int(ch.long.clip_ratio * len(scenes))
+    room = ch.long.max_clips
     if len(clips) <= room:
         return []
-    firsts = {next(i for i in clips if scenes[i]["chapter"] == c) for c in {scenes[i]["chapter"] for i in clips}}
-    drop = sorted(sorted(clips, key=lambda i: (i not in prefer, i not in firsts, i))[room:])
+    keep = sorted(clips, key=lambda i: (i not in prefer, i != 0))
+    keep = [i for i in keep[:room] if i in prefer or i == 0]
+    while len(keep) < room:
+        ends = [0, len(scenes), *keep]
+        keep.append(max((i for i in clips if i not in keep), key=lambda i: (min(abs(i - k) for k in ends), -i)))
+    drop = [i for i in clips if i not in keep]
     for i in drop:
         scenes[i] |= {"kind": "map", "clip_prompt": "", "clip_prompt_ko": ""}
     nums = ", ".join(str(i + 1) for i in drop)
-    return [f"clip 장면 {len(clips)}개가 상한 {room}개를 넘어 장면 {nums}을 map으로 바꿨다"]
+    return [f"clip 장면 {len(clips)}개가 상한 {room}개를 넘어 map으로 바꾼 장면: {nums}"]
 
 
 def _flat(head: dict, chapters: list[dict], scenes: list[dict], notes: list[str]) -> dict:
@@ -174,12 +178,15 @@ def _listing(ch: Channel, s: dict) -> str:
 
 
 def checks(ch: Channel, s: dict, facts: Sequence[dict]) -> list[Issue]:
-    """모델이 세지 못하는 것: clip 비율, 전체 길이, 근거 없는 숫자·날짜."""
+    """모델이 세지 못하는 것: clip 수, 전체 길이, 근거 없는 숫자·날짜."""
     out = []
-    n, clips = len(s["scenes"]), sum(sc["kind"] == "clip" for sc in s["scenes"])
-    if clips > (room := int(ch.long.clip_ratio * n)):
+    clips = sum(sc["kind"] == "clip" for sc in s["scenes"])
+    if clips > (room := ch.long.max_clips):
         out.append(Issue(scene=0, kind="화면", severity="큼", problem=f"clip 장면이 {clips}개라 상한 {room}개를 넘음",
                          fix=f"clip 장면 {clips - room}개를 map으로 바꾼다"))
+    if room and s["scenes"] and s["scenes"][0]["kind"] != "clip":
+        out.append(Issue(scene=1, kind="화면", severity="큼", problem="영상 맨 첫 장면이 clip이 아님",
+                         fix="1번 장면을 사람·장소의 순간을 보여 주는 clip으로 바꾼다"))
     lo, hi = ch.long.minutes
     if not lo * 60 <= (sec := estimate_seconds(ch, s["sentences"])) <= hi * 60:
         out.append(Issue(scene=0, kind="낭독·자막", severity="큼",

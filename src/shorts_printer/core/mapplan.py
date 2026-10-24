@@ -12,15 +12,21 @@ from pydantic import BaseModel, Field
 
 from ..infra import maptiles
 from ..ports.llm import LLM, add_usage
-from . import prompts, research
+from . import film, prompts, research
 from .channel import Channel
 
 SIZE = (1920, 1080)
 MOVE, FRONT_MOVE = 2.4, 3.0
+# 장면 안 카메라(shots): 옮기는 초 / 앞 움직임이 끝나고 머무는 최소 초 / 낱말보다 늦게 옮겨도 되는 초 /
+# 이보다 오래 머물면 / 컷 하나 길이(초)마다 당겼다 물린다
+SHOT_MOVE, HOLD, LATE, STILL, CUT = 1.2, 1.0, 1.5, 4.0, 3.5
 CLOSE, FAR = 1.4, 0.3   # 카메라 배율 상한(타일이 흐려지기 전) / 가운데가 detail 밖일 때 상한
 EDGE = 0.5   # 화면 가장자리가 detail 밖이어도 되는 상한: wide.jpg(1/4 해상도)가 2배까지 커진다(원본 반도 장면)
 DRAW, ARROWS = 0.9, 4   # 화살표 그리는 초, 장면마다 화살표 수 상한
 CREDIT = "지도 Esri, Maxar, Earthstar Geographics · Natural Earth"
+PHOTOS, PHOTO_BOX = 8, (1170, 170, 620, 0.75)   # 한 편의 기록 사진 상한 / 오른쪽 칸 left·top·너비·높이/너비 상한
+STAT_POS = (112, 470)   # 숫자 카드: 왼쪽 칸 날짜 아래, 자막 위
+STAT_MIN = 10   # 숫자 카드는 이만큼부터: 0→3처럼 짧게 오르면 세는 맛이 없다
 
 
 class Place(BaseModel):
@@ -32,6 +38,7 @@ class Place(BaseModel):
 
 class State(BaseModel):
     name: str = Field(description="상태 이름(L0, L1 …)")
+    when: str = Field("", description="언제 어떤 선인지(1950. 8. 1 낙동강 방어선). 장면 단계가 이걸 보고 고른다")
     points: list[list[float]] = Field(description="[경도, 위도] 8~12개. 모든 상태가 같은 개수·순서, 첫·끝 점은 바다")
 
 
@@ -54,6 +61,10 @@ class Camera(BaseModel):
     scale: float = Field(description="화면 px / 지도 px. 화면 가로 경도 폭 ≈ 2700 / (scale × 2^zoom)")
 
 
+class Shot(Camera):
+    at: str = Field(description="카메라를 옮길 낱말, 그 장면 내레이션 그대로")
+
+
 class Label(BaseModel):
     place: str = Field(description="places id")
     at: str = Field(description="그곳을 말하는 내레이션 낱말 그대로")
@@ -65,6 +76,7 @@ class Arrow(BaseModel):
     points: list[str | list[float]] = Field(description="[시작, 굽이, 끝]: places id 또는 [경도, 위도], 굽이는 온 쪽")
     at: str = Field(description="그리기 시작할 낱말")
     color: str = Field("accent", description="accent · ink · #RRGGBB")
+    unit: Literal["", *film.UNITS] = Field("", description="화살표를 따라 움직일 병력 그림, 군대가 아니면 빈 글")
 
 
 class Date(BaseModel):
@@ -72,6 +84,13 @@ class Date(BaseModel):
     big: str = Field(description="큰 글(6. 25 · 8월)")
     small: str = Field("", description="작은 줄(새벽 4시), 없으면 빈 글")
     at: str = Field(description="그 날짜를 말하는 낱말")
+
+
+class Stat(BaseModel):
+    label: str = Field(description="무엇의 수인지 짧게(국군 전사자)")
+    value: float = Field(description="말한 수 그대로 숫자만(13만 7천 899 → 137899)")
+    unit: str = Field("", description="단위(명 · 일 · km · %)")
+    at: str = Field(description="그 수를 말하는 낱말")
 
 
 class Flash(BaseModel):
@@ -82,15 +101,29 @@ class Flash(BaseModel):
 class SceneMap(BaseModel):
     scene: int = Field(description="받은 장면 번호 그대로")
     camera: Camera | None = Field(None, description="앞 장면 그대로면 null, clip 장면도 null")
+    shots: list[Shot] = Field(default_factory=list,
+                              description="장면 안에서 3~4초마다 옮겨 갈 카메라, clip 장면은 빈 목록")
     front: str = Field("", description="옮겨 갈 전선 상태 이름, 그대로면 빈 글")
     labels: list[Label] = Field(default_factory=list)
     arrows: list[Arrow] = Field(default_factory=list)
     date: Date | None = None
     flashes: list[Flash] = Field(default_factory=list)
+    stats: list[Stat] = Field(default_factory=list, description="내레이션이 말하는 숫자 카드, 장면에 하나까지")
 
 
 class Chapter(BaseModel):
     scenes: list[SceneMap] = Field(description="받은 장면마다 하나")
+
+
+class Photo(BaseModel):
+    scene: int = Field(description="받은 장면 번호 그대로")
+    query: str = Field(description="Wikimedia Commons 검색어, 영어 낱말 3~6개")
+    caption: str = Field(description="사진 아래 한 줄(날짜 + 무엇)")
+    at: str = Field(description="사진이 뜨는 낱말, 그 장면 내레이션 그대로")
+
+
+class Photos(BaseModel):
+    photos: list[Photo]
 
 
 def plan(llm: LLM, ch: Channel, script: dict, timing: list[dict], facts: list[dict], note: str = "",
@@ -117,9 +150,10 @@ def plan(llm: LLM, ch: Channel, script: dict, timing: list[dict], facts: list[di
                        World, refusal=refusal, what="지도 계획")
     world = _world(w)
 
+    states = "\n".join(f"- {k}: {world['when'].get(k) or '설명 없음'}" for k in world["states"])
     head = (f"지도: zoom {world['zoom']}, box {world['box']}, detail {world['detail']}, 점령지 쪽 {world['side']}\n"
             f"places:\n" + "\n".join(f"- {k}: {p['name']} ({p['lng']}, {p['lat']})" for k, p in world["places"].items())
-            + f"\nstates(시간 순): {', '.join(world['states']) or '없음(화살표·라벨로만)'}")
+            + f"\nstates(시간 순):\n{states or '없음(화살표·라벨로만)'}")
     firsts = sorted({0, *(c["first"] for c in script.get("chapters") or [] if 0 <= c["first"] < n)})
     scenes = [SceneMap(scene=i).model_dump() for i in range(n)]
     sys = prompts.render("long_map_scenes", lang=ch.lang_name)
@@ -132,6 +166,20 @@ def plan(llm: LLM, ch: Channel, script: dict, timing: list[dict], facts: list[di
             if a <= s.scene < b:
                 scenes[s.scene] = s.model_dump()
     return {"world": world, "scenes": scenes}, usage
+
+
+def photos(llm: LLM, ch: Channel, script: dict) -> tuple[list[dict], dict]:
+    """(기록 사진을 띄울 장면 목록, 사용량). 장면마다 하나, clip 장면 빼고, PHOTOS개까지. 사진 받기는 초안 단계."""
+    sc = script["scenes"]
+    text = f"제목: {script['title']}\n장면 {len(sc)}개:\n" + "\n".join(
+        f"{i}. [{s['kind']}] {s['narration']}" for i, s in enumerate(sc))
+    out, usage = llm.ask(prompts.render("long_photos", lang=ch.lang_name, most=PHOTOS), text, Photos,
+                         refusal=f"{llm.label}가 이 대본으로는 기록 사진을 고르지 않았어요.", what="기록 사진 고르기")
+    picks = {}
+    for ph in out.photos:
+        if 0 <= ph.scene < len(sc) and sc[ph.scene]["kind"] != "clip" and ph.query.strip():
+            picks.setdefault(ph.scene, ph.model_dump())
+    return list(picks.values())[:PHOTOS], usage
 
 
 def _box(b, inside=None) -> list[float] | None:
@@ -171,7 +219,7 @@ def _world(w: World) -> dict:
         box = [round(v, 4) for v in (cx - hw * fx, cy + hh * fy, cx + hw * fx, cy - hh * fy)]
     return {"box": box, "zoom": zoom, "detail": _box(w.detail, box), "land": w.land, "border": w.border,
             "border_box": _box(w.border_box), "side": w.side,
-            "states": {s.name: s.points for s in w.states},
+            "states": {s.name: s.points for s in w.states}, "when": {s.name: _clean(s.when) for s in w.states},
             "places": {p.id: {"name": p.name, "lng": p.lng, "lat": p.lat} for p in w.places}}
 
 
@@ -203,14 +251,43 @@ def _resample(pts: list, k: int) -> list[list[float]]:
     return out
 
 
-def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, accent: str, ink: str) -> dict:
+def _said_first(scenes: list[dict], script: dict, warn: list[str]) -> list[dict]:
+    """날짜(와 같은 장면의 전선)를 그 날짜를 처음 말하는 장면으로 당긴다. 모델이 clip 장면을 건너뛰고 다음 장면에
+    날짜를 달면 클립이 끝난 뒤 지도에 지난 날짜·전선이 남는다(1·4 후퇴를 말하는데 11. 24가 보이던 일)."""
+    out = [dict(s) for s in scenes]
+    for n in range(len(out)):
+        d = out[n].get("date")
+        m = d and re.fullmatch(r"(\d{1,2})\.\s*(\d{1,2})", d["big"].strip())
+        if not m:
+            continue
+        # ponytail: 한국어 날짜 꼴("1월 4일")만 본다. 다른 언어 롱폼 채널이 생기면 언어마다 꼴을 더한다
+        said, k = f"{int(m[1])}월 {int(m[2])}일", n
+        for j in range(n - 1, -1, -1):
+            if out[j].get("date"):
+                break
+            if said in script["scenes"][j]["narration"]:
+                k = j
+        if k == n:
+            continue
+        out[k] = out[k] | {"date": d | {"at": f"{int(m[1])}월"}}
+        out[n] = out[n] | {"date": None}
+        if out[n].get("front") and not out[k].get("front"):
+            out[k]["front"], out[n]["front"] = out[n]["front"], ""
+        warn.append(f"장면 {n}: 날짜 {_clean(d['big'])}를 그 날짜를 말하는 장면 {k}로 당겼어요")
+    return out
+
+
+def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, accent: str, ink: str,
+               got: dict[int, dict] | None = None) -> dict:
     """plan → film.build 칸: states, side, front, cam, labels, arrows, flashes, dates, date_pos, date_end, night,
-    reflines, ghosts, map_tweens, map_credit. 시각은 절대 초, 글은 정리했다. 버린 것은 "warnings"(한국어 목록)."""
+    reflines, ghosts, map_tweens, map_credit, photos, counters.
+    시각은 절대 초, 글은 정리했다. 버린 것은 "warnings"(한국어 목록).
+    got: 받은 사진 {장면: {file, width, height}}. 못 받은 장면의 사진은 뺀다."""
     w, warn = plan["world"], []
     box, detail = w["box"], w["detail"] or w["box"]
     S, E = [t["start"] for t in timing], [t["end"] for t in timing]
     kinds = [s.get("kind") for s in script["scenes"]]
-    scenes = plan["scenes"]
+    scenes = _said_first(plan["scenes"], script, warn)
 
     def inside(lng, lat, b=box):
         return [round(min(max(lng, b[0]), b[2]), 4), round(min(max(lat, b[3]), b[1]), 4)]
@@ -244,22 +321,48 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
             s = EDGE
         return round(max(s, lo), 3)
 
+    def cam_key(n, c):   # Camera·Shot → [경도, 위도, scale] | None
+        p = c and (pt(n, c["place"]) if c.get("place")
+                   else (c.get("lng") or c.get("lat")) and inside(c["lng"], c["lat"]))
+        return p and [*p, scale(c["scale"], p)]
+
     cam = []
     for n, sm in enumerate(scenes):
-        c = sm.get("camera")
-        if n and (not c or kinds[n] == "clip"):   # 클립 아래 지도는 그대로 둔다
+        if n and kinds[n] == "clip":   # 클립 아래 지도는 그대로 둔다
             continue
-        p = c and (pt(n, c["place"]) if c.get("place") else (c["lng"] or c["lat"]) and inside(c["lng"], c["lat"]))
-        if not p:
-            if n:
-                continue
-            p, c = inside((detail[0] + detail[2]) / 2, (detail[1] + detail[3]) / 2), {"scale": 0.3}
-        key = [*p, scale(c["scale"], p)]
-        if not n:   # 첫 화면 + 다음 장면까지 천천히 다가가기
-            drift = _r(S[1] - 0.3 if len(S) > 1 else E[0])
-            cam = [[0, 0, *key], [0, drift, *p, scale(key[2] * 1.12, p)]]
-        elif key != cam[-1][2:]:
+        key = cam_key(n, sm.get("camera"))
+        shots = sorted(((_r(at(n, sh["at"]) - 0.3), i, sh) for i, sh in enumerate(sm.get("shots") or [])))
+        if not n:   # 첫 화면 + 다음 장면(또는 첫 shot)까지 천천히 다가가기
+            if not key:
+                p = inside((detail[0] + detail[2]) / 2, (detail[1] + detail[3]) / 2)
+                key = [*p, scale(0.3, p)]
+            drift = _r(min([S[1] - 0.3 if len(S) > 1 else E[0], *[t - HOLD for t, _, _ in shots[:1]]]))
+            cam = [[0, 0, *key], [0, max(drift, 0.5), *key[:2], scale(key[2] * 1.12, key[:2])]]
+        elif key and key != cam[-1][2:]:
             cam.append([_r(max(S[n] - 0.3, cam[-1][0] + cam[-1][1])), MOVE, *key])
+        for t, i, sh in shots:   # 한 문장 안에서 낱말마다 다른 곳을 본다
+            key = cam_key(n, sh)
+            if not key or key == cam[-1][2:]:
+                continue
+            free = _r(cam[-1][0] + cam[-1][1] + HOLD)   # 조금 이르면 늦춰서라도 컷을 살린다
+            if free - t > LATE or free > E[n]:
+                warn.append(f"장면 {n}: 카메라를 너무 빨리 또 옮겨 뺐어요(shot {i}번)")
+                continue
+            cam.append([max(t, free), SHOT_MOVE, *key])
+
+    # 오래 머무는 곳은 CUT초마다 같은 자리를 당겼다 물려 컷을 바꾼다(shots가 모자란 장면)
+    still = []
+    for k, t1 in zip(cam, [*(k[0] for k in cam[1:]), end_start], strict=True):
+        still.append(k)
+        t0, gap = k[0] + k[1], t1 - (k[0] + k[1])
+        tight = scale(k[4] * 1.25, k[2:4])
+        if tight == k[4]:   # 상한에 걸리면 물려서 연다
+            tight = scale(k[4] / 1.25, k[2:4])
+        if gap <= STILL or tight == k[4]:
+            continue
+        n = math.ceil(gap / CUT)
+        still += [[_r(t0 + j * gap / n), SHOT_MOVE, *k[2:4], tight if j % 2 else k[4]] for j in range(1, n)]
+    cam = still
 
     def cam_scale(t):
         return next((k[4] for k in reversed(cam) if k[0] <= t), cam[0][4])
@@ -276,13 +379,15 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
     k = max([8, *map(len, raw.values())])
     states = {name: pts if len(pts) == k else _resample(pts, k) for name, pts in raw.items()}
 
-    front, tweens = [], []
+    front, tweens, order = [], [], list(states)
     for n, sm in enumerate(scenes):
         f = _clean(sm.get("front") or "")
         if not f or (front and f == front[-1][2]):
             continue
         if f not in states:
             warn.append(f"장면 {n}: states에 없는 전선 상태라 뺐어요({f})")
+        elif front and order.index(f) < order.index(front[-1][2]):   # 상태는 시간 순: 되돌아가면 날짜와 어긋난다
+            warn.append(f"장면 {n}: 앞 상태로 되돌아가는 전선이라 뺐어요({f})")
         elif not front:   # 첫 상태는 0초부터 깔고, 나중에 나오면 그때까지 숨긴다
             front.append([0, 0, f])
             if n:
@@ -321,13 +426,36 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
             a = _r(at(n, ar["at"]) + 0.15 * i)
             # 끝(사라지기 0.4초 전)이 머리가 뜨기 전이면 머리가 영상 끝까지 남는다
             arrows.append([f"s{n}-{i}", pts, a, DRAW, _r(max(E[n] + 1.0, a + DRAW + 0.5)),
-                           color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else accent, cam_scale(a)])
+                           color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else accent, cam_scale(a),
+                           ar.get("unit") if ar.get("unit") in film.UNITS else ""])
 
     dates = sorted([at(n, d["at"]), _clean(d["year"]), _clean(d["big"]), _clean(d.get("small") or "")]
                    for n, sm in enumerate(scenes) if (d := sm.get("date")))
     flashes = [[at(n, f["at"]), *p] for n, sm in enumerate(scenes) for f in sm.get("flashes") or []
                if (p := pt(n, f["place"]))]
+
+    # 숫자 카드: 장면에 하나, 낱말에 떠서 4.5초쯤(장면 끝 + 0.5까지), 다음 카드 전에 내린다
+    stats = sorted((at(n, st["at"]), n, st) for n, sm in enumerate(scenes) for st in (sm.get("stats") or [])[:1]
+                   if st.get("value", 0) >= STAT_MIN and _clean(st.get("label") or ""))
+    counters = []
+    for k, (a, n, st) in enumerate(stats):
+        b = min(max(a + 4.5, E[n] + 0.5), a + 7, *[x[0] - 0.2 for x in stats[k + 1:k + 2]])
+        v = st["value"]
+        counters.append([f"s{n}", _clean(st["label"]), int(v) if float(v).is_integer() else v,
+                         _clean(st.get("unit") or ""), a, _r(b), *STAT_POS])
+
+    # 사진: 낱말에 떠서 3.5~6초, 다음 사진·다음 clip 장면 전에 내린다(클립보다 위 칸이라 덮는다)
+    shots = sorted((at(n, ph["at"]), n, ph) for ph in plan.get("photos") or [] if (n := ph["scene"]) in (got or {}))
+    photo_rows = []
+    for k, (a, n, ph) in enumerate(shots):
+        b = min(max(a + 3.5, E[n] + 0.3), a + 6, *[x[0] - 0.2 for x in shots[k + 1:k + 2]],
+                *([S[n + 1]] if n + 1 < len(S) and kinds[n + 1] == "clip" else []))
+        g = got[n]
+        x, y, wd, tall = PHOTO_BOX
+        photo_rows.append([f"p{n}", g["file"], _clean(ph["caption"]), a, _r(b), x, y, wd, (-2, 1.5)[k % 2],
+                           round(min(tall, g["height"] / g["width"]), 3), g["width"], g["height"]])
     return {"states": states, "side": w["side"], "front": front, "cam": cam, "labels": labels, "arrows": arrows,
             "flashes": sorted(flashes), "dates": dates, "date_pos": [112, 120], "date_end": end_start,
             "night": None, "reflines": [], "ghosts": None, "map_tweens": tweens,
-            "map_credit": CREDIT + (" · 전선은 대략적 위치" if front else ""), "warnings": warn}
+            "map_credit": CREDIT + (" · 전선은 대략적 위치" if front else ""), "photos": photo_rows,
+            "counters": counters, "warnings": warn}

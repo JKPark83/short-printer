@@ -683,8 +683,16 @@ def test_sig_and_say_follow_long_job_steps():
 LONG_DONE = ("research", "script", "proofread")
 
 
+@pytest.fixture
+def two_clips(monkeypatch):
+    """클립 한도 2개인 채널(기본 8개는 장면 5개로는 한도에 닿지 않는다)."""
+    load = channel.load
+    monkeypatch.setattr(channel, "load", lambda cid: (c := load(cid)).model_copy(
+        update={"long": c.long.model_copy(update={"max_clips": 2})}))
+
+
 def long_job(status="waiting", done=LONG_DONE, kinds=("map", "clip", "map", "map", "map"), **fields):
-    """장 2개·장면 5개 롱폼 작업. 장면 1은 clip, 장면 2는 map이지만 clip_prompt가 있다(클립 한도 5 × 0.2 = 1)."""
+    """장 2개·장면 5개 롱폼 작업. 장면 1은 clip, 장면 2는 map이지만 clip_prompt가 있다(클립 한도 2)."""
     job = Job.create(CH, "6.25 전쟁", "LKOcTG4J4tYTPR9DnLeM", long=True)
     scenes = [{"narration": f"내레이션{i}", "kind": k, "beat": "", "visual": f"보임{i}", "fact_ids": [],
                "clip_prompt": f"prompt{i}" if k == "clip" or i == 2 else "",
@@ -706,12 +714,13 @@ def drain():
         web.q._q.get_nowait()
 
 
-def test_long_script_gate_page_and_approve():
+def test_long_script_gate_page_and_approve(two_clips, monkeypatch):
+    monkeypatch.setattr(registry.VIDEOS["flow-auto"], "ready", lambda: True)   # 쇼츠 채널 CH라 9:16 720p 판
     job = long_job()
     assert not web.in_review(job.data) and not web.in_voice_review(job.data)
     html = client.get(f"/jobs/{job.id}").text
     assert "대본 승인 대기" in html and 'data-retry="approve/script"' in html and "1장. 남침" in html
-    assert "뜻1" in html and "보임3" in html and "검수 90점 · 통과" in html and "클립 1/1" in html
+    assert "뜻1" in html and "보임3" in html and "검수 90점 · 통과" in html and "클립 1/2" in html
     assert "대본 25자 · 클립 1개 × 12크레딧" in html   # 승인 전 비용 어림(내레이션 5자 × 5)
     assert 'data-post="scenes/1/kind"' in html and 'data-post="script/revise"' in html
     assert "대본 승인 대기" in client.get("/").text
@@ -723,18 +732,18 @@ def test_long_script_gate_page_and_approve():
     assert client.post(f"{url}/script").status_code == 409   # 이미 승인
 
 
-def test_long_scene_kind_toggle_keeps_clip_limit():
-    job = long_job()
+def test_long_scene_kind_toggle_keeps_clip_limit(two_clips):
+    job = long_job(kinds=("clip", "clip", "map", "map", "map"))
     url = f"/api/jobs/{job.id}/scenes"
     r = client.post(f"{url}/2/kind", data={"kind": "clip"})
-    assert r.status_code == 400 and "1개까지" in r.json()["detail"]
+    assert r.status_code == 400 and "2개까지" in r.json()["detail"]
     r = client.post(f"{url}/3/kind", data={"kind": "clip"})
     assert r.status_code == 400 and "고쳐 줘" in r.json()["detail"]
     assert client.post(f"{url}/9/kind", data={"kind": "map"}).status_code == 404
     assert client.post(f"{url}/1/kind", data={"kind": "photo"}).status_code == 400
     assert client.post(f"{url}/1/kind", data={"kind": "map"}).status_code == 200
     assert client.post(f"{url}/2/kind", data={"kind": "clip"}).status_code == 200
-    assert [s["kind"] for s in job.doc("script.json")["scenes"]] == ["map", "map", "clip", "map", "map"]
+    assert [s["kind"] for s in job.doc("script.json")["scenes"]] == ["clip", "map", "clip", "map", "map"]
     assert Job.load(job.id).data["status"] == "waiting" and web.q._q.empty()   # 저장만
     job.update(script_ok=True, steps=job.data["steps"] | {"voice": {"status": "done", "engine": "x", "sec": 1.0}})
     assert client.post(f"{url}/1/kind", data={"kind": "clip"}).status_code == 409   # 승인 뒤엔 못 바꾼다
@@ -803,12 +812,12 @@ def test_long_draft_gate_approve_and_revise():
 def test_long_done_page_shows_final_checks():
     job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True, duration=65.0)
     job.put("final.json", {"duration": 65.0, "expected": 65.2, "lufs": -16.2, "true_peak": -1.5, "silences": [],
-                           "srt_end": 60.0, "issues": []})
+                           "cue_end": 60.0, "issues": []})
     job.put("credits.json", ["내레이션 ElevenLabs", "지도 Esri"])
     (job.dir / "captions.srt").write_text("1\n", encoding="utf-8")
     html = client.get(f"/jobs/{job.id}").text
     assert "final.mp4" in html and "captions.srt" in html and "통과" in html and "-16.2 LUFS" in html
-    assert "지도 Esri" in html and "force-ssl" in html and 'id="upload-box"' in html
+    assert "지도 Esri" in html and "force-ssl" not in html and 'id="upload-box"' in html   # 자막은 영상에 구웠다
     assert "설명\n\n내레이션 ElevenLabs" in html   # 설명란에 크레딧
     job.put("final.json", job.doc("final.json") | {"issues": ["음량 -12 LUFS"]})
     assert "음량 -12 LUFS" in client.get(f"/jobs/{job.id}").text
@@ -856,8 +865,8 @@ def test_long_refused_clip_scene_turns_into_map():
     assert client.post(f"/api/jobs/{job.id}/scenes/1/kind", data={"kind": "map"}).status_code == 409   # 초안 뒤
 
 
-def test_long_kind_toggle_only_where_it_can_succeed():
-    job = long_job()   # 클립 1/1: 지도 → 클립은 한도에 걸린다
+def test_long_kind_toggle_only_where_it_can_succeed(two_clips):
+    job = long_job(kinds=("clip", "clip", "map", "map", "map"))   # 클립 2/2: 지도 → 클립은 한도에 걸린다
     html = client.get(f"/jobs/{job.id}").text
     assert 'data-post="scenes/1/kind"' in html and 'data-post="scenes/2/kind"' not in html
     job = long_job(kinds=("map",) * 5)   # 한도가 남으면 프롬프트 있는 장면(2)만
@@ -900,3 +909,16 @@ def test_dashboard_dots_follow_step_order_not_stored_order():
     for j, order in ((job, STEPS), (long, STEPS_LONG)):
         label = ", ".join(f"{web.LABELS[s]} {web.STATE[j.data['steps'][s]['status']]}" for s in order)
         assert f'aria-label="{label}"' in html
+
+
+def test_long_voice_pick_before_voice_only():
+    job = long_job()
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'data-sample="lv-voice"' in html and 'data-post="voice"' in html
+    url = f"/api/jobs/{job.id}/voice"
+    assert client.post(url, data={"voice": "없는목소리"}).status_code == 400
+    key = next(k for k in web._channel(CH).tts.voices if k != job.data["voice"])
+    assert client.post(url, data={"voice": key}).status_code == 200 and Job.load(job.id).data["voice"] == key
+    job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True)
+    assert client.post(f"/api/jobs/{job.id}/voice", data={"voice": key}).status_code == 409
+    assert "voice/s00.mp3" in client.get(f"/jobs/{job.id}").text   # 음성 뒤엔 장면마다 들어 본다

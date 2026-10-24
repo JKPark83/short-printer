@@ -106,7 +106,7 @@ class TrendsCfg(BaseModel):
 class LongCfg(BaseModel):
     """롱폼(16:9 지도 역사 영상) 값. format = "long"일 때만 쓴다."""
     minutes: tuple[int, int] = (8, 12)   # 목표 길이 [최소, 최대]분. 장면 수·대본 길이를 여기서 센다
-    clip_ratio: float = Field(0.2, ge=0, le=1)   # Flow 클립 장면 비율 상한. 넘치면 코드가 지도 장면으로 바꾼다
+    max_clips: int = Field(8, ge=0)   # 한 편 Flow 클립 상한(맨 첫 장면 + 고루, 360p 장면당 6크레딧). 넘치면 지도로
     max_facts: int = Field(40, ge=1, le=80)   # 자료 조사 사실 상한(숏폼은 12)
     music: str = "war"   # 배경 음악 분위기(assets/music.json 키)
 

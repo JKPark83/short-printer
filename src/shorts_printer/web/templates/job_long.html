@@ -106,9 +106,15 @@
           <dd><span>{{ value }}</span><button class="btn-icon" type="button" data-copy="{{ value }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
           {% endfor %}
           {% set nclip = scenes|selectattr('kind', 'eq', 'clip')|list|length %}
-          {# 승인 전에 보는 비용 어림: 음성은 글자 수, Flow는 장면당 12크레딧 #}
+          {# 승인 전에 보는 비용 어림: 음성은 글자 수, 클립은 공급자의 장면당 크레딧(직접 올리는 Flow는 모른다) #}
           <dt>비용</dt>
-          <dd><span class="mono">대본 {{ scenes|map(attribute='narration')|join|length }}자 · 클립 {{ nclip }}개 × 12크레딧</span></dd>
+          <dd><span class="mono">대본 {{ scenes|map(attribute='narration')|join|length }}자 · 클립 {{ nclip }}개{{ ' × %d크레딧'|format(clip_cost) if clip_cost }}</span></dd>
+          {# 목소리는 음성을 만들기 전에만 바꾼다. 바꾸면 다음 음성 단계가 그 목소리로 읽는다 #}
+          <dt>목소리</dt>
+          <dd><form class="voice-pick"><select id="lv-voice" name="voice" aria-label="목소리"{{ ' disabled' if job.steps.voice.status == 'done' or busy }}>
+              {% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == job.voice }}>{{ label }}</option>{% endfor %}</select>
+            <button class="btn btn-secondary" type="button" data-sample="lv-voice" data-channel="{{ ch.id }}">{{ icon('play', 16) }}미리 듣기</button>
+            {% if job.steps.voice.status != 'done' and not busy %}<button class="btn btn-secondary" type="submit" data-post="voice">{{ icon('check', 16) }}이 목소리로</button>{% endif %}</form></dd>
         </dl>
         {% for c in script.chapters %}{% set k = loop.index0 %}
         <p class="phase-title">{{ loop.index }}장. {{ c.title }}</p>
@@ -117,6 +123,7 @@
             <p class="scene-line"><span class="num">{{ s.i + 1 }}</span><span{% if s.i in unverified %} class="unv"{% endif %}>{{ s.narration }}</span>
               <span class="chip{{ ' chip-news' if s.kind == 'clip' }}">{{ '클립' if s.kind == 'clip' else '지도' }}</span>{% if s.beat %} <span class="chip">{{ s.beat }}</span>{% endif %}</p>
             <p class="muted">{{ s.visual }}</p>
+            {% if job.steps.voice.status == 'done' %}<audio controls preload="none" src="/files/{{ job.id }}/voice/s{{ '%02d'|format(s.i) }}.mp3?v={{ job.steps.voice.sec }}" aria-label="장면 {{ s.i + 1 }} 음성"></audio>{% endif %}
             {% if s.kind == 'clip' and s.clip_prompt_ko %}<p class="prompt-ko" lang="ko">{{ s.clip_prompt_ko }}</p>{% endif %}
             {% if s.fact_ids %}<span class="refs">{% for f in s.fact_ids %}<a class="chip" href="#fact-{{ f }}">{{ f }}</a>{% endfor %}</span>{% endif %}
             {# 클립으로는 프롬프트가 있고 한도가 남을 때만(scene_kind가 400으로 막는다) #}
@@ -195,11 +202,11 @@
           {% if draft %}<span class="mono muted">{{ total|mmss }}{% for k, v in draft.check.items() %} · {{ k }} 오류 {{ v.errors }} · 경고 {{ v.warnings }}{% endfor %}</span>{% endif %}
         </div>
         {% if draft and job.steps.draft.status == 'done' %}
-        <div class="clips snaps">{% for p in draft.snapshots %}
+        <div class="clips snaps">{% for p in draft.snapshots %}{% set name = (p.chapter + 1)|string ~ '장. ' if p.chapter is not none else '' %}
           <figure>
-            <a href="{{ files }}{{ p.file }}?v={{ p.v }}" target="_blank" rel="noopener" aria-label="{{ loop.index }}장 장면 크게 보기 (새 창)">
-              <img src="{{ files }}{{ p.file }}?v={{ p.v }}" alt="{{ loop.index }}장 {{ p.title }} 장면 ({{ p.at|mmss }})" loading="lazy" width="320" height="180"></a>
-            <figcaption>{{ loop.index }}장. {{ p.title }} · {{ p.at|mmss }}</figcaption>
+            <a href="{{ files }}{{ p.file }}?v={{ p.v }}" target="_blank" rel="noopener" aria-label="{{ name }}{{ p.title }} 크게 보기 (새 창)">
+              <img src="{{ files }}{{ p.file }}?v={{ p.v }}" alt="{{ name }}{{ p.title }} ({{ p.at|mmss }})" loading="lazy" width="320" height="180"></a>
+            <figcaption>{{ name }}{{ p.title }} · {{ p.at|mmss }}</figcaption>
           </figure>{% endfor %}
         </div>
         {% if gate == 'draft' %}
@@ -252,7 +259,6 @@
         {% endif %}
         {% if job.status == 'done' %}{% include "_upload.html" %}
         {% else %}<p class="muted">최종 검수가 끝나면 올릴 수 있어요</p>{% endif %}
-        <p class="muted small">자막(captions.srt)도 같이 올라가요. YouTube 자막 올리기는 force-ssl 권한이 필요해서 채널마다 한 번 다시 로그인해야 해요(uv run sp youtube-login --channel {{ ch.id }}).</p>
         {% else %}
         <div class="video video-wide video-empty">{{ icon('play', 28) }}<p>{{ '초안을 승인하면 렌더해요' if gate == 'draft' else '렌더가 끝나면 여기에 나와요' }}</p></div>
         {% endif %}

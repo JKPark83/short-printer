@@ -38,7 +38,7 @@ LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode()}
 RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast(), "fish": FishAudio()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto(),
-                                    "flow-16x9": Flow("16:9"), "flow-auto-16x9": FlowAuto("16:9")}
+                                    "flow-16x9": Flow("16:9", "360p"), "flow-auto-16x9": FlowAuto("16:9", "360p")}
 FALLBACK_VIDEO = "flow"   # 고른 공급자를 쓸 수 없을 때(사람이 올린다)
 FALLBACK_VIDEO_LONG = "flow-16x9"   # 롱폼 채널은 16:9
 SPLITTERS: dict[str, Splitter] = {"ko": Korean(), "ja": Japanese(), "en": Whitespace()}

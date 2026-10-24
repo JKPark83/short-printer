@@ -22,8 +22,8 @@ INK, BG = "#F3EFE7", "#2b2a27"
 LOCALES = {"ko": "ko-KR", "ja": "ja-JP", "en": "en-US"}
 FONT = "assets/fonts/Pretendard-ExtraBold.woff2"   # hyperframes.init이 프로젝트에 넣는다
 LUFS, LUFS_TOL, PEAK, LEN_TOL, QUIET = -16, 1, -1, 1.5, 3
-# ponytail: 롱폼 자막(YouTube CC)은 쇼츠 자막 덩어리의 두 배. 언어마다 맞는 값은 쓰다가 정한다
-SRT_SCALE = 2
+# ponytail: 롱폼 자막(16:9 화면 아래 한 줄)은 쇼츠 자막 덩어리의 두 배. 언어마다 맞는 값은 쓰다가 정한다
+CAP_SCALE = 2
 
 
 def gate(data: dict) -> str | None:
@@ -151,8 +151,11 @@ def step_voice(job: Job, sv: Services) -> str:
 
 def step_plan(job: Job, sv: Services) -> str:
     facts = (job.doc("facts.json") or {}).get("facts", [])
-    plan, usage = mapplan.plan(sv.llm, sv.channel, job.doc("script.json"), job.doc("timing.json"), facts,
+    s = job.doc("script.json")
+    plan, usage = mapplan.plan(sv.llm, sv.channel, s, job.doc("timing.json"), facts,
                                note=job.data.get("draft_note") or "", old=job.doc("plan.json"))
+    plan["photos"], u = mapplan.photos(sv.llm, sv.channel, s)
+    usage = add_usage(usage, u)
     job.put("plan.json", plan)
     job.update(usage=add_usage(job.data.get("usage"), usage), draft_note=None)
     return usage["model"] if usage else sv.llm.label
@@ -218,7 +221,21 @@ def step_draft(job: Job, sv: Services) -> str:
             clips.append({"id": f"c{i:02d}", "src": f"assets/clips/clip{i}.mp4", "start": S[i],   # 짧게 올린 클립
                           "duration": round(min(CLIP_MAX, timing[i]["duration"],
                                                 ffmpeg.duration(job.dir / "clips" / f"clip{i}.mp4")), 3)})
-    parts = mapplan.film_parts(plan, s, timing, end_start, ch.style.accent, INK)
+    got = {}   # 기록 사진: 하나 못 받아도 영상은 만든다
+    for ph in plan.get("photos") or []:
+        dst = job.dir / "photos" / f"p{ph['scene']}.jpg"
+        try:
+            info = media.fetch_photo(ph["query"], dst)
+        except RuntimeError as e:
+            job.log(f"사진을 건너뛰었어요: {e}")
+            continue
+        if not info:
+            job.log(f"퍼블릭 도메인 사진을 못 찾아 건너뛰었어요({ph['query']})")
+            continue
+        _copy(dst, project / "assets" / "photos" / dst.name)
+        got[ph["scene"]] = info | {"file": dst.name}
+        job.log(f"사진 장면 {ph['scene'] + 1}: {info['title']} ({info['license']}) {info['url']}")
+    parts = mapplan.film_parts(plan, s, timing, end_start, ch.style.accent, INK, got)
     for w in parts.pop("warnings"):
         job.log(f"지도 계획 고침: {w}")
     lib, table = sound.tables()
@@ -232,10 +249,14 @@ def step_draft(job: Job, sv: Services) -> str:
                          turns=[S[i] for i, b in enumerate(beats) if b == "turn"],
                          hits=[x[0] for x in parts["flashes"]],
                          final=next((S[i] for i, b in enumerate(beats) if b == "final"), None),
-                         photos=[], music=music, lib=lib)
+                         photos=[p[3] for p in parts["photos"]], music=music, lib=lib)
     for name in {x[1] for x in sounds} - {music["file"]}:
         _copy(sound.ASSETS / name, project / "assets" / name)
+    # 자막은 영상에 굽는다: YouTube CC는 기본으로 꺼져 있어 대부분 못 본다
+    cues = subtitles.cues(timing, sv.splitter, ch.style.subtitle_limit or CAP_SCALE * sv.splitter.limit)
+    job.put("cues.json", cues)
     credits = [f"내레이션 {sv.tts.label}", parts["map_credit"],
+               *(["사진 Wikimedia Commons(퍼블릭 도메인)"] if parts["photos"] else []),
                *sound.credits(lib, {Path(f).stem for _, f, *_ in sounds}, music)]
     sub = (s.get("thumb") or [""])[0]   # 끝 화면 부제: 썸네일 첫 줄. 장 제목("6월 25일 새벽")은 어색하다
     # film.build는 글을 이스케이프하지 않는다(mapplan 글은 film_parts가 이미 걸렀다)
@@ -244,7 +265,8 @@ def step_draft(job: Job, sv: Services) -> str:
                     "lang": ch.language, "locale": LOCALES.get(ch.language, ch.language), "size": list(mapplan.SIZE),
                     "ink": INK, "accent": ch.style.accent, "bg": BG, "total": total, "end_start": end_start,
                     "tiles": job.doc("tiles.json"), "geo": job.doc("geo.json"), "voices": voices, "clips": clips,
-                    "sounds": sounds, "credits": credits, "photos": [], "panels": [], "notes": [], "counters": []}
+                    "captions": [[c["start"], c["end"], html.escape(c["text"])] for c in cues],
+                    "sounds": sounds, "credits": credits, "panels": [], "notes": []}
     job.put("film.json", data)
     film.build(data, project)
     report = hyperframes.check(project)
@@ -256,27 +278,32 @@ def step_draft(job: Job, sv: Services) -> str:
         raise RuntimeError("초안 검사 오류: " + " / ".join(
             msgs[:3] or [f"{k} {v['errors']}개" for k, v in summary.items() if v["errors"]]))
     # 장 첫 장면 가운데: 지명 글씨가 다 뜬 뒤라 사람이 글씨를 볼 수 있다
-    at = [round(S[c["first"]] + max(1.5, timing[c["first"]]["duration"] / 2), 2) for c in s["chapters"]]
-    shots = hyperframes.snapshot(project, at, job.dir / "draft")
+    # 사진은 다 뜬 뒤 한 장씩: 사진이 그 장면과 맞는지 사람이 본다
+    want = [{"chapter": k, "title": c["title"],
+             "at": round(S[c["first"]] + max(1.5, timing[c["first"]]["duration"] / 2), 2)}
+            for k, c in enumerate(s["chapters"])]
+    want += [{"chapter": None, "title": f"사진 · {p[2]}", "at": round(p[3] + 1.0, 2)} for p in parts["photos"]]
+    want.sort(key=lambda x: x["at"])
+    shots = hyperframes.snapshot(project, [x["at"] for x in want], job.dir / "draft")
     job.put("draft.json", {"check": summary, "snapshots": [
-        {"chapter": k, "title": c["title"], "at": a, "file": f"draft/{p.name}"}
-        for k, (c, a, p) in enumerate(zip(s["chapters"], at, shots, strict=True))]})
+        x | {"file": f"draft/{p.name}"} for x, p in zip(want, shots, strict=True)]})
     job.update(draft_ok=False)   # 초안이 바뀌면 다시 본다
     return f"HyperFrames {total:.0f}초"
 
 
 def step_render(job: Job, sv: Services) -> str:
-    """final.mp4 · captions.srt · thumbnail.jpg(1280x720) · credits.json."""
+    """final.mp4 · thumbnail.jpg(1280x720) · credits.json. 자막은 초안에서 영상에 구웠다."""
     if not job.data.get("draft_ok"):
         raise Wait("초안을 확인하고 승인해 주세요")
-    ch, f, timing = sv.channel, job.doc("film.json"), job.doc("timing.json")
+    f, timing = job.doc("film.json"), job.doc("timing.json")
     project, video = job.dir / "film", job.dir / "final.mp4"
     hyperframes.render(project, video, job.log)
-    cues = subtitles.cues(timing, sv.splitter, ch.style.subtitle_limit or SRT_SCALE * sv.splitter.limit)
-    job.put("cues.json", cues)
-    subtitles.write_srt(job.dir / "captions.srt", cues)
+    # 예전 작업의 SRT: 남아 있으면 업로드가 CC로 또 붙여 자막이 겹친다
+    (job.dir / "captions.srt").unlink(missing_ok=True)
     s = job.doc("script.json")
-    at = next((t["start"] + 2 for t, b in zip(timing, _beats(s), strict=True) if b == "turn"), f["total"] / 3)
+    # 썸네일은 turn 장면 앞 쉼에서 찍는다: 그 사이엔 구운 자막이 없다
+    at = next((t["start"] - TURN_GAP / 2 for t, b in zip(timing, _beats(s), strict=True) if b == "turn"),
+              f["total"] / 3)
     shot = hyperframes.snapshot(project, [round(at, 2)], job.dir / "draft")[0]
     ffmpeg.text_card(shot, s.get("thumb") or [s["title"]], project / FONT, job.dir / "thumbnail.jpg")
     job.put("credits.json", f["credits"])
@@ -291,7 +318,7 @@ def step_final(job: Job, sv: Services) -> str:
     # 끝 화면은 음악만 작게 깔려 늘 무음으로 잡히므로 끝 화면 앞까지만 잘라 잰다
     cut = [(a, min(b, f["end_start"])) for a, b in ffmpeg.silences(video, min_s=QUIET)]
     quiet = [(round(a, 2), round(b, 2)) for a, b in cut if b - a >= QUIET]
-    srt_end = max((c["end"] for c in job.doc("cues.json") or []), default=0)
+    cue_end = max((c["end"] for c in job.doc("cues.json") or []), default=0)
     issues = []
     if abs(dur - f["total"]) > LEN_TOL:
         issues.append(f"길이 {dur:.1f}초, 예상 {f['total']:.1f}초")
@@ -300,10 +327,10 @@ def step_final(job: Job, sv: Services) -> str:
     if loud["true_peak"] > PEAK:
         issues.append(f"true peak {loud['true_peak']} dBTP(목표 {PEAK} 이하)")
     issues += [f"{a}~{b}초 무음" for a, b in quiet]
-    if srt_end > dur:
-        issues.append(f"자막이 영상 끝({dur:.1f}초) 뒤 {srt_end:.1f}초까지 가요")
+    if cue_end > dur:
+        issues.append(f"자막이 영상 끝({dur:.1f}초) 뒤 {cue_end:.1f}초까지 가요")
     job.put("final.json", {"duration": dur, "expected": f["total"], "lufs": loud["lufs"],
-                           "true_peak": loud["true_peak"], "silences": quiet, "srt_end": srt_end, "issues": issues})
+                           "true_peak": loud["true_peak"], "silences": quiet, "cue_end": cue_end, "issues": issues})
     for x in issues:
         job.log(f"최종 검수: {x}")
     return "통과" if not issues else f"지적 {len(issues)}개"

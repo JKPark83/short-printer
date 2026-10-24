@@ -65,7 +65,7 @@ def test_trends_cfg_takes_five_weights_summing_100():
             channel.TrendsCfg(production="p", weights=bad)
     cfg = channel.TrendsCfg(production="p", region="KR", keywords=["x"])   # 예전 키는 무시한다
     assert not {"region", "language"} & set(type(cfg).model_fields) and cfg.keywords == ["x"]
-    for cid in ("ko-40sec-facts", "ja-korea-trip"):
+    for cid in channel.ids():
         assert sum(channel.load(cid).trends.weights.values()) == 100
 
 
@@ -201,7 +201,7 @@ def test_again_avoids_shown_topics():
 def test_fresh_run_avoids_topics_shown_in_earlier_runs():
     old = new()
     old.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "단풍 색"}, {"topic": "고구마 냉장고"}]})
-    other = trends.Trend.create("ja-korea-trip")
+    other = trends.Trend.create("ko-map-history")
     other.put("picks.json", {"summary": "", "excluded": [], "picks": [{"topic": "다른 채널 주제"}]})
     t = new()   # 다시 추천이 아니라 새로 시작한 주제 찾기
     llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=[idea("새 주제")]), USAGE))

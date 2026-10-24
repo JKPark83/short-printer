@@ -556,7 +556,8 @@ def _job_long(request: Request, job: Job, ch: Channel, s: dict | None, facts: li
     return _page(request, "job_long.html", {
         "job": job.data, "ch": ch, "gate": longform.gate(job.data), "script": s, "facts": facts,
         "unverified": script.unverified(s, facts) if s and facts else [], "proofread": job.doc("proofread.json"),
-        "scenes": _long_scenes(job, s), "room": max(0, int(ch.long.clip_ratio * len(s["scenes"]))) if s else 0,
+        "scenes": _long_scenes(job, s), "room": ch.long.max_clips,
+        "clip_cost": v.cost(1) if hasattr(v := registry.video(ch)[1], "cost") else None,
         "draft": draft, "total": f["total"] if f else None, "final": job.doc("final.json"),
         "credits": job.doc("credits.json") or [], "has_thumb": (job.dir / "thumbnail.jpg").exists(),
         "has_srt": (job.dir / "captions.srt").exists(), "desc": pipeline.description(job, ch) if s else "",
@@ -787,9 +788,22 @@ def _clip_to_map_open(data: dict) -> bool:
             and st["voice"]["status"] == "done" and st["draft"]["status"] != "done")
 
 
+@app.post("/api/jobs/{job_id}/voice")
+def long_voice(job_id: str, voice: str = Form(...)):
+    """롱폼: 음성을 만들기 전에 목소리를 바꾼다. 만든 뒤 바꾸면 지도·초안 타이밍까지 다시 해야 해서 막는다."""
+    job = _load(Job, job_id)
+    if job.data.get("format") != "long" or job.data["steps"]["voice"]["status"] == "done":
+        raise HTTPException(409, "음성을 만들기 전에만 목소리를 바꿀 수 있어요")
+    if voice not in _channel(job.data.get("channel")).tts.voices:
+        raise HTTPException(400, "모르는 목소리예요")
+    if not q.redo(job_id, (), voice=voice):
+        raise HTTPException(409, "제작 중에는 목소리를 바꿀 수 없어요")
+    return {"ok": True, "msg": "목소리를 바꿨어요"}
+
+
 @app.post("/api/jobs/{job_id}/scenes/{i}/kind")
 def scene_kind(job_id: str, i: int, kind: str = Form(...)):
-    """롱폼 대본 승인 전: 장면을 지도(map)·클립(clip)으로 바꾼다. 클립은 [long] clip_ratio까지.
+    """롱폼 대본 승인 전: 장면을 지도(map)·클립(clip)으로 바꾼다. 클립은 [long] max_clips개까지.
     음성 뒤 초안 전(거절·클립 대기)엔 클립 → 지도만: 음성 타이밍은 그대로라 지도 계획부터 다시 한다."""
     if kind not in ("map", "clip"):
         raise HTTPException(400, "장면 종류는 지도나 클립이에요")
@@ -816,7 +830,7 @@ def scene_kind(job_id: str, i: int, kind: str = Form(...)):
             if not sc[i].get("clip_prompt"):
                 raise HTTPException(400, "이 장면은 클립 프롬프트가 없어요. "
                                          "[고쳐 줘]로 클립 장면으로 바꿔 달라고 적어 주세요")
-            room = max(0, int(_channel(job.data.get("channel")).long.clip_ratio * len(sc)))
+            room = _channel(job.data.get("channel")).long.max_clips
             if sum(x["kind"] == "clip" for j, x in enumerate(sc) if j != i) >= room:
                 raise HTTPException(400, f"클립 장면은 {room}개까지예요. 다른 장면을 지도로 바꾼 뒤 바꿔 주세요")
         sc[i]["kind"] = kind

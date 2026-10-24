@@ -35,7 +35,7 @@ shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬
 롱폼은 위성 지도 위에서 전선·화살표·지명이 움직이는 역사 해설 영상이다(`docs/plan/longform.md`). 2·3라운드에서 쇼츠 질문(문장 길이·장면 수·40초 대본·9:16 화면 배치·썸네일 줄 수)은 묻지 않고 대신 묻는다.
 
 - 길이: 기본 8~12분(`[long] minutes`)
-- 클립 비율: 지도 대신 Flow 클립으로 보여 줄 장면 상한(기본 20%, `clip_ratio`). 높을수록 크레딧이 든다(장면당 12크레딧)
+- 클립 수: 지도 대신 Flow 클립으로 보여 줄 장면 수 상한(기본 8: 맨 첫 장면 + 영상 전체에 고루, `max_clips`). 화면은 HyperFrames 지도가 주이고, 클립은 16:9 360p 장면당 6크레딧
 - 사실 수: 한 편에 쓸 조사 사실 상한(기본 40, `max_facts`)
 - 음악 분위기: `assets/music.json`의 키에서 고른다(지금 `war`·`loss`·`march`·`reflective`. 파일을 읽어 확인한다)
 - 자료 조사 사이트: 역사 자료·백과·언론(`[research]` `domains`·`news`). 둘 다 비면 자료 조사에서 멈춘다
@@ -73,12 +73,12 @@ shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬
 - 맨 위 값에 `format = "long"`. `sensitive_gate`는 적지 않는다(롱폼은 쓰지 않고 대본 승인을 늘 받는다)
 - `[script]`는 `unit`만(필요하면 `llm`). 장면 수·길이는 `[long] minutes`에서 센다
 - `[video]` provider `flow-auto`(16:9 판 `flow-auto-16x9`가 저절로 쓰인다), `style`은 16:9 역사 다큐 클립에 맞는 영어 한 문장(예: 시대 재현 실사풍, 지도·글자·깃발 없이)
-- `[style]`은 `accent`만(지도 위 강조색). 필요하면 `subtitle_limit`(SRT 자막 덩어리, 0이면 언어 기본의 2배)
+- `[style]`은 `accent`만(지도 위 강조색). 필요하면 `subtitle_limit`(영상에 굽는 자막 한 줄, 0이면 언어 기본의 2배)
 - `[thumbnail]`은 넣지 않는다(썸네일 글자는 대본이 정한다)
 - `[publish]` category `27`(교육)
 - `[research]` `domains`·`news`(역사 자료·언론), 사실이 많으니 `queries_per_topic`·`max_pages`를 넉넉히(예 7·10)
-- `[trends]` production에 롱폼 제작 방식: 8~12분 16:9, 위성 지도 위 전선·화살표·지명 애니메이션 + 장면 일부 AI 클립, TTS 내레이션, 자막은 SRT. 실존 인물 사진·기록 영상은 못 쓴다
-- `[long]` `minutes`·`clip_ratio`·`max_facts`·`music`
+- `[trends]` production에 롱폼 제작 방식: 8~12분 16:9, 위성 지도 위 전선·화살표·지명 애니메이션 + AI 클립 8장면 안팎(맨 첫 장면 + 고루), 장마다 한 장 안팎의 Wikimedia Commons 퍼블릭 도메인 기록 사진, TTS 내레이션, 자막은 화면 아래에 굽는다. 기록 영상과 AI로 그린 실존 인물 얼굴은 못 쓴다
+- `[long]` `minutes`·`max_clips`·`max_facts`·`music`
 - `script.md`: 장 흐름(첫 장의 물음 → 마지막 답), 날짜·숫자는 사실 시트에서만, 말투. `video_style.md`: clip 장면의 화풍·사람 표현. `trends.md`: 먼저 볼 시기·사건. `thumbnail.md`는 채널을 읽는 데 필요해서 한두 줄로 둔다
 
 확인:
@@ -97,7 +97,7 @@ uv run python -c "from shorts_printer.core import channel; print(channel.load('<
 2. ElevenLabs에서 그 언어 목소리를 골라 ID를 `[tts.voices]`에 `ID = "화면 이름"`으로 넣는다(기본은 `default`).
 3. `uv run sp youtube-login --channel <id>`를 돌리고, Google 동의 화면에서 **그 브랜드 채널**을 고른다.
 4. (선택) 스튜디오 대체 업로드를 쓰면 채널 `UC…` id를 `publish.channel_id`에 넣는다.
-5. (롱폼) Node.js(`npx`)가 있어야 초안·렌더가 돈다(`brew install node`). 롱폼 자막은 `youtube.force-ssl` 권한으로 올리므로, 이 권한 전에 로그인한 채널이면 `uv run sp youtube-login --channel <id>`를 한 번 다시 돌린다.
+5. (롱폼) Node.js(`npx`)가 있어야 초안·렌더가 돈다(`brew install node`).
 6. 웹 화면 상단바에서 새 채널을 고르면 대시보드·추천·새 작업이 그 채널을 따른다(서버가 켜져 있으면 채널 목록을 다시 읽도록 재시작이 필요할 수 있다).
 
 이 스킬은 채널 폴더만 만든다. 코드·`.env`·`.secrets/`는 건드리지 않는다.

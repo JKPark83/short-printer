@@ -1,8 +1,8 @@
 ---
 롱폼(16:9 지도 역사 해설) 대본 검수 지시문(모든 롱폼 채널 공통). 대본을 쓴 직후 부른다(core/longscript.py proofread). 검수만 하고 고치지 않는다.
 통과는 모델이 아니라 앱이 정한다: 지적의 kind·severity로 100점에서 깎는다(core/script.py Verdict). 사실·화면 지적은 점수와 상관없이 떨어진다.
-clip 비율, 전체 길이, 근거 없는 숫자·날짜는 앱이 따로 세어 지적에 더한다(core/longscript.py checks).
-${이름} 자리는 앱이 채운다: lang 대본 언어, minutes_lo·minutes_hi 목표 길이(분), clip_pct 클립 장면 상한(%),
+clip 수, 전체 길이, 근거 없는 숫자·날짜는 앱이 따로 세어 지적에 더한다(core/longscript.py checks).
+${이름} 자리는 앱이 채운다: lang 대본 언어, minutes_lo·minutes_hi 목표 길이(분), max_clips 클립 장면 수 상한,
 channel_script·channel_video 채널 글 파일 본문. 나머지 값(scenes_lo 등)은 쓰지 않는다.
 주제·대본·사실 시트는 user 메시지로 온다. 장면마다 [종류/박자], 화면(visual, 클립이면 클립 프롬프트), 근거 번호가 붙어 온다.
 ---
