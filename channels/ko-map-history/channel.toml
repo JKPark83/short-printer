@@ -11,12 +11,13 @@ llm = "claude"
 unit = "chars"
 
 [tts]
-provider = "typecast"
-default = "tc_68257f68bc6e3c161ab5078d"
+provider = "elevenlabs"
+default = "ZJCNdZEjYwkOElxugmW2"
 sample = "1950년 6월 25일 새벽, 38선 전역에서 포성이 울렸습니다. 그날 그어진 선은 3년 동안 오르내렸죠."
 
-[tts.voices]   # {Typecast 목소리 ID: 화면 이름}
-tc_68257f68bc6e3c161ab5078d = "다큐 내레이터"
+[tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}
+3MTvEr8xCMCC2mL9ujrI = "준"
+ZJCNdZEjYwkOElxugmW2 = "혁"
 
 [video]
 provider = "flow-auto"   # 롱폼은 16:9 판(flow-auto-16x9)이 저절로 쓰인다
