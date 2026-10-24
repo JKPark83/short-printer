@@ -67,6 +67,8 @@ class LocalQueue:
             up = data.get("upload") or {}
             if data["status"] not in ("done", "failed", "interrupted", "waiting") or pipeline.uploading(data):
                 return False
+            if any(s not in data["steps"] for s in steps):   # 쇼츠·롱폼 단계가 다르다: 없는 단계를 만들지 않게
+                return False
             for name, value in (files or {}).items():   # 락 안에서: 검사와 쓰기 사이에 작업이 시작되지 않게
                 job.put(name, value)
             if not steps:
@@ -137,6 +139,8 @@ class LocalQueue:
     def _loop(self, q: queue.Queue) -> None:
         while True:
             kind, job_id = q.get()
+            # ponytail: 롱폼 렌더(수십 분)가 이 하나뿐인 큐를 막아 그동안 쇼츠가 밀린다.
+            # 쇼츠가 늦어지면 렌더만 따로 스레드로 돌린다
             self.run_one(job_id, kind)
 
     def _ticks(self) -> None:

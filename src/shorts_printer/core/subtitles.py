@@ -122,3 +122,12 @@ def escape(text: str) -> str:
 def write_ass(path: Path, cues: list[dict], font: str, margin: int = 1465) -> None:
     lines = [f"Dialogue: 0,{ts(c['start'])},{ts(c['end'])},Cap,,0,0,0,,{escape(c['text'])}" for c in cues]
     atomic_write_text(path, header(font, margin) + "\n".join(lines) + "\n")
+
+
+def write_srt(path: Path, cues: list[dict]) -> None:
+    """롱폼 YouTube 자막 파일. 시각은 HH:MM:SS,mmm."""
+    def t(sec: float) -> str:
+        ms = round(sec * 1000)
+        return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d},{ms % 1000:03d}"
+    atomic_write_text(path, "\n".join(f"{k}\n{t(c['start'])} --> {t(c['end'])}\n{c['text']}\n"
+                                      for k, c in enumerate(cues, 1)))

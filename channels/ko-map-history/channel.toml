@@ -1,0 +1,54 @@
+# 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
+name = "선을 긋다"
+description = "선을 긋다: 지도 위에서 보는 역사. 전쟁의 전선, 나라의 국경, 협정의 분계선. 역사는 누가 어디에 선을 그었느냐의 이야기입니다. 위성 지도 위에서 선이 날짜대로 움직이는 모습을 따라가며 한국전쟁·임진왜란부터 세계사의 큰 전환점까지 10분 안팎으로 풀어 드립니다. 날짜와 숫자는 사료·연구서·공공 기록으로 확인하고, 쓴 자료는 설명란에 적어 둡니다. 지도 위 전선과 경계는 대략적 위치이며, 일부 장면은 AI로 만든 영상입니다. 매주 새 영상이 올라옵니다."
+concept = "전선·국경·분계선이 어떻게 그어지고 움직였는지 위성 지도 위에서 보여 주는 역사 해설"
+language = "ko"
+format = "long"
+daily_goal = 1
+llm = "claude"
+
+[script]
+unit = "chars"
+
+[tts]
+provider = "typecast"
+default = "tc_68257f68bc6e3c161ab5078d"
+sample = "1950년 6월 25일 새벽, 38선 전역에서 포성이 울렸습니다. 그날 그어진 선은 3년 동안 오르내렸죠."
+
+[tts.voices]   # {Typecast 목소리 ID: 화면 이름}
+tc_68257f68bc6e3c161ab5078d = "다큐 내레이터"
+
+[video]
+provider = "flow-auto"   # 롱폼은 16:9 판(flow-auto-16x9)이 저절로 쓰인다
+style = "Cinematic period-accurate historical reenactment, muted desaturated documentary color grade with soft film grain, natural overcast light, wide and medium shots of landscapes, crowds and objects, no readable text, no maps, no flags or national emblems, same art style in every shot."
+
+[style]
+accent = "#C9302C"   # 지도 위 전선·점령 지역·끝 화면 부제
+
+[publish]
+provider = "youtube"
+category = "27"
+footer = "※ 지도 위 전선과 경계는 대략적 위치입니다. 일부 장면은 AI로 만든 영상입니다."
+sources_heading = "출처"
+
+[research]
+domains = ["encykorea.aks.ac.kr", "db.history.go.kr", "contents.history.go.kr", "theme.archives.go.kr",
+           "imhc.mil.kr", "warmemo.or.kr", "nfm.go.kr", "museum.go.kr", "kostat.go.kr", "korean.go.kr",
+           "britannica.com", "history.army.mil", "history.navy.mil", "archives.gov", "loc.gov",
+           "iwm.org.uk", "nationalarchives.gov.uk", "un.org", "wilsoncenter.org", "cia.gov"]
+news = ["news.kbs.co.kr", "ytn.co.kr", "yna.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
+        "khan.co.kr", "hani.co.kr", "korea.kr", "bbc.com", "nationalgeographic.com", "smithsonianmag.com"]
+languages = ["ko", "en"]
+queries_per_topic = 8
+max_pages = 12
+
+[trends]
+production = "Claude가 사료·연구서·공공 기록으로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 차분한 다큐 내레이션으로 읽는다. 8~12분 16:9. 화면은 위성 지도 위에서 카메라가 지역 사이를 날고, 전선·점령 지역이 날짜대로 움직이며, 화살표·지명·날짜가 뜬다. 장면의 20% 이하만 AI로 만든 시대 재현 실사풍 클립(군중·풍경·사물)이다. 자막은 YouTube 자막 파일(SRT)로 올린다. 실존 인물 사진·기록 영상·실존 인물 얼굴은 못 쓴다. 지도에서 선이나 이동으로 보여 줄 수 없는 이야기(회의·인물 전기·사상사)와 날짜·장소를 사료로 확인할 수 없는 주제는 못 만든다."
+weights = { trend = 15, curious = 25, fit = 35, fresh = 10, safe = 15 }
+keywords = ["한국사", "전쟁사", "세계사", "역사지도", "한국전쟁", "임진왜란"]
+
+[long]
+minutes = [8, 12]
+clip_ratio = 0.2
+max_facts = 40
+music = "war"

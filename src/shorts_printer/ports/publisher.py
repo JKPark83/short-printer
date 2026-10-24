@@ -17,5 +17,8 @@ class Publisher(Protocol):
 
     def set_thumbnail(self, video_id: str, path: Path) -> None: ...
 
+    # 선택: 자막 파일을 따로 올릴 수 있는 곳만 둔다(YouTube). core는 hasattr(publisher, "set_captions")로 본다
+    # set_captions(video_id: str, srt: Path, language: str) -> None: 권한이 없으면 할 일을 담은 한국어 RuntimeError
+
     def link(self, video_id: str) -> str:
         """올린 영상을 보는 주소."""

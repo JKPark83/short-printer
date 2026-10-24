@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from shorts_printer import config, registry
 from shorts_printer.adapters.youtube import YouTube
 from shorts_printer.core import channel
+from shorts_printer.core.longform import STEPS_LONG
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.trends import Trend
 from shorts_printer.infra import store
@@ -668,3 +669,234 @@ def test_credits_shows_claude_balance_from_cost_report(monkeypatch):
     html = client.get("/credits").text
     assert "starting_at=2026-10-01T00%3A00%3A00Z" in urls[0] and len(urls) == 2
     assert "$48.00" in html and "편당 $0.01 · 4800편" in html and "Claude가 먼저" in html
+
+
+def test_sig_and_say_follow_long_job_steps():
+    job = Job.create(CH, "주제", "v", long=True)
+    job.step("map", status="running")
+    d = job.data
+    assert web.sig(d).split(":")[1] == "".join(st["status"][0] for st in d["steps"].values())
+    assert web.say(d) == f"{web.LABELS['map']} 진행 중"
+
+
+# ── 롱폼 작업 화면
+LONG_DONE = ("research", "script", "proofread")
+
+
+def long_job(status="waiting", done=LONG_DONE, kinds=("map", "clip", "map", "map", "map"), **fields):
+    """장 2개·장면 5개 롱폼 작업. 장면 1은 clip, 장면 2는 map이지만 clip_prompt가 있다(클립 한도 5 × 0.2 = 1)."""
+    job = Job.create(CH, "6.25 전쟁", "LKOcTG4J4tYTPR9DnLeM", long=True)
+    scenes = [{"narration": f"내레이션{i}", "kind": k, "beat": "", "visual": f"보임{i}", "fact_ids": [],
+               "clip_prompt": f"prompt{i}" if k == "clip" or i == 2 else "",
+               "clip_prompt_ko": f"뜻{i}" if k == "clip" or i == 2 else "", "chapter": 0 if i < 3 else 1}
+              for i, k in enumerate(kinds)]
+    job.put("script.json", {"title": "전쟁의 시작", "description": "설명", "tags": ["역사"], "thumb": ["첫 줄"],
+                            "sensitive": "", "chapters": [{"title": "남침", "first": 0}, {"title": "반격", "first": 3}],
+                            "scenes": scenes, "notes": [], "sentences": [s["narration"] for s in scenes],
+                            "fact_ids": [[] for _ in scenes]})
+    job.put("proofread.json", {"pass": 80, "max": {"사실": 40}, "rounds": [
+        {"total": 90, "scores": {"사실": 36}, "passed": True, "issues": []}]})
+    steps = {s: {"status": "done", "engine": "x", "sec": 1.0} for s in done}
+    job.update(status=status, steps=job.data["steps"] | steps, **fields)
+    return job
+
+
+def drain():
+    while not web.q._q.empty():
+        web.q._q.get_nowait()
+
+
+def test_long_script_gate_page_and_approve():
+    job = long_job()
+    assert not web.in_review(job.data) and not web.in_voice_review(job.data)
+    html = client.get(f"/jobs/{job.id}").text
+    assert "대본 승인 대기" in html and 'data-retry="approve/script"' in html and "1장. 남침" in html
+    assert "뜻1" in html and "보임3" in html and "검수 90점 · 통과" in html and "클립 1/1" in html
+    assert "대본 25자 · 클립 1개 × 12크레딧" in html   # 승인 전 비용 어림(내레이션 5자 × 5)
+    assert 'data-post="scenes/1/kind"' in html and 'data-post="script/revise"' in html
+    assert "대본 승인 대기" in client.get("/").text
+    url = f"/api/jobs/{job.id}/approve"
+    assert client.post(f"{url}/draft").status_code == 409 and client.post(f"{url}/clips").status_code == 409
+    assert client.post(f"{url}/script").status_code == 200
+    d = Job.load(job.id).data
+    assert d["script_ok"] and d["status"] == "queued" and web.q._q.get_nowait() == ("run", job.id)
+    assert client.post(f"{url}/script").status_code == 409   # 이미 승인
+
+
+def test_long_scene_kind_toggle_keeps_clip_limit():
+    job = long_job()
+    url = f"/api/jobs/{job.id}/scenes"
+    r = client.post(f"{url}/2/kind", data={"kind": "clip"})
+    assert r.status_code == 400 and "1개까지" in r.json()["detail"]
+    r = client.post(f"{url}/3/kind", data={"kind": "clip"})
+    assert r.status_code == 400 and "고쳐 줘" in r.json()["detail"]
+    assert client.post(f"{url}/9/kind", data={"kind": "map"}).status_code == 404
+    assert client.post(f"{url}/1/kind", data={"kind": "photo"}).status_code == 400
+    assert client.post(f"{url}/1/kind", data={"kind": "map"}).status_code == 200
+    assert client.post(f"{url}/2/kind", data={"kind": "clip"}).status_code == 200
+    assert [s["kind"] for s in job.doc("script.json")["scenes"]] == ["map", "map", "clip", "map", "map"]
+    assert Job.load(job.id).data["status"] == "waiting" and web.q._q.empty()   # 저장만
+    job.update(script_ok=True, steps=job.data["steps"] | {"voice": {"status": "done", "engine": "x", "sec": 1.0}})
+    assert client.post(f"{url}/1/kind", data={"kind": "clip"}).status_code == 409   # 승인 뒤엔 못 바꾼다
+
+
+def test_long_script_revise_and_rewrite_only_before_voice():
+    job = long_job()
+    r = client.post(f"/api/jobs/{job.id}/script/revise", data={"note": "더 짧게"})
+    assert r.status_code == 200
+    d = Job.load(job.id).data
+    assert d["script_note"] == "더 짧게" and d["steps"]["script"]["status"] == "pending"
+    assert d["steps"]["research"]["status"] == "done" and "voice" in d["steps"] and "subtitles" not in d["steps"]
+    drain()
+    job = long_job(done=(*LONG_DONE, "voice"), script_ok=True, status="failed")
+    assert client.post(f"/api/jobs/{job.id}/script/revise", data={"note": "x"}).status_code == 409
+    assert client.post(f"/api/jobs/{job.id}/script/rewrite").status_code == 409
+    job = long_job()
+    assert client.post(f"/api/jobs/{job.id}/script/rewrite").status_code == 200
+    assert Job.load(job.id).data["steps"]["proofread"]["status"] == "pending"
+    drain()
+
+
+def test_long_clips_gate_and_put_clip(monkeypatch):
+    job = long_job(done=(*LONG_DONE, "voice", "plan", "map"), script_ok=True)
+    html = client.get(f"/jobs/{job.id}").text
+    assert "클립 대기" in html and "16:9" in html and 'data-copy="prompt1"' in html and 'data-clip="1"' in html
+    assert 'data-clip="0"' not in html
+    monkeypatch.setattr(web.ffmpeg, "run", lambda *a, **k: None)
+    enqueued, redone = [], []
+    monkeypatch.setattr(web.q, "enqueue", lambda i: enqueued.append(i) or True)
+    monkeypatch.setattr(web.q, "redo", lambda i, steps, **k: redone.append(steps) or True)
+    url = f"/api/jobs/{job.id}/clips"
+    assert client.post(f"{url}/0", content=MP4).status_code == 400   # 지도 장면
+    assert client.post(f"{url}/1", content=MP4).status_code == 200
+    assert enqueued == [job.id] and (job.dir / "clips" / "clip1.mp4").exists()
+    job.update(draft_ok=True, steps=job.data["steps"] | {k: {"status": "done", "engine": "x", "sec": 1.0}
+                                                         for k in ("clips", "draft")})
+    assert client.post(f"{url}/1", content=MP4).status_code == 200
+    assert redone == [("draft", "render", "final")]
+    job.update(steps=job.data["steps"] | {"voice": {"status": "pending", "engine": None, "sec": None}})
+    assert client.post(f"{url}/1", content=MP4).status_code == 409   # 음성 전(대본이 아직 바뀔 수 있다)
+
+
+def test_long_draft_gate_approve_and_revise():
+    job = long_job(done=(*LONG_DONE, "voice", "plan", "map", "clips", "draft"), script_ok=True, draft_ok=False)
+    job.put("draft.json", {"check": {"lint": {"errors": 0, "warnings": 2}}, "snapshots": [
+        {"chapter": 0, "title": "남침", "at": 2.9, "file": "draft/ch0.jpg"}]})
+    job.put("film.json", {"total": 65.2, "end_start": 58.0})
+    html = client.get(f"/jobs/{job.id}").text
+    assert "초안 승인 대기" in html and f'src="/files/{job.id}/draft/ch0.jpg' in html
+    assert "1:05" in html and "경고 2" in html and 'data-post="draft/revise"' in html
+    assert client.post(f"/api/jobs/{job.id}/draft/revise", data={"note": " "}).status_code == 400
+    r = client.post(f"/api/jobs/{job.id}/draft/revise", data={"note": "2장 더 확대"})
+    assert r.status_code == 200
+    d = Job.load(job.id).data
+    assert d["draft_note"] == "2장 더 확대" and [d["steps"][k]["status"] for k in ("voice", "plan", "map", "draft")] \
+        == ["done", "pending", "pending", "pending"]
+    drain()
+    job.update(status="waiting", steps=job.data["steps"] | {k: {"status": "done", "engine": "x", "sec": 1.0}
+                                                            for k in ("plan", "map", "draft")})
+    assert client.post(f"/api/jobs/{job.id}/approve/draft").status_code == 200
+    assert Job.load(job.id).data["draft_ok"] and web.q._q.get_nowait() == ("run", job.id)
+    assert client.post(f"/api/jobs/{job.id}/draft/revise", data={"note": "x"}).status_code == 409
+
+
+def test_long_done_page_shows_final_checks():
+    job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True, duration=65.0)
+    job.put("final.json", {"duration": 65.0, "expected": 65.2, "lufs": -16.2, "true_peak": -1.5, "silences": [],
+                           "srt_end": 60.0, "issues": []})
+    job.put("credits.json", ["내레이션 ElevenLabs", "지도 Esri"])
+    (job.dir / "captions.srt").write_text("1\n", encoding="utf-8")
+    html = client.get(f"/jobs/{job.id}").text
+    assert "final.mp4" in html and "captions.srt" in html and "통과" in html and "-16.2 LUFS" in html
+    assert "지도 Esri" in html and "force-ssl" in html and 'id="upload-box"' in html
+    assert "설명\n\n내레이션 ElevenLabs" in html   # 설명란에 크레딧
+    job.put("final.json", job.doc("final.json") | {"issues": ["음량 -12 LUFS"]})
+    assert "음량 -12 LUFS" in client.get(f"/jobs/{job.id}").text
+
+
+def test_shorts_only_endpoints_reject_long_jobs():
+    job = long_job(status="done", done=("research", "script", "proofread", "voice"), script_ok=True)
+    for path in ("confirm", "voice/redo", "thumbnail", "edit", "translate"):
+        r = client.post(f"/api/jobs/{job.id}/{path}", data={"title": "t"})
+        assert r.status_code == 409 and r.json()["detail"] == web.SHORTS_ONLY, path
+
+
+def test_redo_rejects_steps_the_job_does_not_have():
+    long, short = long_job(status="done"), scene_job(status="done")
+    assert not web.q.redo(long.id, ("footage",)) and not web.q.redo(short.id, ("plan",))
+    assert Job.load(long.id).data["status"] == "done" and web.q._q.empty()
+    with pytest.raises(web.HTTPException) as e:
+        web._redo(short.id, ("plan",))
+    assert e.value.status_code == 409
+
+
+def test_long_clip_upload_only_after_voice():
+    """음성 전(대본 승인 뒤 음성 실패)엔 대본을 다시 고칠 수 있어 클립을 받지 않는다(다른 장면에 묶인다)."""
+    job = long_job(status="failed", script_ok=True, error={"step": "voice", "message": "한도"})
+    assert 'data-clip="1"' not in client.get(f"/jobs/{job.id}").text
+    assert client.post(f"/api/jobs/{job.id}/clips/1", content=MP4).status_code == 409
+
+
+def test_long_refused_clip_scene_turns_into_map():
+    """거절로 멈춘 클립 장면은 음성 뒤에도 지도로 바꿔 지도 계획부터 다시 한다."""
+    job = long_job(status="failed", done=(*LONG_DONE, "voice", "plan", "map"), script_ok=True,
+                   refused=[{"i": 1, "reason": "정책"}], error={"step": "clips", "message": "거절"})
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'data-post="scenes/1/kind"' in html and "지도로 바꾸기" in html
+    url = f"/api/jobs/{job.id}/scenes"
+    assert client.post(f"{url}/2/kind", data={"kind": "clip"}).status_code == 409   # 음성 뒤엔 지도로만
+    assert client.post(f"{url}/0/kind", data={"kind": "map"}).status_code == 400   # 이미 지도
+    assert client.post(f"{url}/1/kind", data={"kind": "map"}).status_code == 200
+    d = Job.load(job.id).data
+    assert job.doc("script.json")["scenes"][1]["kind"] == "map" and d["refused"] is None and d["draft_note"]
+    assert [d["steps"][k]["status"] for k in ("voice", "plan", "map", "clips")] == ["done", "pending", "pending",
+                                                                                   "pending"]
+    assert web.q._q.get_nowait() == ("run", job.id)
+    job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True)
+    assert client.post(f"/api/jobs/{job.id}/scenes/1/kind", data={"kind": "map"}).status_code == 409   # 초안 뒤
+
+
+def test_long_kind_toggle_only_where_it_can_succeed():
+    job = long_job()   # 클립 1/1: 지도 → 클립은 한도에 걸린다
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'data-post="scenes/1/kind"' in html and 'data-post="scenes/2/kind"' not in html
+    job = long_job(kinds=("map",) * 5)   # 한도가 남으면 프롬프트 있는 장면(2)만
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'data-post="scenes/2/kind"' in html and 'data-post="scenes/3/kind"' not in html
+
+
+def test_long_upload_button_waits_for_final(monkeypatch):
+    monkeypatch.setattr(YouTube, "ready", lambda self: True)
+    job = long_job(status="running", done=STEPS_LONG[:-1], script_ok=True, draft_ok=True)
+    job.step("final", status="running")
+    html = client.get(f"/jobs/{job.id}").text
+    assert 'id="upload-box"' not in html and "최종 검수가 끝나면 올릴 수 있어요" in html
+    (job.dir / "final.mp4").write_bytes(b"x")
+    html = client.get(f"/jobs/{job.id}").text
+    assert f"final.mp4?v={(job.dir / 'final.mp4').stat().st_mtime_ns}" in html   # finished_at이 비어도 캐시를 깬다
+
+
+def test_draft_snapshots_bust_cache_by_file():
+    job = long_job(done=(*LONG_DONE, "voice", "plan", "map", "clips", "draft"), script_ok=True, draft_ok=False)
+    snap = {"chapter": 0, "title": "남침", "at": 2.9, "file": "draft/a.png"}
+    job.put("draft.json", {"check": {}, "snapshots": [snap]})
+    (job.dir / "draft").mkdir()
+    (job.dir / "draft" / "a.png").write_bytes(b"png")
+    assert f"draft/a.png?v={(job.dir / 'draft' / 'a.png').stat().st_mtime_ns}" in client.get(f"/jobs/{job.id}").text
+
+
+def test_say_survives_channel_setting_failure():
+    job = done_job()
+    job.update(status="failed", error={"step": None, "message": "채널 설정이 틀렸어요"})
+    r = client.get(f"/api/jobs/{job.id}")
+    assert r.status_code == 200 and r.json()["say"] == "실패: 채널 설정"
+
+
+def test_dashboard_dots_follow_step_order_not_stored_order():
+    job = done_job()
+    job.update(steps=dict(reversed(job.data["steps"].items())))   # 예전 작업: 나중에 생긴 단계가 뒤에 붙었다
+    long = long_job()
+    html = client.get("/").text
+    for j, order in ((job, STEPS), (long, STEPS_LONG)):
+        label = ", ".join(f"{web.LABELS[s]} {web.STATE[j.data['steps'][s]['status']]}" for s in order)
+        assert f'aria-label="{label}"' in html

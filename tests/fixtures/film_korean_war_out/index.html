@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>한국전쟁 1950 – 1953 오르내린 선</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #2b2a27; }
+      #root { width: 100%; height: 100%; position: relative; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="179.5" data-width="1920" data-height="1080">
+      <div id="map" data-composition-id="map" data-composition-src="compositions/map.html" data-start="0" data-duration="179.5" data-track-index="0" data-track-kind="graphics" data-width="1920" data-height="1080" style="z-index:1"></div>
+      <div id="story" data-composition-id="story" data-composition-src="compositions/story.html" data-start="0" data-duration="179.5" data-track-index="1" data-track-kind="graphics" data-width="1920" data-height="1080" style="z-index:2"></div>
+      <div id="end" data-composition-id="end" data-composition-src="compositions/end.html" data-start="172.9" data-duration="6.6" data-track-index="2" data-track-kind="graphics" data-width="1920" data-height="1080" style="z-index:3"></div>
+      <audio id="vo-01" class="clip" src="assets/voice/s01.mp3" data-start="1.4" data-duration="9.55" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-02" class="clip" src="assets/voice/s02.mp3" data-start="11.75" data-duration="10.65" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-03" class="clip" src="assets/voice/s03.mp3" data-start="23.2" data-duration="10.55" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-04" class="clip" src="assets/voice/s04.mp3" data-start="34.55" data-duration="7.45" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-05" class="clip" src="assets/voice/s05.mp3" data-start="42.8" data-duration="10.05" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-06" class="clip" src="assets/voice/s06.mp3" data-start="54.45" data-duration="10.85" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-07" class="clip" src="assets/voice/s07.mp3" data-start="66.1" data-duration="9.2" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-08" class="clip" src="assets/voice/s08.mp3" data-start="76.4" data-duration="11.25" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-09" class="clip" src="assets/voice/s09.mp3" data-start="88.45" data-duration="8.95" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-10" class="clip" src="assets/voice/s10.mp3" data-start="98.2" data-duration="9.45" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-11" class="clip" src="assets/voice/s11.mp3" data-start="108.45" data-duration="11.051" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-12" class="clip" src="assets/voice/s12.mp3" data-start="120.3" data-duration="10.7" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-13" class="clip" src="assets/voice/s13.mp3" data-start="131.8" data-duration="11.85" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-14" class="clip" src="assets/voice/s14.mp3" data-start="146.85" data-duration="11.2" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo-15" class="clip" src="assets/voice/s15.mp3" data-start="158.85" data-duration="13.3" data-track-index="10" data-volume="1"></audio>
+      <audio id="music-a" class="clip" src="assets/music.mp3" data-start="0" data-duration="143.95" data-volume="0.13" data-fade-in="1.5" data-fade-out="6" data-track-index="11"></audio>
+      <audio id="music-b" class="clip" src="assets/music.mp3" data-start="146.85" data-duration="32.65" data-volume="0.14" data-media-start="151.05" data-fade-in="2.5" data-fade-out="3" data-track-index="11"></audio>
+      <audio id="fx-guns1" class="clip" src="assets/sfx/artillery-guns.mp3" data-start="0.2" data-duration="9.0" data-volume="1.0" data-fade-out="2" data-track-index="12"></audio>
+      <audio id="fx-boom1" class="clip" src="assets/sfx/distant-boom.mp3" data-start="4.8" data-duration="1.17" data-volume="0.4" data-track-index="13"></audio>
+      <audio id="fx-boom2" class="clip" src="assets/sfx/distant-boom2.mp3" data-start="5.61" data-duration="4.0" data-volume="0.4" data-fade-out="1.5" data-track-index="14"></audio>
+      <audio id="fx-shut1" class="clip" src="assets/sfx/shutter.mp3" data-start="18.78" data-duration="0.6" data-volume="0.6" data-track-index="12"></audio>
+      <audio id="fx-bridge" class="clip" src="assets/sfx/distant-boom.mp3" data-start="19.35" data-duration="1.17" data-volume="0.5" data-track-index="13"></audio>
+      <audio id="fx-whoosh1" class="clip" src="assets/sfx/whoosh-cinematic.mp3" data-start="22.6" data-duration="3.0" data-volume="0.35" data-fade-out="1" data-track-index="12"></audio>
+      <audio id="fx-seq" class="clip" src="assets/sfx/artillery-seq.mp3" data-start="34.55" data-duration="7.5" data-volume="0.8" data-fade-in="0.5" data-fade-out="2" data-track-index="12"></audio>
+      <audio id="fx-blasts" class="clip" src="assets/sfx/distant-blasts.mp3" data-start="42.8" data-duration="10.0" data-volume="0.6" data-media-start="20" data-fade-in="1" data-fade-out="2" data-track-index="12"></audio>
+      <audio id="fx-dabu" class="clip" src="assets/sfx/cannon-near.mp3" data-start="50.03" data-duration="3.66" data-volume="0.45" data-track-index="13"></audio>
+      <audio id="fx-riser" class="clip" src="assets/sfx/riser.mp3" data-start="50.46" data-duration="4.6" data-volume="0.3" data-fade-in="0.5" data-fade-out="0.2" data-track-index="14"></audio>
+      <audio id="fx-naval" class="clip" src="assets/sfx/naval-cannon.mp3" data-start="54.41" data-duration="9.0" data-volume="1.0" data-fade-out="2" data-track-index="12"></audio>
+      <audio id="fx-shut2" class="clip" src="assets/sfx/shutter.mp3" data-start="59.68" data-duration="0.6" data-volume="0.6" data-track-index="13"></audio>
+      <audio id="fx-whoosh2" class="clip" src="assets/sfx/whoosh.mp3" data-start="66.3" data-duration="0.57" data-volume="0.4" data-track-index="12"></audio>
+      <audio id="fx-guns2" class="clip" src="assets/sfx/artillery-guns.mp3" data-start="77.83" data-duration="7.0" data-volume="1.0" data-media-start="12.6" data-fade-out="2" data-track-index="12"></audio>
+      <audio id="fx-shut3" class="clip" src="assets/sfx/shutter.mp3" data-start="85.23" data-duration="0.6" data-volume="0.6" data-track-index="12"></audio>
+      <audio id="fx-boom3" class="clip" src="assets/sfx/distant-boom2.mp3" data-start="90.04" data-duration="4.0" data-volume="0.4" data-fade-out="1.5" data-track-index="12"></audio>
+      <audio id="fx-shut4" class="clip" src="assets/sfx/shutter.mp3" data-start="92.28" data-duration="0.6" data-volume="0.6" data-track-index="13"></audio>
+      <audio id="fx-whoosh3" class="clip" src="assets/sfx/whoosh-cinematic.mp3" data-start="97.98" data-duration="3.0" data-volume="0.3" data-fade-out="1" data-track-index="12"></audio>
+      <audio id="fx-shut5" class="clip" src="assets/sfx/shutter.mp3" data-start="120.93" data-duration="0.6" data-volume="0.6" data-track-index="12"></audio>
+      <audio id="fx-hill1" class="clip" src="assets/sfx/cannon-near.mp3" data-start="125.03" data-duration="3.66" data-volume="0.4" data-track-index="12"></audio>
+      <audio id="fx-hill2" class="clip" src="assets/sfx/distant-boom.mp3" data-start="126.03" data-duration="1.17" data-volume="0.4" data-track-index="13"></audio>
+      <audio id="fx-hill3" class="clip" src="assets/sfx/distant-boom2.mp3" data-start="126.49" data-duration="3.0" data-volume="0.4" data-fade-out="1.2" data-track-index="14"></audio>
+      <audio id="fx-shut6" class="clip" src="assets/sfx/shutter.mp3" data-start="138.43" data-duration="0.6" data-volume="0.6" data-track-index="12"></audio>
+      <audio id="fx-whoosh4" class="clip" src="assets/sfx/whoosh-cinematic.mp3" data-start="146.23" data-duration="3.0" data-volume="0.3" data-fade-out="1" data-track-index="12"></audio>
+      <audio id="fx-impact" class="clip" src="assets/sfx/impact-bass-2.mp3" data-start="155.1" data-duration="2.59" data-volume="0.35" data-track-index="12"></audio>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

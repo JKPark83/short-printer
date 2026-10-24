@@ -554,3 +554,9 @@ h3 { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.4; overflow-wr
 .notify-test { justify-self: start; margin-top: var(--s4); }
 .notify-test + .help-under { margin-top: var(--s3); }
 .counter.over { color: var(--bad); }
+
+/* 롱폼(16:9) 작업 화면 */
+.video-wide { height: auto; width: 100%; aspect-ratio: 16 / 9; }
+.snaps { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.snaps img, .thumb-wide { aspect-ratio: 16 / 9; }
+.thumb-wide { display: block; width: 100%; height: auto; margin: var(--s3) 0; border-radius: 6px; background: var(--muted); object-fit: cover; }

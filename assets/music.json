@@ -1,0 +1,18 @@
+{
+  "war": [
+    {"title": "Dark Times", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Dark%20Times.mp3", "credit": "“Dark Times” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Impact Lento", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Impact%20Lento.mp3", "credit": "“Impact Lento” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Long Note Four", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Long%20Note%20Four.mp3", "credit": "“Long Note Four” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "loss": [
+    {"title": "Sad Trio", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sad%20Trio.mp3", "credit": "“Sad Trio” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Despair and Triumph", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Despair%20and%20Triumph.mp3", "credit": "“Despair and Triumph” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "march": [
+    {"title": "Heroic Age", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heroic%20Age.mp3", "credit": "“Heroic Age” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Lord of the Land", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Lord%20of%20the%20Land.mp3", "credit": "“Lord of the Land” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "reflective": [
+    {"title": "Echoes of Time v2", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Echoes%20of%20Time%20v2.mp3", "credit": "“Echoes of Time v2” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ]
+}

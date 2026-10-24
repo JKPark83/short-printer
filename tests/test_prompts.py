@@ -24,3 +24,13 @@ def test_every_prompt_file_renders_for_a_real_channel():
               research.system(opened), prompts.render("translate", lang=ch.lang_name),
               prompts.render("scene_reprompt", channel_video=ch.video_rules())):
         assert s and "${" not in s and "---" not in s.splitlines()[0]
+
+
+def test_every_long_prompt_renders_for_a_real_channel():
+    from shorts_printer.core import channel, longscript, research
+    ch = channel.load("ko-40sec-facts").model_copy(update={"format": "long"})
+    v = longscript.values(ch)
+    for s in (prompts.render("long_outline", **v), prompts.render("long_scenes", **v),
+              prompts.render("long_proofread", **v), prompts.render("long_revise"), research.system(ch)):
+        assert s and "${" not in s and "---" not in s.splitlines()[0]
+    assert "사실은 40개까지" in research.system(ch)   # 롱폼은 [long] max_facts

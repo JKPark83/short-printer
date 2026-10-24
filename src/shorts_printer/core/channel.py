@@ -103,6 +103,20 @@ class TrendsCfg(BaseModel):
         return self
 
 
+class LongCfg(BaseModel):
+    """롱폼(16:9 지도 역사 영상) 값. format = "long"일 때만 쓴다."""
+    minutes: tuple[int, int] = (8, 12)   # 목표 길이 [최소, 최대]분. 장면 수·대본 길이를 여기서 센다
+    clip_ratio: float = Field(0.2, ge=0, le=1)   # Flow 클립 장면 비율 상한. 넘치면 코드가 지도 장면으로 바꾼다
+    max_facts: int = Field(40, ge=1, le=80)   # 자료 조사 사실 상한(숏폼은 12)
+    music: str = "war"   # 배경 음악 분위기(assets/music.json 키)
+
+    @model_validator(mode="after")
+    def _minutes(self):
+        if not 1 <= self.minutes[0] <= self.minutes[1]:
+            raise ValueError("long.minutes는 [최소, 최대]분이고 1 이상, 최소 ≤ 최대여야 해요")
+        return self
+
+
 class Channel(BaseModel):
     id: str
     dir: Path
@@ -110,6 +124,7 @@ class Channel(BaseModel):
     description: str
     concept: str   # 대본·추천이 이 분야 안에서 돈다
     language: str
+    format: Literal["short", "long"] = "short"   # short: 9:16 쇼츠, long: 16:9 지도 역사 롱폼
     daily_goal: int = Field(3, ge=1)
     sensitive_gate: bool = True   # 민감 분야 대본은 사람이 확인해야 장면을 만든다
     llm: str = "claude"
@@ -121,6 +136,7 @@ class Channel(BaseModel):
     publish: PublishCfg = PublishCfg()
     trends: TrendsCfg
     research: ResearchCfg = ResearchCfg()
+    long: LongCfg = LongCfg()
 
     @property
     def lang_name(self) -> str:

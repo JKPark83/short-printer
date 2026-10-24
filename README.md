@@ -131,6 +131,31 @@ Flow 등 AI로 만든 장면을 쓴 영상은 공개하기 전에 스튜디오�
 5. `.env`의 `YOUTUBE_CLIENT_SECRET`에 그 JSON 경로를 넣습니다.
 6. `uv run sp youtube-login --channel <id>`를 실행하고 브라우저 동의 화면에서 그 채널(브랜드 채널)을 골라 허용합니다. 토큰은 채널마다 `.secrets/channels/<id>/youtube_token.json`에 저장됩니다.
 
+## 롱폼(지도 역사 영상)
+
+채널 `channel.toml`에 `format = "long"`을 넣으면 그 채널은 쇼츠 대신 16:9 가로 영상(기본 8~12분, `[long] minutes`)을 만듭니다. 위성 지도 위에서 전선·화살표·지명이 움직이는 역사 해설 영상이고, 일부 장면(`[long] clip_ratio`, 기본 20% 이하)만 Flow 16:9 클립입니다. 자막은 영상에 굽지 않고 SRT로 YouTube에 따로 올립니다. 단계와 구조는 `docs/plan/longform.md`에 있습니다.
+
+```
+주제 → 자료 조사 → 대본(장 → 장면, 지도/클립) → 대본 검수 → 음성 → 지도 계획 → 지도 이미지 → 장면 클립 → 초안(HyperFrames) → 렌더 → 최종 검수 → 업로드
+```
+
+- **Node.js가 필요합니다.** 초안·렌더를 `npx hyperframes`로 돌리며 Node 22 이상이 필요합니다(`/usr/local/bin`의 Node 18은 안 됩니다). 서버를 fnm 등으로 Node 22가 잡힌 셸에서 띄우세요. 없으면 작업이 첫 단계에서 "Node.js 22 이상(npx)을 찾지 못했어요"로 멈춥니다.
+- 영상 공급자는 `[video] provider`의 16:9 판을 저절로 씁니다(`flow-auto` → `flow-auto-16x9`). Flow에서 직접 만들 때는 16:9 · 8초로 만듭니다.
+- 배경 음악(`[long] music`, `assets/music.json`의 분위기)은 처음 쓸 때 내려받아 `.cache/music/`에 둡니다.
+
+사람이 네 번 확인합니다.
+
+| 확인 | 웹 | CLI |
+|---|---|---|
+| 주제 고르기 | 주제 찾기 화면에서 [이 주제로 만들기] 또는 대시보드에 주제를 넣고 [만들기]. 롱폼에서 주제 찾기 스케줄은 추천만 알리고 작업을 만들지 않습니다. 주제 목록 스케줄은 작업을 만들고 대본 승인에서 멈춥니다 | `uv run sp trends --channel <id>` → `uv run sp run "주제" --channel <id>` |
+| 대본 승인 | 작업 화면 [대본 승인]. 그 전에 장면을 지도·클립으로 바꾸거나 [고쳐 줘]로 고칩니다 | `uv run sp approve <작업 id> script` |
+| 초안 승인 | 작업 화면에서 장마다 찍은 스냅샷을 보고 [초안 승인]. 어색하면 [지도 고쳐 줘] | `uv run sp approve <작업 id> draft` |
+| 업로드 | 최종 검수(길이·음량·무음·자막 끝)를 보고 [승인하고 YouTube에 올리기] | `uv run sp upload <작업 id>` |
+
+- 대본을 승인하기 전에는 음성(TTS)·Flow 크레딧을 쓰지 않습니다. 작업 화면 대본 칸에 비용 어림이 나옵니다.
+- 클립이 빠지면 "클립 대기"로 멈춥니다. 작업 화면에서 올리거나 [지도로 바꾸기]를 누릅니다. CLI에서는 `jobs/<작업 id>/clips/`에 `clipN.mp4`를 넣고 `sp approve <작업 id> script`를 다시 돌립니다.
+- **자막 업로드에는 권한(`youtube.force-ssl`)이 하나 더 필요합니다.** 이 권한이 생기기 전에 로그인한 채널은 `uv run sp youtube-login --channel <id>`를 한 번 다시 돌리세요. 안 하면 영상과 썸네일만 올라가고, 작업 화면에 자막을 직접 올리라는 메모가 남습니다.
+
 ## 테스트
 
 ```bash

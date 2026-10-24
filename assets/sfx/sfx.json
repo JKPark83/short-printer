@@ -1,0 +1,74 @@
+{
+  "whoosh-cinematic": {
+    "file": "sfx/whoosh-cinematic.mp3",
+    "duration": 5.54,
+    "onset": 0.82,
+    "peak": 3.2,
+    "role": "move",
+    "credit": "Pixabay"
+  },
+  "riser": {
+    "file": "sfx/riser.mp3",
+    "duration": 10.03,
+    "onset": 1.07,
+    "peak": 3.9,
+    "role": "turn",
+    "credit": "Pixabay"
+  },
+  "distant-boom": {
+    "file": "sfx/distant-boom.mp3",
+    "duration": 1.17,
+    "onset": 0,
+    "peak": 0.15,
+    "role": "hit",
+    "credit": "Freesound BBQGiraffe"
+  },
+  "distant-boom2": {
+    "file": "sfx/distant-boom2.mp3",
+    "duration": 10.0,
+    "onset": 0.71,
+    "peak": 9.35,
+    "role": "hit",
+    "credit": "Freesound Henrythetrain"
+  },
+  "cannon-near": {
+    "file": "sfx/cannon-near.mp3",
+    "duration": 3.66,
+    "onset": 0,
+    "peak": 1.75,
+    "role": "hit",
+    "credit": "Freesound craigsmith"
+  },
+  "impact-bass-2": {
+    "file": "sfx/impact-bass-2.mp3",
+    "duration": 2.59,
+    "onset": 0,
+    "peak": 2.35,
+    "role": "final",
+    "credit": "Pixabay"
+  },
+  "shutter": {
+    "file": "sfx/shutter.mp3",
+    "duration": 1.56,
+    "onset": 0,
+    "peak": 1.2,
+    "role": "photo",
+    "credit": "Freesound Kodack"
+  },
+  "artillery-guns": {
+    "file": "sfx/artillery-guns.mp3",
+    "duration": 46.56,
+    "onset": 0.5,
+    "peak": 45.3,
+    "role": "bed",
+    "credit": "Freesound craigsmith"
+  },
+  "artillery-seq": {
+    "file": "sfx/artillery-seq.mp3",
+    "duration": 30.19,
+    "onset": 0,
+    "peak": 24.9,
+    "role": "bed",
+    "credit": "Freesound craigsmith"
+  }
+}

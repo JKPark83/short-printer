@@ -206,3 +206,12 @@ def test_gather_caps_facts_and_keeps_quote():
     doc, _ = research.gather(rs, _ch(domains=["kdca.go.kr"]), "독감", None)
     assert len(doc["facts"]) == research.MAX_FACTS and doc["facts"][-1]["text"] == "사실 11"
     assert doc["facts"][0]["quote"] == "원문" and "사실 15개 가운데 앞 12개만 썼다" in doc["notes"]
+
+
+def test_long_channel_uses_its_own_fact_cap():
+    rs = FakeResearcher([_f(f"사실 {i}", f"https://kdca.go.kr/{i}") for i in range(15)])
+    ch = _ch(domains=["kdca.go.kr"])
+    long = ch.model_copy(update={"format": "long", "long": channel.LongCfg(max_facts=14)})
+    doc, _ = research.gather(rs, long, "한국전쟁", None)
+    assert len(doc["facts"]) == 14 and "앞 14개만" in doc["notes"][-1] and "14" in rs.calls[0]["system"]
+    assert research.max_facts(ch) == research.MAX_FACTS   # 숏폼은 그대로 12

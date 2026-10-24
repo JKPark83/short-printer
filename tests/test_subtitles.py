@@ -1,7 +1,7 @@
 from shorts_printer.adapters.elevenlabs import words
 from shorts_printer.adapters.splitters.ja import Japanese
 from shorts_printer.adapters.splitters.ko import Korean
-from shorts_printer.core.subtitles import cues, escape, header, ts, write_ass
+from shorts_printer.core.subtitles import cues, escape, header, ts, write_ass, write_srt
 
 KO = Korean()
 
@@ -55,3 +55,10 @@ def test_header_and_ass_use_channel_font(tmp_path):
     write_ass(tmp_path / "s.ass", [{"start": 0, "end": 1.5, "text": "안녕"}], "Apple SD Gothic Neo")
     ass = (tmp_path / "s.ass").read_text()
     assert "Style: Cap,Apple SD Gothic Neo,84," in ass and "Dialogue: 0,0:00:00.00,0:00:01.50,Cap,,0,0,0,,안녕" in ass
+
+
+def test_write_srt_numbers_cues_with_millisecond_times(tmp_path):
+    write_srt(tmp_path / "c.srt", [{"start": 1.4, "end": 3.25, "text": "가"},
+                                   {"start": 3661.0, "end": 3662.0005, "text": "나"}])
+    assert (tmp_path / "c.srt").read_text() == ("1\n00:00:01,400 --> 00:00:03,250\n가\n\n"
+                                                "2\n01:01:01,000 --> 01:01:02,000\n나\n")

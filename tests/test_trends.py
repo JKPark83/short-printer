@@ -274,3 +274,38 @@ def test_popular_without_key_fails_with_hint(monkeypatch):
     with pytest.raises(RuntimeError):
         trends.run(t, sv(FakeLLM(stop)))
     assert t.data["status"] == "failed" and "YOUTUBE_API_KEY" in t.data["error"]["message"]
+
+
+def _long_ch():
+    """channel.format·long이 없던 때도 돌게 model_copy로 롱폼 값을 얹는다."""
+    return channel.load(CH).model_copy(update={"format": "long",
+                                               "long": SimpleNamespace(minutes=(8, 12), max_facts=40)})
+
+
+def test_system_idea_long_uses_map_history_prompt():
+    s = trends.system_idea(_long_ch())
+    assert "지도 규칙" in s and "8~12분" in s and "40개 이상" in s and "${" not in s
+    assert "지도 규칙" not in trends.system_idea(channel.load(CH))
+
+
+def test_long_popular_searches_medium_videos_without_shorts_filter(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "k")
+    calls = []
+    items = [_video("a", "임진왜란 지도", 10, 1000, "PT11M"), _video("b", "한국전쟁 전선", 30, 9000, "PT40S", ch="UC2"),
+             _video("c", "6·25 낙동강", 5, 900, "PT8M", ch="UC3")]
+
+    def api(path, **q):
+        calls.append((path, q))
+        if path == "search":
+            return {"items": [{"id": {"videoId": i["id"]}} for i in items]}
+        return {"items": [] if path == "channels" else items}
+
+    monkeypatch.setattr(trends, "_api", api)
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="s", picks=[idea("임진왜란")]), USAGE))
+    t = trends.Trend.create(CH, popular=True)
+    trends.run(t, sv(llm, _long_ch()))
+    assert calls[0][1]["videoDuration"] == "medium"
+    videos = t.doc("videos.json")
+    assert [v["id"] for v in videos] == ["b", "c", "a"]   # 시간당 300·180·100, 40초짜리도 남는다
+    assert videos[2]["url"].endswith("watch?v=a")
+    assert "요즘 뜨는 영상" in llm.calls[0]["text"] and "지도 규칙" in llm.calls[0]["system"]

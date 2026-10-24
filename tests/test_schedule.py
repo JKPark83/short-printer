@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from shorts_printer import config
-from shorts_printer.core import channel, pipeline, schedule, trends
+from shorts_printer.core import channel, longform, pipeline, schedule, trends
 from shorts_printer.core.pipeline import Job
 from shorts_printer.core.schedule import GRACE, Schedule, When
 from shorts_printer.core.trends import Trend
@@ -184,6 +184,19 @@ def test_after_trend_picks_first_unmade_topic(q, sent):
                        f"주제 찾기: {config.URL}/trends/{t.id}")
 
 
+def test_after_trend_long_channel_leaves_pick_to_person(q, sent, monkeypatch):
+    long = channel.load(CH).model_copy(update={"format": "long"})
+    monkeypatch.setattr(schedule.channel, "load", lambda cid: long)
+    s = make("trend", topics=())
+    t = trend_done(s, ["커피", "우유"])
+    s.update(runs=[schedule._run(at(FRI, "09:00"), None, "failed", trend=t.id)])   # 실패 뒤 다시 돌린 것
+    schedule.after_trend(Trend.load(t.id), q, sent.append)
+    assert not Job.all() and q._q.empty()
+    assert s.data["runs"][-1]["result"] == "started" and s.data["runs"][-1]["job"] is None
+    assert sent == [f"[주제 찾기 완료] {long.name} · 아침 상식\n1. 커피\n2. 우유\n"
+                    f"→ 롱폼은 주제를 골라 직접 영상을 만들어 주세요\n주제 찾기: {config.URL}/trends/{t.id}"]
+
+
 def test_after_trend_notifies_manual_trend(q, sent):
     t = Trend.create(CH)
     t.put("picks.json", {"picks": [{"topic": "커피"}, {"topic": "우유"}]})
@@ -320,3 +333,41 @@ def test_retried_trend_restarts_run_and_interrupted_notifies(q, sent):
     job.update(status="interrupted")
     schedule.after_job(job, "run", q, sent.append)
     assert "제작 중단: 서버가 꺼져 멈췄어요" in sent[-1] and len(sent) == 3   # 실패·완료·중단
+
+
+def test_long_job_skips_sensitive_wait():
+    """롱폼은 footage 단계가 없고 대본 승인을 늘 받는다: 민감 대기로 보지 않는다(KeyError도 없다)."""
+    job = Job.create(CH, "약 먹는 법", "v", long=True)
+    job.put("script.json", {"title": "약 먹는 법", "sensitive": "건강"})
+    job.update(status="waiting")
+    assert schedule._sensitive_wait(job) is None
+
+
+def test_list_schedule_on_long_channel_creates_long_job(q, sent, monkeypatch):
+    """주제 목록 스케줄은 롱폼 채널에서도 작업을 만든다(추천만 알리는 건 주제 찾기 스케줄뿐)."""
+    long = channel.load(CH).model_copy(update={"format": "long"})
+    monkeypatch.setattr(pipeline, "load_channel", lambda cid: long)
+    run = schedule.fire(make(), q, sent.append, at(FRI, "09:00"))
+    job = Job.load(run["job"]).data
+    assert run["result"] == "started" and job["format"] == "long" and job["review"] is True
+    assert set(job["steps"]) == set(longform.STEPS_LONG) and q._q.get_nowait() == ("run", run["job"])
+
+
+def test_long_job_waits_notify_and_done_is_not_auto_uploaded(q, sent):
+    s = make()
+    job = Job.load(schedule.fire(s, q, sent.append, at(FRI, "09:00"))["job"])
+    q._q.get_nowait()
+    job.update(format="long", steps={k: {"status": "pending", "engine": None, "sec": None}
+                                     for k in longform.STEPS_LONG}, status="waiting")
+    schedule.after_job(job, "run", q, sent.append)
+    assert sent[-1].startswith(f"[검수 필요] {NAME} · 아침 상식") and "롱폼 대본을 확인" in sent[-1]
+    job.update(script_ok=True, steps=job.data["steps"] | {"voice": {"status": "done", "engine": "x", "sec": 1.0}})
+    schedule.after_job(job, "run", q, sent.append)
+    assert sent[-1].startswith("[클립 필요]")
+    job.update(status="failed", error={"step": "draft", "message": "검사 오류"})
+    schedule.after_job(job, "run", q, sent.append)
+    assert "제작 실패(초안): 검사 오류" in sent[-1]
+    job.update(status="done")   # 최종 검수(final.json)를 사람이 보고 올린다
+    schedule.after_job(job, "run", q, sent.append)
+    assert sent[-1].startswith("[제작 완료]") and "직접 올려" in sent[-1]
+    assert job.data.get("upload") is None and q._q.empty()

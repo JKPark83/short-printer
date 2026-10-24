@@ -75,6 +75,53 @@ def test_upload_is_private_resumable_then_one_put(yt, monkeypatch, tmp_path):
     assert json.loads(init.data)["status"]["privacyStatus"] == "private"
     assert json.loads(init.data)["snippet"]["defaultLanguage"] == "ko"
     assert put.get_method() == "PUT" and put.full_url == "https://upload.example/session" and put.data == b"MP4DATA"
+    assert put.get_header("Content-range") == "bytes 0-6/7"
+
+
+def incomplete(upto=None):
+    """308 Resume Incomplete. upto는 서버가 받은 마지막 바이트(Range 헤더)."""
+    return HTTPError("https://upload.example/session", 308, "Resume Incomplete",
+                     {"Range": f"bytes=0-{upto}"} if upto is not None else {}, io.BytesIO(b""))
+
+
+def start():
+    """토큰 받기 + 세션 열기 응답."""
+    return [Resp(b'{"access_token": "ya29.TOKEN"}'), Resp(b"", {"Location": "https://upload.example/session"})]
+
+
+def puts(sent):
+    return [r.get_header("Content-range") for r in sent[2:]]
+
+
+def test_upload_sends_chunks_and_resumes_from_range(yt, monkeypatch, tmp_path):
+    monkeypatch.setattr(youtube, "CHUNK", 4)
+    video = tmp_path / "final.mp4"
+    video.write_bytes(b"0123456789")
+    # 두 번째 조각은 2바이트만 받았다(Range 0-5) → 6부터 다시 보낸다. 다 받고도 308이면 상태를 묻는다
+    sent = fake(monkeypatch, *start(), incomplete(3), incomplete(5), incomplete(9), Resp(b'{"id": "VID"}'))
+    assert yt.upload(video, SCRIPT, print) == "VID"
+    assert puts(sent) == ["bytes 0-3/10", "bytes 4-7/10", "bytes 6-9/10", "bytes */10"]
+    assert [r.data for r in sent[2:5]] == [b"0123", b"4567", b"6789"]
+
+
+def test_upload_interrupted_asks_status_then_resumes(yt, monkeypatch, tmp_path):
+    monkeypatch.setattr(youtube, "CHUNK", 4)
+    slept = []
+    monkeypatch.setattr(youtube.time, "sleep", slept.append)
+    video = tmp_path / "final.mp4"
+    video.write_bytes(b"0123456789")
+    server = HTTPError("https://upload.example/session", 503, "Unavailable", {}, io.BytesIO(b""))
+    # 첫 조각 뒤 끊김 → 상태 묻기도 5xx → 다시 물어 0-3까지 받았다 → 4부터 이어 올린다
+    sent = fake(monkeypatch, *start(), TimeoutError("timed out"), server, incomplete(3),
+                incomplete(7), Resp(b'{"id": "VID"}'))
+    assert yt.upload(video, SCRIPT, print) == "VID"
+    assert puts(sent) == ["bytes 0-3/10", "bytes */10", "bytes */10", "bytes 4-7/10", "bytes 8-9/10"]
+    assert sent[3].data == sent[4].data == b"" and sent[5].data == b"4567" and sent[6].data == b"89" and slept == [2, 4]
+
+    # 계속 끊기면 RETRIES번 다시 물은 뒤 스튜디오 확인을 안내한다(이미 올라갔을 수 있다)
+    fake(monkeypatch, *start(), *[OSError("reset")] * (youtube.RETRIES + 1))
+    with pytest.raises(RuntimeError, match="스튜디오에서 먼저 확인"):
+        yt.upload(video, SCRIPT, print)
 
 
 def test_google_errors_become_korean_messages(yt, monkeypatch, tmp_path):
@@ -91,11 +138,12 @@ def test_google_errors_become_korean_messages(yt, monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="로그인이 만료됐어요.*youtube-login --channel ch1"):   # 어느 채널인지
         yt.upload(video, SCRIPT, print)
 
-    # 다 보낸 뒤 응답을 못 받으면 이미 올라갔을 수 있다 → 다시 누르기 전에 스튜디오 확인을 안내
-    fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'),
-         Resp(b"", {"Location": "https://upload.example/session"}), TimeoutError("timed out"))
-    with pytest.raises(RuntimeError, match="스튜디오에서 먼저 확인"):
-        yt.upload(video, SCRIPT, print)
+    # 조각을 보내다 4xx(한도 등)면 이어 올리지 않고 같은 한국어 오류로 멈춘다(스튜디오 대체가 이걸 본다)
+    limit = {"error": {"message": "too many", "errors": [{"reason": "uploadLimitExceeded"}]}}
+    fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'), Resp(b"", {"Location": "https://upload.example/session"}),
+         HTTPError("https://upload.example/session", 400, "Bad", {}, io.BytesIO(json.dumps(limit).encode())))
+    with pytest.raises(RuntimeError, match=r"^YouTube 요청 실패\(400: uploadLimitExceeded · too many\)$"):
+        youtube.upload(yt.token, video, {})
 
 
 def test_web_client_json_is_rejected(yt):
@@ -118,12 +166,48 @@ def test_login_checks_state_and_saves_token_privately(yt, monkeypatch):
                                          direct.open(f'{q["redirect_uri"]}/?code=C&state={q["state"]}').read()]).start()
 
     monkeypatch.setattr(youtube.webbrowser, "open", browser)
-    sent = fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN", "refresh_token": "NEW"}'))
+    tok = {"access_token": "ya29.TOKEN", "refresh_token": "NEW", "scope": youtube.SCOPE}
+    sent = fake(monkeypatch, Resp(json.dumps(tok).encode()))
     yt.login()
     form = dict(parse_qsl(sent[0].data.decode()))
     assert form["code"] == "C" and form["grant_type"] == "authorization_code" and form["code_verifier"]
-    assert json.loads(yt.token.read_text()) == {"refresh_token": "NEW"} and yt.ready() and yt.hint == "비공개로 올려요"
+    assert json.loads(yt.token.read_text()) == {"refresh_token": "NEW"}
+    assert yt.ready() and yt.hint == "비공개로 올려요"
     assert yt.token.stat().st_mode & 0o777 == 0o600 and yt.token.parent.stat().st_mode & 0o777 == 0o700
+
+
+def test_set_captions_sends_multipart_snippet_and_srt(yt, monkeypatch, tmp_path):
+    srt = tmp_path / "subs.srt"
+    srt.write_bytes("1\n00:00:00,000 --> 00:00:02,000\n안녕\n".encode())
+    sent = fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'), Resp(b'{"id": "CAP"}'))
+    yt.set_captions("VID", srt, "ko")
+    req = sent[1]
+    ctype = req.get_header("Content-type")
+    assert req.get_method() == "POST" and req.full_url == youtube.CAPTIONS
+    assert req.full_url.endswith("captions?uploadType=multipart&part=snippet") and ctype.startswith("multipart/related; ")
+    boundary = ctype.split("boundary=")[1].encode()
+    meta, media = req.data.split(b"--" + boundary)[1:3]
+    assert json.loads(meta.split(b"\r\n\r\n", 1)[1]) == {
+        "snippet": {"videoId": "VID", "language": "ko", "name": "", "isDraft": False}}
+    assert b"application/octet-stream" in media and srt.read_bytes() in media
+    assert req.data.endswith(b"--" + boundary + b"--\r\n")
+
+
+def test_caption_scope_missing_asks_relogin(yt, monkeypatch, tmp_path):
+    srt = tmp_path / "subs.srt"
+    srt.write_text("1")
+    scope = {"error": {"code": 403, "message": "Request had insufficient authentication scopes.",
+                       "errors": [{"reason": "insufficientPermissions"}]}}
+    fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'),
+         HTTPError(youtube.CAPTIONS, 403, "Forbidden", {}, io.BytesIO(json.dumps(scope).encode())))
+    with pytest.raises(RuntimeError, match=r"자막을 올릴 권한이 없어요.*youtube-login --channel ch1을 한 번 더"):
+        yt.set_captions("VID", srt, "ko")
+
+    other = {"error": {"message": "no", "errors": [{"reason": "forbidden"}]}}   # 다른 403은 그대로
+    fake(monkeypatch, Resp(b'{"access_token": "ya29.TOKEN"}'),
+         HTTPError(youtube.CAPTIONS, 403, "Forbidden", {}, io.BytesIO(json.dumps(other).encode())))
+    with pytest.raises(RuntimeError, match="403: forbidden"):
+        yt.set_captions("VID", srt, "ko")
 
 
 def sv(publisher):
@@ -197,3 +281,17 @@ def test_upload_limit_falls_back_to_studio(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="quotaExceeded"):   # 다른 오류는 스튜디오로 안 간다
         yt.upload(tmp_path / "final.mp4", SCRIPT, logs.append)
     assert len(got) == 1
+
+
+def test_studio_reads_video_id_from_shorts_and_watch_links(tmp_path):
+    for href in ("https://youtube.com/shorts/abcDEF123_-", "https://youtu.be/abcDEF123_-",
+                 "https://www.youtube.com/watch?v=abcDEF123_-&feature=x"):
+        assert youtube_studio.video_id(href) == "abcDEF123_-"
+    with pytest.raises(RuntimeError, match="영상 id를 못 찾았어요"):
+        youtube_studio.video_id("https://studio.youtube.com/")
+    small, big = tmp_path / "s.mp4", tmp_path / "b.mp4"
+    small.write_bytes(b"x")
+    with open(big, "wb") as f:   # 1 GB짜리 빈 파일(디스크는 거의 안 쓴다)
+        f.truncate(1024 * 2**20)
+    assert youtube_studio.wait_seconds(small) == youtube_studio.UPLOAD_TIMEOUT
+    assert youtube_studio.wait_seconds(big) == 1024 * youtube_studio.SEC_PER_MB

@@ -90,3 +90,48 @@ def test_refetch_downloads_that_tile(tmp_path, monkeypatch):
     page = _Page([5])
     _refetch(page, 1, tmp_path / "clip3.mp4")
     assert page.picked == 1 and (tmp_path / "clip3.mp4").stat().st_size == 5
+
+
+class Page:
+    """_settings가 쓰는 Playwright 페이지 대신. 누른 radio 이름을 모으고 설정 버튼 글자를 돌려준다."""
+
+    def __init__(self, label):
+        self.label, self.clicked = label, []
+        self.keyboard = self
+
+    def locator(self, sel, has_text=None):
+        return El(self, sel, has_text)
+
+    def get_by_text(self, text, exact=False):
+        return El(self, "", text)
+
+    def press(self, key):
+        pass
+
+
+class El:
+    def __init__(self, page, sel, text):
+        self.page, self.sel, self.text = page, sel, text
+        self.first = self.last = self
+
+    def wait_for(self, timeout=None):
+        pass
+
+    def get_attribute(self, name):
+        return "false"
+
+    def click(self):
+        if self.text:
+            self.page.clicked.append(self.text)
+
+    def inner_text(self):
+        return flow_auto.MODEL if "모델" in self.sel else self.page.label
+
+
+def test_aspect_defaults_to_shorts_and_long_form_picks_16_9():
+    assert flow_auto.FlowAuto().aspect == "9:16" and flow_auto.FlowAuto("16:9").aspect == "16:9"
+    page = Page("동영상 crop_16_9 720p 8초 x1")
+    flow_auto._settings(page, "16:9")
+    assert page.clicked == ["동영상", "소재", "16:9", "720p", "8초", "x1"]
+    with pytest.raises(RuntimeError, match="Flow 설정을 맞추지 못했어요"):   # 화면비가 안 바뀌면 멈춘다
+        flow_auto._settings(Page("동영상 crop_9_16 720p 8초 x1"), "16:9")

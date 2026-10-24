@@ -8,6 +8,7 @@ from ..ports.llm import add_usage
 from ..ports.video import Refused
 from . import render, research, scenes, script, subtitles, thumbnail, voice
 from .channel import Channel
+from .channel import load as load_channel
 from .services import Services
 
 # 사람을 기다리는 영상 소스는 뒤로
@@ -21,6 +22,8 @@ class Job(Record):
 
     @staticmethod
     def _fix(d: dict) -> dict:
+        if d.get("format") == "long":   # 아래는 쇼츠 단계가 생기기 전 작업만 고친다
+            return d
         # 썸네일 단계가 생기기 전 job.json: 렌더까지 끝났으면 옛 방식 썸네일이 있으니 done으로 본다
         d["steps"].setdefault("thumbnail", {"status": "done" if d["steps"]["render"]["status"] == "done" else "pending",
                                             "engine": None, "sec": None})
@@ -34,10 +37,20 @@ class Job(Record):
 
     @classmethod
     def create(cls, channel: str, topic: str, voice: str, brief: str | None = None,
-               source: dict | None = None, review: bool = False) -> "Job":
+               source: dict | None = None, review: bool = False, long: bool | None = None) -> "Job":
         """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}.
         review: 사람이 대본·음성·자막을 확정(confirmed)해야 영상 소스부터 만든다
-        (화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다)."""
+        (화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다). long: 롱폼 단계(longform.STEPS_LONG), format="long".
+        비우면 채널 format으로 정한다(화면·스케줄·CLI가 모두 여기서 갈린다)."""
+        if long is None:
+            try:
+                long = load_channel(channel).format == "long"
+            except KeyError:   # 없는 채널: 쇼츠로 만들고, 돌릴 때 채널 오류로 멈춘다
+                long = False
+        if long:
+            from .longform import STEPS_LONG  # longform이 이 모듈을 import한다
+            return cls._new(STEPS_LONG, channel=channel, topic=topic, voice=voice, brief=brief, source=source,
+                            review=review, format="long")
         return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source, review=review)
 
     def set_upload(self, target: str | None, state: dict | None, **fields) -> None:
@@ -70,14 +83,15 @@ class Canceled(Exception):
 
 
 def in_review(data: dict) -> bool:
-    """대본·음성·자막을 사람이 확정하기를 기다리는 중."""
-    return data["status"] == "waiting" and bool(data.get("review")) and not data.get("confirmed")
+    """대본·음성·자막을 사람이 확정하기를 기다리는 중. 롱폼은 longform.gate로 따로 본다."""
+    return (data["status"] == "waiting" and data.get("format") != "long" and bool(data.get("review"))
+            and not data.get("confirmed"))
 
 
 def in_voice_review(data: dict) -> bool:
     """대본 확정 뒤 채널 TTS로 다시 읽은 음성을 사람이 확정하기를 기다리는 중.
     voice_ok는 초안 음성을 확정할 때만 False로 생긴다(예전 작업·처음부터 채널 TTS로 읽은 작업은 없다)."""
-    return data["status"] == "waiting" and data.get("voice_ok") is False
+    return data["status"] == "waiting" and data.get("format") != "long" and data.get("voice_ok") is False
 
 
 def missing_clips(job: Job) -> list[int]:
@@ -325,6 +339,9 @@ def run_steps(rec, steps, labels: dict, run: dict, done_msg: str) -> None:
 
 
 def run(job: Job, sv: Services) -> None:
+    if job.data.get("format") == "long":
+        from . import longform
+        return longform.run(job, sv)
     run_steps(job, STEPS, LABELS, {k: lambda rec, f=f: f(rec, sv) for k, f in RUN.items()}, "완성")
 
 
@@ -332,16 +349,18 @@ MAX_DESC = 5000   # YouTube 설명란 한도(UTF-8 바이트)
 
 
 def description(job: Job, ch: Channel) -> str:
-    """올릴 설명란: LLM 설명 / 출처 머리말 + 대본이 쓴 사실의 URL(등장 순) / footer. 업로드와 검수 화면이 같이 쓴다.
-    넘치면 URL을 뒤에서부터 뺀다. 어댑터가 뒤를 자르면 footer(AI 표시)가 잘리기 때문이다."""
+    """올릴 설명란: LLM 설명 / 출처 머리말 + 대본이 쓴 사실의 URL(등장 순) / 크레딧(롱폼 credits.json) / footer.
+    업로드와 검수 화면이 같이 쓴다. 넘치면 URL을 뒤에서부터 뺀다. 어댑터가 뒤를 자르면 footer(AI 표시)와
+    크레딧(CC BY 표기 의무)이 잘리기 때문이다."""
     s = job.doc("script.json")
     urls = {f["id"]: f["url"] for f in (job.doc("facts.json") or {}).get("facts", [])}
     used = list(dict.fromkeys(urls[i] for ids in s.get("fact_ids") or [] for i in ids if i in urls))
     head, foot = ch.publish.sources_heading, ch.publish.footer
+    credits = "\n".join(job.doc("credits.json") or [])
 
     def join(xs: list[str]) -> str:
         src = "\n".join([head, *xs]) if head and xs else ""
-        return "\n\n".join(x for x in (s["description"].rstrip(), src, foot) if x)
+        return "\n\n".join(x for x in (s["description"].rstrip(), src, credits, foot) if x)
 
     out = join(used)
     while len(out.encode()) > MAX_DESC and used:
@@ -381,4 +400,14 @@ def publish(job: Job, sv: Services, target: str | None = None) -> None:
             note = (f"썸네일은 못 붙였어요({redact(str(e)) or type(e).__name__}). "
                     f"{p.label}에서 thumbnail.jpg를 직접 올리세요.")
             job.log(note)
+    srt = job.dir / "captions.srt"
+    if hasattr(p, "set_captions") and srt.exists():   # 롱폼만 자막 파일이 있다. 실패해도 업로드는 done
+        try:
+            p.set_captions(video_id, srt, sv.channel.language)
+            job.log("자막 올림 완료")
+        except Exception as e:
+            msg = (f"자막은 못 올렸어요({redact(str(e)) or type(e).__name__}). "
+                   f"{p.label}에서 captions.srt를 직접 올리세요.")
+            note = f"{note} {msg}" if note else msg
+            job.log(msg)
     job.set_upload(target, upload_state("done", video_id=video_id, at=now(), note=note, url=url))

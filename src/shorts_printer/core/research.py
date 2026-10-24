@@ -9,12 +9,17 @@ from .channel import LANGS, Channel
 MAX_FACTS = 12
 
 
+def max_facts(ch: Channel) -> int:
+    """사실 상한. 롱폼은 장이 여럿이라 채널 값([long] max_facts)을 쓴다."""
+    return ch.long.max_facts if ch.format == "long" else MAX_FACTS
+
+
 def system(ch: Channel) -> str:
     langs = ch.research.languages or [ch.language]
     # 어디까지 검색하는지: open이면 블로그·일반 웹 규칙(research_open.md)을 덧붙이고, 아니면 앱이 사이트를 막는다
     scope = prompts.render("research_open", sites=", ".join(ch.research.domains) or "없음") if ch.research.open else ""
     return prompts.render("research", today=datetime.now().astimezone().date().isoformat(),
-                          search_langs=", ".join(LANGS.get(c, c) for c in langs), max_facts=MAX_FACTS,
+                          search_langs=", ".join(LANGS.get(c, c) for c in langs), max_facts=max_facts(ch),
                           news_sites=", ".join(ch.research.news) or "없음", scope=scope,
                           queries=ch.research.queries_per_topic, max_pages=ch.research.max_pages)
 
@@ -49,11 +54,12 @@ def gather(rs: Researcher, ch: Channel, topic: str, brief: str | None) -> tuple[
     notes = list(dict.fromkeys(f["text"] for f in raw if not f["url"]))
     for f in (f for f in raw if f["url"]):
         uniq.setdefault(f["text"], f)   # 같은 문장은 첫 것만
-    if len(uniq) > MAX_FACTS:   # 지시문의 상한을 모델이 넘기도 해서 코드로 자른다(대본이 곁가지를 다 쓰지 않게)
-        notes.append(f"사실 {len(uniq)}개 가운데 앞 {MAX_FACTS}개만 썼다")
+    cap = max_facts(ch)
+    if len(uniq) > cap:   # 지시문의 상한을 모델이 넘기도 해서 코드로 자른다(대본이 곁가지를 다 쓰지 않게)
+        notes.append(f"사실 {len(uniq)}개 가운데 앞 {cap}개만 썼다")
     at = datetime.now().astimezone().isoformat(timespec="seconds")
     facts = []
-    for i, f in enumerate(list(uniq.values())[:MAX_FACTS], 1):
+    for i, f in enumerate(list(uniq.values())[:cap], 1):
         site = _site(f["url"])
         facts.append({"id": f"F{i}", "text": f["text"], "url": f["url"], "title": f.get("title") or "", "site": site,
                       "kind": _kind(site, r.news, r.domains), "published": f.get("published") or "",

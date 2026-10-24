@@ -1,0 +1,42 @@
+{# 완성 영상 올리기(job.html·job_long.html). up·publisher·also·job이 있어야 한다 #}
+        <div id="upload-box" class="upload" tabindex="-1">
+          {% if up.status in ACTIVE %}
+          <p class="muted">{{ icon('loader', 16, 'spin') }} YouTube에 올리는 중…</p>
+          {% elif up.status == 'done' %}
+          <p class="links">
+            <a href="https://studio.youtube.com/video/{{ up.video_id }}/edit" target="_blank" rel="noopener" aria-label="YouTube 스튜디오에서 열기 (새 창)">{{ icon('external') }}YouTube 스튜디오에서 열기</a>
+            <a class="mono" href="https://youtu.be/{{ up.video_id }}" target="_blank" rel="noopener" aria-label="youtu.be/{{ up.video_id }} (새 창)">{{ icon('external') }}youtu.be/{{ up.video_id }}</a>
+          </p>
+          <p class="muted">비공개로 올라갔어요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
+          {% if up.note %}<p class="err">{{ up.note }}</p>{% endif %}
+          {% if publisher.ready() %}<button class="btn btn-secondary" type="button" data-upload data-again data-ask="지금 영상을 {{ publisher.label }}에 새로 올릴까요?&#10;지금 올라가 있는 영상은 지워지지 않아요. 필요 없으면 스튜디오에서 지우세요.">{{ icon('rotate') }}다시 올리기</button>{% endif %}
+          {% else %}
+          {% if job.uploaded_before %}<p class="muted">예전에 올린 영상 <a class="mono" href="https://youtu.be/{{ job.uploaded_before.video_id }}" target="_blank" rel="noopener">youtu.be/{{ job.uploaded_before.video_id }}</a>은 YouTube에 그대로 있어요. 고친 영상을 올린 뒤 필요 없으면 스튜디오에서 지우세요.</p>{% endif %}
+          {% if up.status == 'failed' %}<p class="err">{{ up.error }}</p>{% endif %}
+          {% if publisher.ready() %}
+          <button id="upload" class="btn btn-primary" type="button" data-upload>{{ icon('rotate' if up.status == 'failed' else 'upload') }}{{ '다시 올리기' if up.status == 'failed' else '승인하고 ' ~ publisher.label ~ '에 올리기' }}</button>
+          <p class="muted">비공개로 올라가요. 공개는 YouTube 스튜디오에서 바꿔요.</p>
+          {% else %}
+          <p class="muted">{{ publisher.label }}에 올리려면: {{ publisher.hint }}</p>
+          {% endif %}
+          {% endif %}
+          {% for name, p in also.items() %}{% set u = (job.uploads or {}).get(name) or {} %}{% set before = (job.uploads_before or {}).get(name) %}
+          {% set how = '비공개로 올라가요' if p.private else '바로 공개로 올라가요(비공개가 없어요)' %}
+          {% if u.status in ACTIVE %}
+          <p class="muted">{{ icon('loader', 16, 'spin') }} {{ p.label }}에 올리는 중…</p>
+          {% elif u.status == 'done' %}
+          {% if u.url %}<p class="links"><a href="{{ u.url }}" target="_blank" rel="noopener" aria-label="{{ p.label }}에서 열기 (새 창)">{{ icon('external') }}{{ p.label }}에서 열기</a></p>
+          {% else %}<p class="muted">{{ p.label }}에 올라갔어요(<span class="mono">{{ u.video_id }}</span>).</p>{% endif %}
+          {% if u.note %}<p class="err">{{ u.note }}</p>{% endif %}
+          {% if p.ready() %}<button class="btn btn-secondary" type="button" data-upload data-again data-target="{{ name }}" data-label="{{ p.label }}" data-ask="지금 영상을 {{ p.label }}에 새로 올릴까요?&#10;{{ how }}. 지금 올라가 있는 게시물은 그대로 남아요.">{{ icon('rotate') }}{{ p.label }}에 다시 올리기</button>{% endif %}
+          {% else %}
+          {% if before %}<p class="muted">예전에 올린 {% if before.url %}<a href="{{ before.url }}" target="_blank" rel="noopener">{{ p.label }} 게시물</a>{% else %}{{ p.label }} 게시물{% endif %}은 그대로 있어요. 필요 없으면 {{ p.label }}에서 지우세요.</p>{% endif %}
+          {% if u.status == 'failed' %}<p class="err">{{ u.error }}</p>{% endif %}
+          {% if p.ready() %}
+          <button class="btn btn-secondary" type="button" data-upload data-target="{{ name }}" data-label="{{ p.label }}" data-ask="{{ p.label }}에 올릴까요?&#10;{{ how }}.">{{ icon('rotate' if u.status == 'failed' else 'upload') }}{{ p.label ~ '에 다시 올리기' if u.status == 'failed' else '승인하고 ' ~ p.label ~ '에 올리기' }}</button>
+          {% else %}
+          <p class="muted">{{ p.label }}에 올리려면: {{ p.hint }}</p>
+          {% endif %}
+          {% endif %}
+          {% endfor %}
+        </div>

@@ -11,9 +11,7 @@ from ..infra.store import atomic_write_text
 from ..ports import video
 from .chrome import CHROME, FLOW, PORT, open_chrome, up
 
-# 설정 팝오버 radio 이름. 순서가 중요하다(동영상을 골라야 나머지가 나온다). 장면 하나에 SCENE_CREDITS
-SETTINGS = ("동영상", "소재", "9:16", "720p", "8초", "x1")
-SCENE_CREDITS = 12
+SCENE_CREDITS = 12   # 장면 하나에 드는 크레딧
 MODEL = "Omni 1.1 Flash"
 GEN_TIMEOUT = 360   # 초. 보통 2분 안팎
 RETRY_AFTER = 300   # 초. 실패한 장면은 이만큼 뒤 한 번만 다시
@@ -28,14 +26,15 @@ class Refused(RuntimeError):
     """Flow가 정책으로 거절했다. 같은 프롬프트로 다시 해도 또 거절되므로 다시 시도하지 않는다."""
 
 
-def _settings(page) -> None:
+def _settings(page, aspect: str) -> None:
     # 에이전트 모드(새 로그인 첫 기본값)면 설정 버튼이 숨는다. 끄면 Flow가 기억한다
     chip = page.locator("button.agent-mode-chip").first
     chip.wait_for(timeout=30_000)
     if chip.get_attribute("aria-pressed") == "true":
         chip.click()
     page.locator('button[aria-label="설정 트리거"]').click()
-    for name in SETTINGS:
+    # 설정 팝오버 radio 이름. 순서가 중요하다(동영상을 골라야 나머지가 나온다). aspect는 "9:16"·"16:9"
+    for name in ("동영상", "소재", aspect, "720p", "8초", "x1"):
         r = page.locator('button[role="radio"]', has_text=name).first
         if r.get_attribute("aria-checked") != "true":
             r.click()
@@ -45,7 +44,7 @@ def _settings(page) -> None:
         page.get_by_text(MODEL, exact=True).last.click()
     page.keyboard.press("Escape")
     got = page.locator('button[aria-label="설정 트리거"]').inner_text()
-    if not all(w in got for w in ("동영상", "720p", "8초", "crop_9_16", "x1")):
+    if not all(w in got for w in ("동영상", "720p", "8초", "crop_" + aspect.replace(":", "_"), "x1")):
         raise RuntimeError(f"Flow 설정을 맞추지 못했어요: {got}")
 
 
@@ -157,6 +156,9 @@ class FlowAuto:
     label = "Google Flow(자동)"
     hint = f"Flow 크레딧 · 장면마다 {SCENE_CREDITS}크레딧 · 처음 한 번 uv run sp chrome으로 띄운 창에서 Google 로그인"
 
+    def __init__(self, aspect: str = "9:16"):
+        self.aspect = aspect   # Flow 설정의 화면비 이름. 쇼츠 9:16, 롱폼 16:9
+
     def ready(self) -> bool:
         return Path(CHROME).exists()
 
@@ -240,7 +242,7 @@ class FlowAuto:
                         raise RuntimeError("Flow에 로그인이 필요해요. uv run sp chrome으로 띄운 창에서 로그인한 뒤 다시 시도하세요") from None
                     new.click()   # 작업마다 프로젝트 하나
                     page.wait_for_url("**/project/**")
-                    _settings(page)
+                    _settings(page, self.aspect)
                     log(f"Flow 프로젝트: {page.url}")
                 # ponytail: 장면을 하나씩 만든다(7장면 약 15분). 느리면 한꺼번에 넣고 타일을 프롬프트로 짝지을 것
                 for s in todo:

@@ -37,8 +37,10 @@ from .ports.video import VideoProvider
 LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode()}
 RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast(), "fish": FishAudio()}
-VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto()}
+VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto(),
+                                    "flow-16x9": Flow("16:9"), "flow-auto-16x9": FlowAuto("16:9")}
 FALLBACK_VIDEO = "flow"   # 고른 공급자를 쓸 수 없을 때(사람이 올린다)
+FALLBACK_VIDEO_LONG = "flow-16x9"   # 롱폼 채널은 16:9
 SPLITTERS: dict[str, Splitter] = {"ko": Korean(), "ja": Japanese(), "en": Whitespace()}
 DEFAULT_SPLITTER = Whitespace()   # 그 밖의 언어: 띄어쓰기에서 끊는다
 NOTIFIERS: dict[str, Notifier] = {"discord": Discord(), "telegram": Telegram()}   # .env에 켜진 것 모두로 보낸다
@@ -69,10 +71,15 @@ def _pick(table: dict, name: str, what: str):
 
 
 def video(ch: Channel) -> tuple[str, VideoProvider]:
-    """채널이 고른 영상 공급자. 쓸 수 없으면 Flow(직접 올림)."""
+    """채널이 고른 영상 공급자(롱폼은 같은 이름의 16:9 판). 쓸 수 없으면 Flow(직접 올림, 롱폼은 16:9)."""
     name = ch.video.provider
+    if ch.format == "long" and f"{name}-16x9" in VIDEOS:   # 9:16 클립을 16:9 영상에 깔면 위아래가 잘린다
+        name += "-16x9"
     p = _pick(VIDEOS, name, "영상 공급자")
-    return (name, p) if p.ready() else (FALLBACK_VIDEO, VIDEOS[FALLBACK_VIDEO])
+    if p.ready():
+        return name, p
+    name = FALLBACK_VIDEO_LONG if ch.format == "long" else FALLBACK_VIDEO
+    return name, VIDEOS[name]
 
 
 def splitter(language: str) -> Splitter:

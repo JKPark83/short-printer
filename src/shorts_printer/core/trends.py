@@ -1,7 +1,7 @@
 """주제 찾기: 채널 기본 추천 기준(prompts/trend_idea.md + 채널 ideas.md·trends.md)으로 LLM이 웹을 찾아
 주제 IDEA_N개를 고른다. 사용자가 적은 추가 요청이 있으면 기본 기준에 더해 따른다.
 인기 쇼츠 참고(popular)를 켜면 채널 검색어(trends.keywords)로 최근 뜨는 쇼츠를 YouTube Data API로 모아
-시간당 조회수 순으로 함께 넘긴다.
+시간당 조회수 순으로 함께 넘긴다. 롱폼 채널(format long)은 4~20분 영상을 모으고 prompts/long_trend_idea.md를 쓴다.
 단계는 선정 하나. 작업(Job)과 같은 규칙으로 실패하면 다시 시도할 수 있다."""
 import json
 import re
@@ -106,20 +106,29 @@ def _api(path: str, **params) -> dict:
         raise RuntimeError("YouTube API에 연결하지 못했어요. 네트워크를 확인하세요.") from None
 
 
-def rank(items: list[dict], now: datetime, language: str) -> list[dict]:
-    """videos.list 결과를 거른다(180초 이하, 제목·설명에 그 언어 글자) → 시간당 조회수 내림차순."""
-    out, script = [], SCRIPTS.get(language)
+def _long(ch: Channel) -> bool:
+    # channel.format이 없던 예전 Channel도 숏폼으로 본다
+    return getattr(ch, "format", "short") == "long"
+
+
+def _kind(ch: Channel) -> str:
+    return "영상" if _long(ch) else "쇼츠"
+
+
+def rank(items: list[dict], now: datetime, language: str, long: bool = False) -> list[dict]:
+    """videos.list 결과를 거른다(숏폼은 180초 이하, 제목·설명에 그 언어 글자) → 시간당 조회수 내림차순."""
+    out, script, top = [], SCRIPTS.get(language), float("inf") if long else MAX_SEC
     for it in items:
         sn, st = it["snippet"], it.get("statistics", {})
         dur = iso_seconds(it.get("contentDetails", {}).get("duration"))
-        if not 0 < dur <= MAX_SEC or script and not script.search(sn["title"] + sn.get("description", "")):
+        if not 0 < dur <= top or script and not script.search(sn["title"] + sn.get("description", "")):
             continue
         views = int(st.get("viewCount", 0))   # 숨긴 값은 0
         age = max((now - datetime.fromisoformat(sn["publishedAt"])).total_seconds() / 3600, 1)
         out.append({"id": it["id"], "title": sn["title"], "channel": sn["channelTitle"], "channel_id": sn["channelId"],
                     "views": views,
                     "views_per_hour": round(views / age), "hours": round(age),
-                    "url": f"https://www.youtube.com/shorts/{it['id']}",
+                    "url": f"https://www.youtube.com/{'watch?v=' if long else 'shorts/'}{it['id']}",
                     "description": sn.get("description", "")[:200]})
     out.sort(key=lambda v: v["views_per_hour"], reverse=True)
     seen = Counter()
@@ -139,23 +148,25 @@ def _subs(ids: list[str]) -> dict[str, int]:
             and (n := int(st.get("subscriberCount", 0)))}
 
 
-def popular_shorts(ch: Channel) -> list[dict]:
-    """채널 검색어로 최근 POPULAR_DAYS일 쇼츠를 조회수 순으로 찾아 시간당 조회수 상위 POPULAR_N개.
+def popular_videos(ch: Channel) -> list[dict]:
+    """채널 검색어로 최근 POPULAR_DAYS일 쇼츠(롱폼 채널은 4~20분 영상)를 조회수 순으로 찾아
+    시간당 조회수 상위 POPULAR_N개.
     구독자 대비 배수(per_sub)를 붙여 큰 채널의 평소 성적과 작은 채널의 대박을 가른다.
     검색어가 없으면 지역 전체 인기(드라마·아이돌)가 모여 채널과 상관없는 주제가 나와 막는다. 할당량은 102."""
     if not config.secret("YOUTUBE_API_KEY"):
         raise RuntimeError(NO_KEY)
     if not ch.trends.keywords:
-        raise RuntimeError("채널 channel.toml의 [trends] keywords에 인기 쇼츠 검색어를 넣어 주세요.")
+        raise RuntimeError(f"채널 channel.toml의 [trends] keywords에 인기 {_kind(ch)} 검색어를 넣어 주세요.")
     now = datetime.now(UTC)
-    q = {"part": "snippet", "type": "video", "videoDuration": "short", "order": "viewCount", "maxResults": 50,
+    q = {"part": "snippet", "type": "video", "videoDuration": "medium" if _long(ch) else "short",   # medium = 4~20분
+         "order": "viewCount", "maxResults": 50,
          "relevanceLanguage": ch.language, "q": " | ".join(ch.trends.keywords),   # | 는 YouTube 검색의 OR
          "publishedAfter": (now - timedelta(days=POPULAR_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if region := REGIONS.get(ch.language):
         q["regionCode"] = region
     ids = [it["id"]["videoId"] for it in _api("search", **q).get("items", [])]
     items = _api("videos", part="snippet,contentDetails,statistics", id=",".join(ids)).get("items", []) if ids else []
-    top = rank(items, now, ch.language)[:POPULAR_N]
+    top = rank(items, now, ch.language, _long(ch))[:POPULAR_N]
     subs = _subs(sorted({v["channel_id"] for v in top}))
     for v in top:
         if n := subs.get(v["channel_id"]):
@@ -205,8 +216,13 @@ class IdeasOut(BaseModel):
 
 
 def system_idea(ch: Channel) -> str:
-    """prompts/trend_idea.md에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
+    """prompts/trend_idea.md(롱폼은 long_trend_idea.md)에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
     rules = ch.text("ideas.md") if (ch.dir / "ideas.md").exists() else ""
+    if _long(ch):
+        lo, hi = ch.long.minutes
+        return prompts.render("long_trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
+                              channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
+                              minutes=f"{lo}~{hi}분", facts=ch.long.max_facts)
     return prompts.render("trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
                           channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
                           duration=ch.script.duration, scenes=ch.script.scenes)
@@ -284,15 +300,16 @@ def step_pick(t: Trend, sv: Services) -> str:
     head = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"
             f"점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
     if t.data.get("popular"):
+        kind = _kind(ch)
         if (videos := t.doc("videos.json")) is None:   # 다시 시도할 때 할당량을 또 쓰지 않는다
-            t.log(f"YouTube에서 최근 {POPULAR_DAYS}일 인기 쇼츠 찾는 중: {' | '.join(ch.trends.keywords)}")
-            videos = popular_shorts(ch)
+            t.log(f"YouTube에서 최근 {POPULAR_DAYS}일 인기 {kind} 찾는 중: {' | '.join(ch.trends.keywords)}")
+            videos = popular_videos(ch)
             t.put("videos.json", videos)
         if len(videos) < 3:
-            raise RuntimeError(f"인기 쇼츠를 {len(videos)}개만 찾았어요. "
+            raise RuntimeError(f"인기 {kind}{'을' if _long(ch) else '를'} {len(videos)}개만 찾았어요. "
                                "channel.toml의 [trends] keywords를 넓혀 보세요.")
-        t.log(f"인기 쇼츠 {len(videos)}개(시간당 조회수 순): " + ", ".join(v["title"] for v in videos[:5]) + " …")
-        head += f"\n\n요즘 뜨는 쇼츠(최근 {POPULAR_DAYS}일, 시간당 조회수 순):\n{_popular_text(videos)}"
+        t.log(f"인기 {kind} {len(videos)}개(시간당 조회수 순): " + ", ".join(v["title"] for v in videos[:5]) + " …")
+        head += f"\n\n요즘 뜨는 {kind}(최근 {POPULAR_DAYS}일, 시간당 조회수 순):\n{_popular_text(videos)}"
     t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
     kept, seen = [], made + avoid
     for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다

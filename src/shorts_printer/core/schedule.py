@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator, model_v
 from .. import config
 from ..infra.store import Record, redact
 from ..ports.queue import Queue
-from . import channel, trends
+from . import channel, longform, trends
 from .pipeline import LABELS, Job, in_review
 from .trends import Trend
 
@@ -311,6 +311,11 @@ def after_trend(trend: Trend, q: Queue, notify: Notify) -> None:
     if not s:
         notify(_msg(who, "주제 찾기 완료", *tops, link))
         return
+    if channel.load(d["channel"]).format == "long":   # 롱폼 주제는 사람이 고른다(사용자 결정)
+        with q.lock:
+            _patch(s, "trend", trend.id, result="started", note="롱폼은 주제를 직접 골라요")
+        notify(_msg(who, "주제 찾기 완료", *tops, "→ 롱폼은 주제를 골라 직접 영상을 만들어 주세요", link))
+        return
     made = {j.data["topic"] for j in Job.all() if j.data.get("channel") == d["channel"]}
     i = next((i for i, p in enumerate(picks) if p["topic"] not in made), 0)
     p = picks[i]
@@ -327,9 +332,16 @@ def _sensitive_wait(job: Job) -> str | None:
     """민감 분야 확인을 기다리면 그 분야. 클립 대기 등 다른 멈춤이면 None."""
     d = job.data
     area = (job.doc("script.json") or {}).get("sensitive")
+    if d.get("format") == "long":   # 롱폼은 민감 확인 대신 대본 승인(script_ok)을 늘 받는다
+        return None
     if d["status"] != "waiting" or not area or d.get("confirmed") or d["steps"]["footage"]["status"] == "done":
         return None
     return area if channel.load(d["channel"]).sensitive_gate else None
+
+
+LONG_WAIT = {"script": ("검수 필요", "롱폼 대본을 확인하고 [대본 승인]을 눌러 주세요."),
+             "clips": ("클립 필요", "장면 클립을 올려 주세요."),
+             "draft": ("확인 필요", "롱폼 초안을 확인하고 [초안 승인]을 눌러 주세요.")}
 
 
 def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
@@ -341,16 +353,19 @@ def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
     link = f"작업: {_link('jobs', job.id)}"
     who = s.data if s else {"channel": d["channel"], "name": "직접 만든 작업"}
     then = "영상 제작·업로드까지 이어져요." if s else "영상 제작이 이어져요."   # 손으로 만든 작업은 사람이 올린다
+    long = d.get("format") == "long"
     if kind == "run" and d["status"] == "done":   # 손으로 만든 작업도 영상이 다 되면 알린다
-        notify(_msg(who, "제작 완료", title, link))
+        notify(_msg(who, "제작 완료", title, *(["최종 검수를 보고 직접 올려 주세요."] if long else []), link))
     elif kind == "run" and d["status"] == "failed":   # 실패도 모든 작업
         err = d.get("error") or {}
-        step = LABELS.get(err.get("step"), "")
+        step = (LABELS | longform.LABELS_LONG).get(err.get("step"), "")
         notify(_msg(who, "실패", f"제작 실패{f'({step})' if step else ''}: {err.get('message')}", d["topic"], link))
     elif kind == "run" and in_review(d):   # 검수 확정이 민감 확인도 겸하므로 알림은 이것 하나
         area = (job.doc("script.json") or {}).get("sensitive")
         notify(_msg(who, "검수 필요", f"대본을 확인하고 [확인하고 계속]을 누르면 {then}",
                     *filter(None, [area and f"민감 분야({area}) 대본이에요."]), d["topic"], link))
+    elif kind == "run" and (g := longform.gate(d)):   # 롱폼은 대본·클립·초안에서 사람을 기다린다
+        notify(_msg(who, *LONG_WAIT[g], d["topic"], link))
     elif kind == "run" and (area := _sensitive_wait(job)):
         notify(_msg(who, "확인 필요", f"민감 분야({area}) 대본이에요. 대본을 보고 [확인하고 계속]을 누르면 {then}",
                     title, link))
@@ -366,8 +381,9 @@ def after_job(job: Job, kind: str, q: Queue, notify: Notify) -> None:
             notify(_msg(sd, "실패", f"업로드 실패: {up.get('error')}", title, link))
         return
     if d["status"] == "done":
-        # 처음 완성될 때만 올린다. 올린 뒤 상세 화면에서 고쳐 다시 만든 것(uploaded_before)은 사람이 올린다
-        if d.get("upload") is None and not d.get("uploaded_before"):
+        # 처음 완성될 때만 올린다. 올린 뒤 상세 화면에서 고쳐 다시 만든 것(uploaded_before)은 사람이 올린다.
+        # 롱폼은 최종 검수(final.json issues)를 사람이 보고 올린다
+        if d.get("upload") is None and not d.get("uploaded_before") and not long:
             q.enqueue_upload(job.id)
     elif d["status"] == "interrupted" and not d.get("cancel"):   # 앱이 켜질 때 recover()가 넘긴다. 취소는 사람이 했다
         notify(_msg(sd, "실패", "제작 중단: 서버가 꺼져 멈췄어요. 작업 화면에서 다시 시도하세요.", d["topic"], link))

@@ -19,9 +19,9 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import config, registry
-from ..core import channel, pipeline, scenes, schedule, script, subtitles, trends, voice
+from ..core import channel, longform, pipeline, scenes, schedule, script, subtitles, trends, voice
 from ..core.channel import Channel
-from ..core.pipeline import LABELS, STEPS, Job, in_review, in_voice_review, upload_of, uploading
+from ..core.pipeline import STEPS, Job, in_review, in_voice_review, upload_of, uploading
 from ..core.schedule import Schedule
 from ..core.trends import Trend
 from ..infra import ffmpeg
@@ -44,6 +44,11 @@ STATE = {"pending": "대기", "running": "진행 중", "done": "완료", "failed
 # 상세 화면 단계 묶음: 대본·음성·자막을 확정해야 영상으로 넘어간다
 PHASES = (("대본", ("research", "script", "proofread", "voice", "subtitles")), ("영상", ("footage",)),
           ("썸네일", ("thumbnail",)), ("완성", ("render",)))
+# 롱폼: 대본 승인 뒤 제작, 초안 승인 뒤 마무리
+PHASES_LONG = (("대본", ("research", "script", "proofread")), ("제작", ("voice", "plan", "map", "clips", "draft")),
+               ("마무리", ("render", "final")))
+GATE = {"script": "대본 승인 대기", "clips": "클립 대기", "draft": "초안 승인 대기"}   # longform.gate
+SHORTS_ONLY = "롱폼 작업에서는 쓰지 않아요"
 # 스케줄 회차 배지(글, 색)
 RUN = {"skipped": ("건너뜀", ""), "missed": ("놓침", "b-interrupted"), "failed": ("실패", "b-failed")}
 # Lucide 아이콘 경로(ISC 라이선스). 이모지 대신 쓴다.
@@ -112,9 +117,12 @@ def icon(name: str, size: int = 16, cls: str = "") -> Markup:
                   f'aria-hidden="true">{ICONS[name]}</svg>')
 
 
+LABELS = pipeline.LABELS | longform.LABELS_LONG   # 롱폼 작업은 단계가 다르다(data["steps"]를 돈다)
+
+
 def sig(data: dict) -> str:
     """화면 조각을 다시 그려야 하는지 가르는 값. 템플릿과 상태 API가 같은 함수를 쓴다."""
-    return (f'{data["status"]}:{"".join(data["steps"][s]["status"][0] for s in STEPS)}:{len(data["notices"])}'
+    return (f'{data["status"]}:{"".join(st["status"][0] for st in data["steps"].values())}:{len(data["notices"])}'
             f':{(data.get("upload") or {}).get("status", "-")}'
             + "".join(f":{k}={v['status']}" for k, v in (data.get("uploads") or {}).items())
             + (":취소" if data.get("cancel") else ""))
@@ -123,12 +131,14 @@ def sig(data: dict) -> str:
 def status_label(data: dict) -> str:
     if data["status"] == "interrupted" and data.get("cancel"):
         return "취소"
+    if g := longform.gate(data):
+        return GATE[g]
     return "대본 확인" if in_review(data) else "음성 확인" if in_voice_review(data) else STATUS[data["status"]]
 
 
 def say(data: dict) -> str:
     """화면 읽기 프로그램에 알릴 한 줄."""
-    running = [LABELS[s] for s in STEPS if data["steps"][s]["status"] == "running"]
+    running = [LABELS[s] for s, st in data["steps"].items() if st["status"] == "running"]
     if running:
         return f"{running[0]} 진행 중"
     upload = (data.get("upload") or {}).get("status")
@@ -137,7 +147,8 @@ def say(data: dict) -> str:
     if upload == "failed" and data["status"] == "done":
         return "YouTube 업로드 실패"
     if data["status"] == "failed":
-        return f'실패: {LABELS[data["error"]["step"]]}'
+        step = data["error"]["step"]   # None은 채널 설정 오류
+        return f'실패: {LABELS.get(step, "예전 단계") if step else "채널 설정"}'
     return status_label(data)
 
 
@@ -266,11 +277,12 @@ app.mount("/files", StaticFiles(directory=config.JOBS_DIR, check_dir=False), nam
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals |= {
     "v": int(datetime.now().timestamp()),   # 서버를 켠 시각으로 정적 파일 캐시를 깬다
-    "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "LABELS": LABELS, "STATUS": STATUS, "STATE": STATE,
+    "icon": icon, "sig": sig, "job_cost": job_cost, "STEPS": STEPS, "STEPS_LONG": longform.STEPS_LONG, "LABELS": LABELS,
+    "STATUS": STATUS, "STATE": STATE,
     "ACTIVE": ACTIVE, "trends": trends, "tsig": tsig, "TSTATUS": TSTATUS, "ALL": ALL, "LANGS": channel.LANGS,
     "NODE_ICON": NODE_ICON, "CHECK_ICON": CHECK_ICON,
-    "schedule": schedule, "PHASES": PHASES, "status_label": status_label, "in_review": in_review,
-    "in_voice_review": in_voice_review, "uploading": uploading,
+    "schedule": schedule, "PHASES": PHASES, "PHASES_LONG": PHASES_LONG, "status_label": status_label,
+    "in_review": in_review, "in_voice_review": in_voice_review, "uploading": uploading,
 }
 templates.env.filters |= {"hm": hm, "mmss": mmss, "cue_ts": cue_ts, "at": at, "until": until}
 
@@ -423,9 +435,30 @@ def _latest_picks(cid: str, chs: dict[str, Channel]) -> dict | None:
 
 
 def _can_upload(data: dict) -> bool:
-    """클립을 올리거나 바꿀 수 있나: 대본을 확정했고, 만들거나 YouTube에 올리는 중이 아닐 때
-    (올린 뒤에 바꾸면 새로 올린다)."""
-    return data["status"] not in ACTIVE and not in_review(data) and not in_voice_review(data) and not uploading(data)
+    """클립을 올리거나 바꿀 수 있나: 대본을 확정(롱폼은 음성까지 만들어 대본이 더는 안 바뀔 때)했고,
+    만들거나 YouTube에 올리는 중이 아닐 때(올린 뒤에 바꾸면 새로 올린다)."""
+    return (data["status"] not in ACTIVE and not in_review(data) and not in_voice_review(data) and not uploading(data)
+            and (data.get("format") != "long" or data["steps"]["voice"]["status"] == "done"))
+
+
+def _shorts(job_id: str) -> Job:
+    """쇼츠 작업만 받는 기능. 롱폼은 단계·대본 모양이 달라 409."""
+    job = _load(Job, job_id)
+    if job.data.get("format") == "long":
+        raise HTTPException(409, SHORTS_ONLY)
+    return job
+
+
+def _long_scenes(job: Job, s: dict | None) -> list[dict]:
+    """롱폼 장면 카드용: 장면 + 장 제목 + 클립 미리보기·거절 사유."""
+    if not s:
+        return []
+    refused = {r["i"]: r["reason"] for r in job.data.get("refused") or []}
+    out = []
+    for i, sc in enumerate(s["scenes"]):
+        p = job.dir / "clips" / f"clip{i}.mp4"
+        out.append(sc | {"i": i, "refused": refused.get(i), "v": p.stat().st_mtime_ns if p.exists() else None})
+    return out
 
 
 def _scenes(job: Job) -> list[dict]:
@@ -497,6 +530,8 @@ def job_page(request: Request, job_id: str):
     ch = _channel(job.data.get("channel"))
     s, thumb, ko, cues = job.doc("script.json"), job.doc("thumb.json"), job.doc("ko.json"), job.doc("cues.json")
     facts = (job.doc("facts.json") or {}).get("facts", [])
+    if job.data.get("format") == "long":
+        return _job_long(request, job, ch, s, facts)
     return _page(request, "job.html", {
         # 조사 없이 만든 예전 작업은 근거 검사를 하지 않는다(모든 숫자 문장이 걸린다)
         "facts": facts, "unverified": script.unverified(s, facts) if s and facts else [],
@@ -510,6 +545,24 @@ def job_page(request: Request, job_id: str):
         # 옮긴 뒤 자막을 고쳤거나 옮길 때 자막이 없었으면 자막 뜻은 안 보인다
         "ko_cues": ko["ko"]["cues"] if ko and cues and ko.get("cues") == [c["text"] for c in cues] else None,
         "scenes": _scenes(job), "can_upload": _can_upload(job.data), "proofread": job.doc("proofread.json")})
+
+
+def _job_long(request: Request, job: Job, ch: Channel, s: dict | None, facts: list[dict]):
+    f, draft = job.doc("film.json"), job.doc("draft.json")
+    for p in (draft or {}).get("snapshots", []):   # 다시 만들어도 파일 이름이 같아 mtime으로 캐시를 깬다
+        x = job.dir / p["file"]
+        p["v"] = x.stat().st_mtime_ns if x.exists() else ""
+    final = job.dir / "final.mp4"
+    return _page(request, "job_long.html", {
+        "job": job.data, "ch": ch, "gate": longform.gate(job.data), "script": s, "facts": facts,
+        "unverified": script.unverified(s, facts) if s and facts else [], "proofread": job.doc("proofread.json"),
+        "scenes": _long_scenes(job, s), "room": max(0, int(ch.long.clip_ratio * len(s["scenes"]))) if s else 0,
+        "draft": draft, "total": f["total"] if f else None, "final": job.doc("final.json"),
+        "credits": job.doc("credits.json") or [], "has_thumb": (job.dir / "thumbnail.jpg").exists(),
+        "has_srt": (job.dir / "captions.srt").exists(), "desc": pipeline.description(job, ch) if s else "",
+        "publisher": registry.publisher(ch), "also": {n: registry.publisher(ch, n) for n in ch.publish.also},
+        "can_upload": _can_upload(job.data), "to_map": _clip_to_map_open(job.data), "log": _tail(job),
+        "final_v": final.stat().st_mtime_ns if final.exists() else ""})   # 최종 검수 중엔 finished_at이 비어 있다
 
 
 @app.get("/api/jobs/{job_id}")
@@ -562,7 +615,7 @@ def delete_job(job_id: str):
 def confirm(job_id: str):
     """대본(민감 분야 포함) 또는 음성을 사람이 확인했다. 멈춘 단계부터 이어서.
     예전 초안 음성 작업이면 대본 확정 뒤 채널 TTS로 다시 읽고 음성 확정(voice_ok)에서 한 번 더 멈춘다."""
-    job = _load(Job, job_id)
+    job = _shorts(job_id)
     with q.lock:   # 고쳐 쓰는 중(queued·running)에 확정하면 고치기 전 대본을 확정한 셈이 된다
         if job.data["status"] != "waiting":
             raise HTTPException(409, "지금은 확정할 수 없어요")
@@ -582,7 +635,7 @@ def confirm(job_id: str):
 @app.post("/api/jobs/{job_id}/voice/redo")
 def redo_voice(job_id: str):
     """대본·음성 확인 중: 같은 대본·목소리로 다시 읽는다(마음에 안 들 때). 자막 시각도 새로 잰다."""
-    data = _load(Job, job_id).data
+    data = _shorts(job_id).data
     if not (in_review(data) or in_voice_review(data)):
         raise HTTPException(409, "확정 전에만 다시 읽을 수 있어요")
     _redo(job_id, ("voice", "subtitles"))
@@ -599,12 +652,15 @@ def _redo(job_id: str, steps: tuple, **kw) -> None:
     """확정 전·완성 뒤 고치기. 만들거나 올리는 중이면 409."""
     job = _load(Job, job_id)
     if not q.redo(job_id, steps, **kw):
+        if any(s not in job.data["steps"] for s in steps):
+            raise HTTPException(409, SHORTS_ONLY if job.data.get("format") == "long" else "이 작업에는 없는 단계예요")
         done = job.data["status"] in ("done", "failed", "interrupted", "waiting")
         raise HTTPException(409, "올리는 중에는 고칠 수 없어요" if done else "만드는 중에는 고칠 수 없어요")
 
 
 @app.post("/api/jobs/{job_id}/thumbnail")
 def rethumb(job_id: str, note: str = Form("")):
+    _shorts(job_id)
     _redo(job_id, ("thumbnail", "render"), thumb_note=_note(note), thumb_hand=None)
     return {"ok": True, "msg": "썸네일을 다시 만들고 영상도 다시 렌더해요"}
 
@@ -632,7 +688,7 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
     문장·목소리 → 음성부터(자막은 새로 나뉘어 고친 자막 줄은 버린다), 자막 줄 → 그 문장을 고친 줄대로 고쳐 음성부터,
     썸네일 문구 → 썸네일·렌더.
     제목·설명·태그만이면 저장만. 장면 클립은 그대로. 장면 프롬프트는 확정 전(클립을 아직 안 만들었을 때)만 받는다."""
-    job = _load(Job, job_id)
+    job = _shorts(job_id)
     old, was = job.doc("script.json"), job.data["voice"]
     lines, title, voice = [_clean(s) for s in sentences], title.strip(), voice or was
     ch = _channel(job.data.get("channel"))
@@ -693,11 +749,92 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
     return {"ok": True, "msg": f"저장했어요. {redo}를 다시 해요" if steps else "저장했어요"}
 
 
+def _long_script_open(job: Job) -> None:
+    """롱폼 대본은 음성을 만들기 전에만 고친다. 그 뒤엔 음성·지도·클립이 장면 번호에 묶여 있다."""
+    if not job.doc("script.json"):
+        raise HTTPException(409, "대본이 아직 없어요")
+    if job.data["steps"]["voice"]["status"] == "done":
+        raise HTTPException(409, "음성을 만든 뒤라 대본을 고칠 수 없어요")
+
+
+@app.post("/api/jobs/{job_id}/approve/{what}")
+def approve(job_id: str, what: str):
+    """롱폼 대본(script)·초안(draft) 승인. 승인하면 멈춘 단계부터 이어서 만든다."""
+    with q.lock:   # 고쳐 쓰는 중(queued·running)에 승인하면 고치기 전 것을 승인한 셈이 된다
+        job = _load(Job, job_id)
+        if what not in ("script", "draft") or longform.gate(job.data) != what:
+            raise HTTPException(409, f"지금은 {'대본' if what == 'script' else '초안'}을 승인할 수 없어요")
+        job.update(cancel=None, **{f"{what}_ok": True})
+        q.enqueue(job_id)
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/draft/revise")
+def revise_draft(job_id: str, note: str = Form("")):
+    """초안을 보고 지도 고치기: 지도 계획부터 초안까지 다시 한다(음성·클립은 그대로)."""
+    if not (note := _note(note)):
+        raise HTTPException(400, "고칠 내용을 적어 주세요")
+    if longform.gate(_load(Job, job_id).data) != "draft":
+        raise HTTPException(409, "초안을 확인할 때만 지도를 고칠 수 있어요")
+    _redo(job_id, ("plan", "map", "draft"), draft_note=note)
+    return {"ok": True, "msg": "Claude가 지도 계획을 고치고 초안을 다시 만들어요"}
+
+
+def _clip_to_map_open(data: dict) -> bool:
+    """롱폼 음성 뒤 초안 전, 멈춰 있을 때(거절로 실패·클립 대기·중단): 클립 장면을 지도로 돌릴 수 있다."""
+    st = data["steps"]
+    return (data.get("format") == "long" and data["status"] in ("failed", "waiting", "interrupted")
+            and st["voice"]["status"] == "done" and st["draft"]["status"] != "done")
+
+
+@app.post("/api/jobs/{job_id}/scenes/{i}/kind")
+def scene_kind(job_id: str, i: int, kind: str = Form(...)):
+    """롱폼 대본 승인 전: 장면을 지도(map)·클립(clip)으로 바꾼다. 클립은 [long] clip_ratio까지.
+    음성 뒤 초안 전(거절·클립 대기)엔 클립 → 지도만: 음성 타이밍은 그대로라 지도 계획부터 다시 한다."""
+    if kind not in ("map", "clip"):
+        raise HTTPException(400, "장면 종류는 지도나 클립이에요")
+    with q.lock:   # 검사와 저장 사이에 작업이 시작되지 않게
+        job = _load(Job, job_id)
+        late = kind == "map" and _clip_to_map_open(job.data)
+        if longform.gate(job.data) != "script" and not late:
+            raise HTTPException(409, "대본을 승인하기 전에만 장면 종류를 바꿀 수 있어요")
+        s = job.doc("script.json")
+        sc = s["scenes"]
+        if not 0 <= i < len(sc):
+            raise HTTPException(404, "그 장면이 없어요")
+        if late:
+            if sc[i]["kind"] != "clip":
+                raise HTTPException(400, "클립 장면이 아니에요")
+            sc[i]["kind"] = "map"
+            refused = [r for r in job.data.get("refused") or [] if r["i"] != i] or None
+            # 지난 계획을 넘겨 받는 지도 계획이 이 장면을 비워 두지 않게 알린다(번호는 계획 목록의 0부터)
+            note = f"{i}번 장면을 클립에서 지도 장면으로 바꿨다. 이 장면 지도를 새로 짠다"
+            if not q.redo(job_id, ("plan", "map", "clips"), files={"script.json": s}, refused=refused, draft_note=note):
+                raise HTTPException(409, "지금은 바꿀 수 없어요")
+            return {"ok": True, "msg": f"장면 {i + 1}을 지도 장면으로 바꿨어요. 지도 계획부터 다시 만들어요"}
+        if kind == "clip":
+            if not sc[i].get("clip_prompt"):
+                raise HTTPException(400, "이 장면은 클립 프롬프트가 없어요. "
+                                         "[고쳐 줘]로 클립 장면으로 바꿔 달라고 적어 주세요")
+            room = max(0, int(_channel(job.data.get("channel")).long.clip_ratio * len(sc)))
+            if sum(x["kind"] == "clip" for j, x in enumerate(sc) if j != i) >= room:
+                raise HTTPException(400, f"클립 장면은 {room}개까지예요. 다른 장면을 지도로 바꾼 뒤 바꿔 주세요")
+        sc[i]["kind"] = kind
+        if not q.redo(job_id, (), files={"script.json": s}):
+            raise HTTPException(409, "지금은 바꿀 수 없어요")
+    return {"ok": True, "msg": f"장면 {i + 1}을 {'클립' if kind == 'clip' else '지도'} 장면으로 바꿨어요"}
+
+
 @app.post("/api/jobs/{job_id}/script/revise")
 def revise_script(job_id: str, note: str = Form("")):
     if not (note := _note(note)):
         raise HTTPException(400, "고칠 내용을 적어 주세요")
-    review = in_review(_load(Job, job_id).data)
+    job = _load(Job, job_id)
+    if job.data.get("format") == "long":
+        _long_script_open(job)
+        _redo(job_id, ("script", "proofread"), script_note=note)
+        return {"ok": True, "msg": "Claude가 대본을 고치고 다시 검수해요. 끝나면 다시 확인해 주세요"}
+    review = in_review(job.data)
     # 고친 문장에서 새 흠이 생길 수 있어 검수도 다시 한다(장면 클립·썸네일은 그대로)
     _redo(job_id, ("script", "proofread", "voice", "subtitles", "render"), script_note=note)
     return {"ok": True, "msg": "Claude가 대본을 고치고 검수·음성·자막을 다시 만들어요. 끝나면 다시 확인해 주세요"
@@ -709,6 +846,10 @@ def rewrite_script(job_id: str):
     """대본을 처음부터 다시 쓴다(검수에 떨어졌거나 그냥 마음에 안 들 때).
     장면 클립을 만든 뒤에는 새 장면과 어긋나니 막는다."""
     job = _load(Job, job_id)
+    if job.data.get("format") == "long":
+        _long_script_open(job)
+        _redo(job_id, ("script", "proofread"), script_note=None)
+        return {"ok": True, "msg": "Claude가 대본을 처음부터 다시 쓰고 다시 검수해요"}
     if job.data["steps"]["footage"]["status"] == "done":
         raise HTTPException(409, "장면 클립을 이미 만든 뒤라 처음부터 다시 쓸 수 없어요. 수정 요청으로 고쳐 주세요")
     _redo(job_id, ("script", "proofread", "voice", "subtitles", "thumbnail", "render"), script_note=None)
@@ -718,7 +859,7 @@ def rewrite_script(job_id: str):
 @app.post("/api/jobs/{job_id}/translate")
 def translate(job_id: str):
     """한국어가 아닌 채널: 운영자가 확인하도록 대본·썸네일 문구를 한국어로 옮긴다. 작업 단계는 다시 하지 않는다."""
-    job = _load(Job, job_id)
+    job = _shorts(job_id)
     if not (s := job.doc("script.json")):
         raise HTTPException(409, "대본이 아직 없어요")
     sv = registry.services(job.data["channel"])
@@ -759,6 +900,9 @@ async def put_clip(request: Request, job_id: str, i: int):
         raise HTTPException(409, "지금은 클립을 올릴 수 없어요")
     if not 0 <= i < len(s["sentences"]):
         raise HTTPException(404, "그 장면이 없어요")
+    long = job.data.get("format") == "long"
+    if long and s["scenes"][i]["kind"] != "clip":
+        raise HTTPException(400, "지도 장면이라 클립을 올리지 않아요")
     if int(request.headers.get("content-length") or 0) > MAX_CLIP:
         raise HTTPException(413, "클립이 너무 커요(200MB 이하)")
     d = job.dir / "clips"
@@ -789,7 +933,12 @@ async def put_clip(request: Request, job_id: str, i: int):
             os.replace(tmp, dst)
             scenes.set_clip(job, {"file": dst.name, "source": "직접 올림"})
             job.log(f"장면 {i + 1} 클립 올림 ({size // 1024}KB)")
-            if job.data["steps"]["footage"]["status"] == "done":   # 완성(또는 뒤 단계 실패) 뒤 교체: 다음 단계만
+            if long:   # 초안을 만든 뒤 바꾸면 초안부터 다시(초안 승인도 다시 받는다)
+                if any(job.data["steps"][k]["status"] == "done" for k in ("draft", "render", "final")):
+                    q.redo(job_id, ("draft", "render", "final"))
+                elif not longform.missing_clips(job):
+                    q.enqueue(job_id)
+            elif job.data["steps"]["footage"]["status"] == "done":   # 완성(또는 뒤 단계 실패) 뒤 교체: 다음 단계만
                 q.redo(job_id, ("thumbnail", "render") if i == 0 else ("render",))
             elif not pipeline.missing_clips(job):
                 q.enqueue(job_id)
@@ -874,7 +1023,7 @@ def _run_view(run: dict) -> dict:
                 return view | {"label": "올리는 중", "cls": "b-running"}
             if up == "failed":
                 return view | {"label": "업로드 실패", "cls": "b-failed"}
-            if in_review(d) or in_voice_review(d):
+            if in_review(d) or in_voice_review(d) or longform.gate(d):
                 return view | {"label": status_label(d), "cls": "b-waiting"}
             sc = job.doc("script.json") if st == "waiting" else None
             if sc and sc.get("sensitive") and not d.get("confirmed"):
