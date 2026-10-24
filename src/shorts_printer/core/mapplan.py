@@ -22,6 +22,7 @@ MOVE, FRONT_MOVE = 2.4, 3.0
 SHOT_MOVE, HOLD, LATE, STILL, CUT = 1.2, 1.0, 1.5, 4.0, 3.5
 CLOSE, FAR = 1.4, 0.3   # 카메라 배율 상한(타일이 흐려지기 전) / 가운데가 detail 밖일 때 상한
 EDGE = 0.5   # 화면 가장자리가 detail 밖이어도 되는 상한: wide.jpg(1/4 해상도)가 2배까지 커진다(원본 반도 장면)
+CLOSE_TILES, CLOSE_ZOOM = 400, 16   # close 상자(해협·성): 타일 상한(약 5000px 네모) / 가장 높은 줌
 DRAW, ARROWS = 0.9, 4   # 화살표 그리는 초, 장면마다 화살표 수 상한
 CREDIT = "지도 Esri, Maxar, Earthstar Geographics · Natural Earth"
 PHOTOS, PHOTO_BOX = 8, (1170, 170, 620, 0.75)   # 한 편의 기록 사진 상한 / 오른쪽 칸 left·top·너비·높이/너비 상한
@@ -46,6 +47,8 @@ class World(BaseModel):
     box: list[float] = Field(description="[서, 북, 동, 남]. 어느 장면이든 보이는 곳 전부 + 여유")
     zoom: int = Field(description="타일 줌 6~9")
     detail: list[float] = Field(description="[서, 북, 동, 남]. 원본 해상도로 둘 상자, 가까이 보는 곳은 모두 이 안")
+    close: list[float] | None = Field(None, description="[서, 북, 동, 남]. 해협·성·마을처럼 아주 좁은 곳을 "
+                                      "더 가까이 볼 상자(가로 0.1~0.6도), 없으면 null")
     land: list[str] = Field(description="점령지를 자를 나라 ADM0_A3 코드")
     border: list[str] = Field(description="얇은 국경선으로 보일 이웃 나라 ADM0_A3 코드")
     border_box: list[float] | None = Field(None, description="국경선을 자를 [서, 북, 동, 남], 없으면 null")
@@ -151,7 +154,9 @@ def plan(llm: LLM, ch: Channel, script: dict, timing: list[dict], facts: list[di
     world = _world(w)
 
     states = "\n".join(f"- {k}: {world['when'].get(k) or '설명 없음'}" for k in world["states"])
-    head = (f"지도: zoom {world['zoom']}, box {world['box']}, detail {world['detail']}, 점령지 쪽 {world['side']}\n"
+    near = (f", close {world['close']}(이 안은 scale {CLOSE}~{close_top(world)}까지)" if world["close"] else "")
+    head = (f"지도: zoom {world['zoom']}, box {world['box']}, detail {world['detail']}{near}, "
+            f"점령지 쪽 {world['side']}\n"
             f"places:\n" + "\n".join(f"- {k}: {p['name']} ({p['lng']}, {p['lat']})" for k, p in world["places"].items())
             + f"\nstates(시간 순):\n{states or '없음(화살표·라벨로만)'}")
     firsts = sorted({0, *(c["first"] for c in script.get("chapters") or [] if 0 <= c["first"] < n)})
@@ -199,16 +204,30 @@ def _world_px(box: list[float], zoom: int) -> tuple[tuple[float, float], tuple[f
     return maptiles.px(z, box[0], box[1]), maptiles.px(z, box[2], box[3])
 
 
+def _lnglat(x: float, y: float, zoom: int) -> list[float]:
+    """_world_px의 거꾸로: 세계 px → [경도, 위도]."""
+    n = 256 * 2 ** zoom
+    return [round(x / n * 360 - 180, 4), round(math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n)))), 4)]
+
+
+def _tiles(box: list[float], zoom: int) -> int:
+    (x0, y0), (x1, y1) = _world_px(box, zoom)
+    return (int(x1 // 256) - int(x0 // 256) + 1) * (int(y1 // 256) - int(y0 // 256) + 1)
+
+
+def close_top(world: dict) -> float:
+    """close 상자 안 카메라 배율 상한: close.jpg를 원본 크기로 볼 때까지."""
+    return round(CLOSE * 2 ** (world["close_zoom"] - world["zoom"]), 1)
+
+
 def _world(w: World) -> dict:
-    """LLM 답 → plan["world"]. 상자를 바로 세우고 줌은 6~9, 타일이 너무 많으면 낮춘다."""
+    """LLM 답 → plan["world"]. 상자를 바로 세우고 줌은 6~9, 타일이 너무 많으면 낮춘다.
+    close 상자는 타일 CLOSE_TILES장 안에서 가장 높은 줌. 지도 줌보다 2 이상 높지 않으면 detail로 충분해 버린다."""
     box = _box(w.box)
     if not box or not (box[0] < box[2] and box[3] < box[1]):
         raise RuntimeError(f"지도 상자가 잘못됐어요: {w.box}. 다시 시도하세요.")
     zoom = min(max(w.zoom, 6), 9)
-    while zoom > 6:
-        (x0, y0), (x1, y1) = _world_px(box, zoom)
-        if (int(x1 // 256) - int(x0 // 256) + 1) * (int(y1 // 256) - int(y0 // 256) + 1) <= maptiles.MAX_TILES:
-            break
+    while zoom > 6 and _tiles(box, zoom) > maptiles.MAX_TILES:
         zoom -= 1
     # 상자가 화면/CLOSE보다 작으면 화면을 채우느라 카메라가 CLOSE를 넘겨 확대된다: 가운데를 두고 넓힌다
     # ponytail: 위도는 선형으로 늘린다(메르카토르라 큰 상자면 조금 모자란다). 작은 상자에서만 걸려 괜찮다
@@ -217,7 +236,10 @@ def _world(w: World) -> dict:
     if fx > 1 or fy > 1:
         cx, cy, hw, hh = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2, (box[2] - box[0]) / 2, (box[1] - box[3]) / 2
         box = [round(v, 4) for v in (cx - hw * fx, cy + hh * fy, cx + hw * fx, cy - hh * fy)]
+    close = _box(w.close, box) if w.close and len(w.close) == 4 else None
+    close_zoom = next((z for z in range(CLOSE_ZOOM, zoom + 1, -1) if close and _tiles(close, z) <= CLOSE_TILES), None)
     return {"box": box, "zoom": zoom, "detail": _box(w.detail, box), "land": w.land, "border": w.border,
+            "close": close_zoom and close, "close_zoom": close_zoom,
             "border_box": _box(w.border_box), "side": w.side,
             "states": {s.name: s.points for s in w.states}, "when": {s.name: _clean(s.when) for s in w.states},
             "places": {p.id: {"name": p.name, "lng": p.lng, "lat": p.lat} for p in w.places}}
@@ -306,25 +328,38 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
         hit = next((x["start"] for x in timing[n].get("words") or [] if a and a in _norm(x["text"])), None)
         return _r(S[n] + 0.3 if hit is None else hit)
 
-    # 카메라: 지도 이미지가 화면보다 작아지지 않게. 가운데가 detail 밖이면 FAR, 화면 가장자리가 밖이면 EDGE 이하
-    (x0, y0), (x1, y1) = _world_px(box, w["zoom"])
-    (dx0, dy0), (dx1, dy1) = _world_px(detail, w["zoom"])
+    # 카메라: 지도 이미지가 화면보다 작아지지 않게. 가운데가 detail 밖이면 FAR.
+    # 화면 가장자리가 detail(가까이 보면 close) 밖으로 나가면 가운데를 안쪽으로 민다. 흐린 곳이 보이지 않게
+    z, (x0, y0), (x1, y1) = w["zoom"], *_world_px(box, w["zoom"])
     lo = max(0.15, SIZE[0] / (x1 - x0), SIZE[1] / (y1 - y0))
+    near, top = w.get("close"), w.get("close") and close_top(w)
 
-    def scale(s, p):
-        s = min(max(s, 0.15), CLOSE)
-        (x, y), _ = _world_px([*p, *p], w["zoom"])
+    def into(s, p, b):   # 배율 s 화면이 상자 b 안에 들도록 민 가운데 | None(상자가 화면보다 작다)
+        (bx0, by0), (bx1, by1) = _world_px(b, z)
+        (x, y), _ = _world_px([*p, *p], z)
         hw, hh = SIZE[0] / 2 / s, SIZE[1] / 2 / s
+        if bx1 - bx0 < 2 * hw or by1 - by0 < 2 * hh:
+            return None
+        return _lnglat(min(max(x, bx0 + hw), bx1 - hw), min(max(y, by0 + hh), by1 - hh), z)
+
+    def view(s, p):   # 바라는 배율·가운데 → [경도, 위도, scale]
+        if near and s > CLOSE and p == inside(*p, near):
+            (bx0, by0), (bx1, by1) = _world_px(near, z)
+            s = min(max(s, SIZE[0] / (bx1 - bx0), SIZE[1] / (by1 - by0)), top)   # close 상자를 화면에 채운다
+            if q := into(s, p, near):
+                return [*q, round(s, 3)]
+        s = min(max(s, 0.15), CLOSE)
         if p != inside(*p, detail):
             s = min(s, FAR)
-        elif s > EDGE and not (dx0 <= x - hw and x + hw <= dx1 and dy0 <= y - hh and y + hh <= dy1):
-            s = EDGE
-        return round(max(s, lo), 3)
+        elif s > EDGE:
+            q = into(s, p, detail)
+            p, s = (q, s) if q else (p, EDGE)
+        return [*p, round(max(s, lo), 3)]
 
     def cam_key(n, c):   # Camera·Shot → [경도, 위도, scale] | None
         p = c and (pt(n, c["place"]) if c.get("place")
                    else (c.get("lng") or c.get("lat")) and inside(c["lng"], c["lat"]))
-        return p and [*p, scale(c["scale"], p)]
+        return p and view(c["scale"], p)
 
     cam = []
     for n, sm in enumerate(scenes):
@@ -335,9 +370,9 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
         if not n:   # 첫 화면 + 다음 장면(또는 첫 shot)까지 천천히 다가가기
             if not key:
                 p = inside((detail[0] + detail[2]) / 2, (detail[1] + detail[3]) / 2)
-                key = [*p, scale(0.3, p)]
+                key = view(0.3, p)
             drift = _r(min([S[1] - 0.3 if len(S) > 1 else E[0], *[t - HOLD for t, _, _ in shots[:1]]]))
-            cam = [[0, 0, *key], [0, max(drift, 0.5), *key[:2], scale(key[2] * 1.12, key[:2])]]
+            cam = [[0, 0, *key], [0, max(drift, 0.5), *view(key[2] * 1.12, key[:2])]]
         elif key and key != cam[-1][2:]:
             cam.append([_r(max(S[n] - 0.3, cam[-1][0] + cam[-1][1])), MOVE, *key])
         for t, i, sh in shots:   # 한 문장 안에서 낱말마다 다른 곳을 본다
@@ -355,13 +390,13 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
     for k, t1 in zip(cam, [*(k[0] for k in cam[1:]), end_start], strict=True):
         still.append(k)
         t0, gap = k[0] + k[1], t1 - (k[0] + k[1])
-        tight = scale(k[4] * 1.25, k[2:4])
-        if tight == k[4]:   # 상한에 걸리면 물려서 연다
-            tight = scale(k[4] / 1.25, k[2:4])
-        if gap <= STILL or tight == k[4]:
+        tight = view(k[4] * 1.25, k[2:4])
+        if tight[2] == k[4]:   # 상한에 걸리면 물려서 연다
+            tight = view(k[4] / 1.25, k[2:4])
+        if gap <= STILL or tight[2] == k[4]:
             continue
         n = math.ceil(gap / CUT)
-        still += [[_r(t0 + j * gap / n), SHOT_MOVE, *k[2:4], tight if j % 2 else k[4]] for j in range(1, n)]
+        still += [[_r(t0 + j * gap / n), SHOT_MOVE, *(tight if j % 2 else k[2:])] for j in range(1, n)]
     cam = still
 
     def cam_scale(t):

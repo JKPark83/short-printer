@@ -187,6 +187,56 @@ class FlowAuto:
                 page.close()
         return _count(text)
 
+    def image(self, prompt: str, path: Path, log) -> bool:
+        """16:9 이미지 하나를 path(jpg)에. Flow가 "생성 시 0 크레딧"이라고 할 때만 만들고, 아니면 False."""
+        from playwright.sync_api import sync_playwright  # 이 공급자를 쓸 때만 불러온다
+
+        open_chrome()
+        with sync_playwright() as p:
+            page = p.chromium.connect_over_cdp(f"http://127.0.0.1:{PORT}").contexts[0].new_page()
+            try:
+                page.goto(FLOW)
+                new = page.locator('button:has-text("새 프로젝트")').first
+                try:
+                    new.wait_for(timeout=30_000)
+                except Exception:  # noqa: BLE001 — 로그인 화면이면 버튼이 없다
+                    raise RuntimeError("Flow에 로그인이 필요해요. uv run sp chrome으로 띄운 창에서 로그인하세요") from None
+                new.click()
+                page.wait_for_url("**/project/**")
+                chip = page.locator("button.agent-mode-chip").first
+                chip.wait_for(timeout=30_000)
+                if chip.get_attribute("aria-pressed") == "true":
+                    chip.click()
+                page.locator('button[aria-label="설정 트리거"]').click()
+                for name in ("이미지", "16:9", "x1"):
+                    r = page.locator('button[role="radio"]', has_text=name).first
+                    if r.get_attribute("aria-checked") != "true":
+                        r.click()
+                cost = page.get_by_text("크레딧이 사용됩니다").first.inner_text(timeout=10_000)
+                page.keyboard.press("Escape")
+                if _count(cost) != 0:   # 이미지는 무료일 때만 만든다
+                    log(f"Flow 썸네일 이미지 건너뜀: {cost}")
+                    return False
+                tiles = page.evaluate(SNAPSHOT)
+                page.locator('[contenteditable="true"]').first.click()
+                page.keyboard.insert_text(prompt)
+                page.locator('button[aria-label="생성 시작"]').click()
+                _wait(page, lambda now: len(now) > len(tiles), 30)
+                kind, text = _wait(page, _state, GEN_TIMEOUT)
+                if kind == "error":
+                    raise RuntimeError(" ".join(text.split()) or "Flow가 이 프롬프트를 거절했어요")
+                src = page.locator(TILE).filter(has_not=page.locator(TILE)).first.locator("img").first.get_attribute("src")
+                data = page.request.get(src).body()   # 서명된 CDN 주소라 그대로 받힌다
+                if not data:
+                    raise RuntimeError("Flow 이미지가 비었어요(0바이트)")
+                tmp = path.with_suffix(".tmp")
+                tmp.write_bytes(data)
+                os.replace(tmp, path)
+                log(f"Flow 썸네일 이미지: {page.url}")
+                return True
+            finally:
+                page.close()
+
     def make(self, scenes, out, log):
         from playwright.sync_api import sync_playwright  # 이 공급자를 쓸 때만 불러온다
 

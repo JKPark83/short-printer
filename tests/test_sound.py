@@ -9,7 +9,8 @@ from shorts_printer.core import sound
 from shorts_printer.infra import ffmpeg
 
 LIB, MOODS = sound.tables()
-MUSIC = {"file": "music.mp3", "duration": 180.0, "credit": "“Dark Times” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+MUSIC = {"file": "music.mp3", "duration": 180.0, "credit": "“Dark Times” Kevin MacLeod (incompetech.com), CC BY 4.0",
+         "vol": 0.13}
 # [시작, 옮기는 초, lng, lat, scale]: 큰 이동 → 1초 뒤 또 큰 이동(빠진다) → 작은 이동 → 큰 이동
 CAM = [[0, 0, 127.0, 37.5, 0.4], [10, 2.4, 127.0, 37.5, 1.0], [12.5, 0.5, 127.0, 37.5, 0.3],
        [20, 2, 127.05, 37.5, 0.3], [30, 2.6, 129.0, 35.0, 0.6]]
@@ -72,8 +73,18 @@ def test_music_joins_skip_track_head_and_tail():
 def test_track_measures_head_and_tail(monkeypatch):
     monkeypatch.setattr(ffmpeg, "duration", lambda path: 183.7)
     monkeypatch.setattr(ffmpeg, "silences", lambda path: [(0.0, 4.28), (90.0, 92.5), (179.76, 183.61)])
+    monkeypatch.setattr(ffmpeg, "loudness", lambda path: {"lufs": sound.MUSIC_LUFS + 20})
     t = sound.track(Path("/x/Dark_Times.mp3"), "c")
-    assert (t["file"], t["head"], t["tail"]) == ("Dark_Times.mp3", 4.28, 3.94)
+    assert (t["file"], t["head"], t["tail"], t["vol"]) == ("Dark_Times.mp3", 4.28, 3.94, 0.1)   # 20 dB 큰 곡은 1/10
+    monkeypatch.setattr(ffmpeg, "loudness", lambda path: {"lufs": -60.0})
+    assert sound.track(Path("/x/a.mp3"), "c")["vol"] == 1.0   # 조용한 곡도 원본보다 키우지는 않는다
+
+
+def test_pick_unused_track_first_then_least_recent():
+    tracks = [{"title": t} for t in "ABC"]
+    assert sound.pick(tracks, [None, "A"])["title"] == "B"
+    assert sound.pick(tracks, ["C", "B", "A"])["title"] == "C"
+    assert sound.pick(tracks, ["B", "C", "A", "B"])["title"] == "C"
 
 
 def test_music_silence_beat_and_no_fx_on_end_card():

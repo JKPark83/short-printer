@@ -6,7 +6,7 @@
     @font-face { font-family: 'Pretendard'; font-weight: 900; src: url('assets/fonts/Pretendard-Black.woff2') format('woff2'); }
     #root { position: absolute; inset: 0; overflow: hidden; background: #2b2a27; font-family: 'Pretendard', sans-serif; }
     #map-cam { position: absolute; left: 0; top: 0; width: 8960px; height: 5632px; transform-origin: 0 0;
-      will-change: transform; --inv: 1; }
+      --inv: 1; }   /* will-change를 두면 처음 배율로 한 번만 그려 확대하면 흐려진다 */
     #map-cam img, #map-svg, #map-night { position: absolute; }
     #map-wide { left: 0; top: 0; width: 8960px; height: 5632px; }
     #map-detail { left: 3017px; top: 447px; width: 2840px; height: 4776px; }
@@ -18,9 +18,9 @@
     #map-front { stroke: #C9302C; }
     .refline { stroke: #F3EFE7; }
     .ghost { stroke: #C9302C; opacity: 0; }
-    .arrow { stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+    .arrow { stroke-dasharray: 1 1; stroke-dashoffset: 1; opacity: 0; }
     .halo { stroke: rgba(15, 12, 10, 0.55); }
-    .arrowhead { stroke: rgba(15, 12, 10, 0.55); stroke-width: calc(4px * var(--inv)); opacity: 0; }
+    .arrowhead { stroke: rgba(15, 12, 10, 0.55); stroke-width: 4px; opacity: 0; transform: scale(var(--inv)); }
     .flash { fill: #F6D27A; opacity: 0; }
     .ring { fill: none; stroke: #F6D27A; opacity: 0; }
     #map-glow { stroke: #C9302C; opacity: 0; }
@@ -83,46 +83,46 @@
       <circle id="fr-5" class="ring" cx="4218.9" cy="2942.2" r="0" />
       <path id="arh-s1a" class="arrow halo" d="M4073.2,2872.9 Q4109.7,3011.5 4200.7,3117.3" pathLength="1" data-sw="13" />
       <path id="ar-s1a" class="arrow" d="M4073.2,2872.9 Q4109.7,3011.5 4200.7,3117.3" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s1a" class="arrowhead" d="M4227.4,3148.3 L4164.9,3121.1 L4209.8,3082.4 Z" style="fill:#C9302C" />
+      <path id="ah-s1a" class="arrowhead" d="M4212.4,3130.9 L4184.9,3119.0 L4204.7,3102.0 Z" style="fill:#C9302C;transform-origin:4200.7px 3117.3px" />
       <path id="arh-s1b" class="arrow halo" d="M4328.1,2803.3 Q4299.0,2942.2 4284.4,3071.4" pathLength="1" data-sw="13" />
       <path id="ar-s1b" class="arrow" d="M4328.1,2803.3 Q4299.0,2942.2 4284.4,3071.4" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s1b" class="arrowhead" d="M4279.8,3112.1 L4257.2,3047.7 L4316.2,3054.4 Z" style="fill:#C9302C" />
+      <path id="ah-s1b" class="arrowhead" d="M4282.4,3089.3 L4272.4,3061.0 L4298.4,3063.9 Z" style="fill:#C9302C;transform-origin:4284.4px 3071.4px" />
       <path id="arh-s1c" class="arrow halo" d="M4528.4,2849.7 Q4539.3,2988.4 4517.4,3117.3" pathLength="1" data-sw="13" />
       <path id="ar-s1c" class="arrow" d="M4528.4,2849.7 Q4539.3,2988.4 4517.4,3117.3" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s1c" class="arrowhead" d="M4510.5,3157.6 L4491.6,3092.1 L4550.1,3102.1 Z" style="fill:#C9302C" />
+      <path id="ah-s1c" class="arrowhead" d="M4514.4,3135.0 L4506.0,3106.2 L4531.8,3110.6 Z" style="fill:#C9302C;transform-origin:4517.4px 3117.3px" />
       <path id="arh-s1d" class="arrow halo" d="M4845.1,2849.7 Q4892.4,2965.3 4939.8,3080.6" pathLength="1" data-sw="13" />
       <path id="ar-s1d" class="arrow" d="M4845.1,2849.7 Q4892.4,2965.3 4939.8,3080.6" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s1d" class="arrowhead" d="M4955.4,3118.4 L4904.6,3072.9 L4959.4,3050.4 Z" style="fill:#C9302C" />
+      <path id="ah-s1d" class="arrowhead" d="M4946.6,3097.2 L4924.3,3077.2 L4948.4,3067.3 Z" style="fill:#C9302C;transform-origin:4939.8px 3080.6px" />
       <path id="arh-s3a" class="arrow halo" d="M7022.4,5782.8 Q5893.7,5092.8 5074.5,4301.3" pathLength="1" data-sw="13" />
       <path id="ar-s3a" class="arrow" d="M7022.4,5782.8 Q5893.7,5092.8 5074.5,4301.3" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s3a" class="arrowhead" d="M5019.4,4248.1 L5140.7,4288.0 L5063.5,4367.9 Z" style="fill:#F3EFE7" />
+      <path id="ah-s3a" class="arrowhead" d="M5061.6,4288.8 L5090.0,4298.2 L5071.9,4316.9 Z" style="fill:#F3EFE7;transform-origin:5074.5px 4301.3px" />
       <path id="arh-s3b" class="arrow halo" d="M7313.6,3401.2 Q6002.9,3673.6 5110.9,4190.0" pathLength="1" data-sw="13" />
       <path id="ar-s3b" class="arrow" d="M7313.6,3401.2 Q6002.9,3673.6 5110.9,4190.0" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s3b" class="arrowhead" d="M5044.6,4228.4 L5116.3,4122.7 L5171.9,4218.8 Z" style="fill:#F3EFE7" />
+      <path id="ah-s3b" class="arrowhead" d="M5095.3,4199.0 L5112.2,4174.2 L5125.2,4196.8 Z" style="fill:#F3EFE7;transform-origin:5110.9px 4190.0px" />
       <path id="arh-s3c" class="arrow halo" d="M3891.2,5953.4 Q4473.7,4918.4 4965.3,4301.3" pathLength="1" data-sw="13" />
       <path id="ar-s3c" class="arrow" d="M3891.2,5953.4 Q4473.7,4918.4 4965.3,4301.3" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s3c" class="arrowhead" d="M5013.0,4241.4 L4984.8,4365.9 L4898.0,4296.7 Z" style="fill:#F3EFE7" />
+      <path id="ah-s3c" class="arrowhead" d="M4976.5,4287.2 L4969.9,4316.5 L4949.5,4300.2 Z" style="fill:#F3EFE7;transform-origin:4965.3px 4301.3px" />
       <path id="arh-s6a" class="arrow halo" d="M3417.9,3718.8 Q3709.2,3287.0 4080.5,3195.4" pathLength="1" data-sw="13" />
       <path id="ar-s6a" class="arrow" d="M3417.9,3718.8 Q3709.2,3287.0 4080.5,3195.4" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s6a" class="arrowhead" d="M4108.7,3188.4 L4071.4,3219.3 L4061.3,3178.4 Z" style="fill:#F3EFE7" />
+      <path id="ah-s6a" class="arrowhead" d="M4098.0,3191.1 L4074.9,3210.2 L4068.6,3184.9 Z" style="fill:#F3EFE7;transform-origin:4080.5px 3195.4px" />
       <path id="arh-s7a" class="arrow halo" d="M4218.9,2942.2 Q3964.0,2756.9 3836.6,2500.4" pathLength="1" data-sw="13" />
       <path id="ar-s7a" class="arrow" d="M4218.9,2942.2 Q3964.0,2756.9 3836.6,2500.4" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s7a" class="arrowhead" d="M3814.4,2455.6 L3880.2,2506.7 L3815.3,2538.9 Z" style="fill:#F3EFE7" />
+      <path id="ah-s7a" class="arrowhead" d="M3828.6,2484.3 L3852.3,2502.7 L3828.9,2514.3 Z" style="fill:#F3EFE7;transform-origin:3836.6px 2500.4px" />
       <path id="arh-s7b" class="arrow halo" d="M3836.6,2406.6 Q3745.6,2052.6 3811.1,1661.1" pathLength="1" data-sw="13" />
       <path id="ar-s7b" class="arrow" d="M3836.6,2406.6 Q3745.6,2052.6 3811.1,1661.1" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s7b" class="arrowhead" d="M3819.4,1611.8 L3842.7,1691.8 L3771.2,1679.8 Z" style="fill:#F3EFE7" />
+      <path id="ah-s7b" class="arrowhead" d="M3814.1,1643.3 L3822.5,1672.1 L3796.7,1667.8 Z" style="fill:#F3EFE7;transform-origin:3811.1px 1661.1px" />
       <path id="arh-s8a" class="arrow halo" d="M3527.1,1284.2 Q3599.9,1526.3 3727.4,1862.2" pathLength="1" data-sw="13" />
       <path id="ar-s8a" class="arrow" d="M3527.1,1284.2 Q3599.9,1526.3 3727.4,1862.2" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s8a" class="arrowhead" d="M3740.2,1895.9 L3696.6,1854.6 L3745.4,1836.1 Z" style="fill:#C9302C" />
+      <path id="ah-s8a" class="arrowhead" d="M3733.8,1879.0 L3712.0,1858.4 L3736.4,1849.1 Z" style="fill:#C9302C;transform-origin:3727.4px 1862.2px" />
       <path id="arh-s8b" class="arrow halo" d="M4000.4,1138.0 Q3964.0,1429.7 4000.4,1742.7" pathLength="1" data-sw="13" />
       <path id="ar-s8b" class="arrow" d="M4000.4,1138.0 Q3964.0,1429.7 4000.4,1742.7" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s8b" class="arrowhead" d="M4004.6,1778.5 L3972.4,1727.8 L4024.2,1721.8 Z" style="fill:#C9302C" />
+      <path id="ah-s8b" class="arrowhead" d="M4002.5,1760.6 L3986.4,1735.3 L4012.3,1732.2 Z" style="fill:#C9302C;transform-origin:4000.4px 1742.7px" />
       <path id="arh-s8c" class="arrow halo" d="M4400.9,1040.2 Q4291.7,1284.2 4309.9,1670.7" pathLength="1" data-sw="13" />
       <path id="ar-s8c" class="arrow" d="M4400.9,1040.2 Q4291.7,1284.2 4309.9,1670.7" pathLength="1" stroke="#C9302C" data-sw="7" />
-      <path id="ah-s8c" class="arrowhead" d="M4311.6,1706.7 L4283.0,1653.9 L4335.1,1651.5 Z" style="fill:#C9302C" />
+      <path id="ah-s8c" class="arrowhead" d="M4310.7,1688.7 L4296.4,1662.3 L4322.5,1661.1 Z" style="fill:#C9302C;transform-origin:4309.9px 1670.7px" />
       <path id="arh-s11a" class="arrow halo" d="M4096.9,2963.0 Q4115.1,2969.9 4133.3,2964.4" pathLength="1" data-sw="13" />
       <path id="ar-s11a" class="arrow" d="M4096.9,2963.0 Q4115.1,2969.9 4133.3,2964.4" pathLength="1" stroke="#F3EFE7" data-sw="7" />
-      <path id="ah-s11a" class="arrowhead" d="M4148.3,2959.9 L4129.1,2977.5 L4122.5,2955.8 Z" style="fill:#F3EFE7" />
+      <path id="ah-s11a" class="arrowhead" d="M4150.5,2959.2 L4128.4,2979.5 L4120.9,2954.5 Z" style="fill:#F3EFE7;transform-origin:4133.3px 2964.4px" />
     </svg>
     <div id="lab-38" class="clip lab" style="left:4881.5px;top:2942.2px" data-start="4.9" data-duration="7.85" data-track-index="3"><div class="lab-in"><i></i><span>38선</span></div></div>
     <div id="lab-seoul1" class="clip lab" style="left:4248.0px;top:3140.3px" data-start="15.95" data-duration="7.45" data-track-index="3"><div class="lab-in"><i></i><span>서울</span></div></div>
@@ -193,7 +193,7 @@
           if (d >= 0 && d < 0.5) { const m = 10 * (1 - d / 0.5); sx += Math.sin(d * 70) * m; sy += Math.cos(d * 55) * m; }
         }
         cam.style.transform = `translate(${CX - x * s + sx}px, ${CY - y * s + sy}px) scale(${s})`;
-        const inv = 1 / s;
+        const inv = 1 / s, burst = Math.min(1, 1.4 * inv);   // 1.4 = mapplan.CLOSE보다 다가가면 번쩍임 크기를 화면에 고정
         cam.style.setProperty("--inv", inv);
         for (const el of strokes) {
           el.style.strokeWidth = el.dataset.sw * inv;
@@ -202,10 +202,10 @@
         FLASH.forEach((ft, i) => {
           const p = (t - ft) / 0.55, el = document.getElementById("fl-" + i);
           const e = flE(Math.min(1, Math.max(0, p)));
-          el.setAttribute("r", 24 + 150 * e);
+          el.setAttribute("r", (24 + 150 * e) * burst);
           el.style.opacity = p >= 0 && p < 1 ? 1 - e : 0;
           const q = (t - ft) / 0.9, ring = document.getElementById("fr-" + i), e2 = flE(Math.min(1, Math.max(0, q)));
-          ring.setAttribute("r", 30 + 340 * e2);
+          ring.setAttribute("r", (30 + 340 * e2) * burst);
           ring.style.strokeWidth = 7 * inv;
           ring.style.opacity = q >= 0 && q < 1 ? 0.9 * (1 - e2) : 0;
         });
@@ -290,46 +290,60 @@
       tl.to("#lab-p38 .lab-in", {opacity: 0, duration: 0.3}, 171.53);
       tl.fromTo("#lab-mdl .lab-in", {opacity: 0, scale: 0.4}, {opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}, 155.25);
       tl.to("#lab-mdl .lab-in", {opacity: 0, duration: 0.3}, 171.53);
-      tl.fromTo(["#arh-s1a", "#ar-s1a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 8.8);
+      tl.set(["#arh-s1a", "#ar-s1a"], {opacity: 1}, 8.8);
+      tl.fromTo(["#arh-s1a", "#ar-s1a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 8.8);
       tl.fromTo("#ah-s1a", {opacity: 0}, {opacity: 1, duration: 0.12}, 9.6);
       tl.to(["#arh-s1a", "#ar-s1a", "#ah-s1a"], {opacity: 0, duration: 0.4}, 12.85);
-      tl.fromTo(["#arh-s1b", "#ar-s1b"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 8.95);
+      tl.set(["#arh-s1b", "#ar-s1b"], {opacity: 1}, 8.95);
+      tl.fromTo(["#arh-s1b", "#ar-s1b"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 8.95);
       tl.fromTo("#ah-s1b", {opacity: 0}, {opacity: 1, duration: 0.12}, 9.75);
       tl.to(["#arh-s1b", "#ar-s1b", "#ah-s1b"], {opacity: 0, duration: 0.4}, 12.85);
-      tl.fromTo(["#arh-s1c", "#ar-s1c"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 9.1);
+      tl.set(["#arh-s1c", "#ar-s1c"], {opacity: 1}, 9.1);
+      tl.fromTo(["#arh-s1c", "#ar-s1c"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 9.1);
       tl.fromTo("#ah-s1c", {opacity: 0}, {opacity: 1, duration: 0.12}, 9.9);
       tl.to(["#arh-s1c", "#ar-s1c", "#ah-s1c"], {opacity: 0, duration: 0.4}, 12.85);
-      tl.fromTo(["#arh-s1d", "#ar-s1d"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 9.25);
+      tl.set(["#arh-s1d", "#ar-s1d"], {opacity: 1}, 9.25);
+      tl.fromTo(["#arh-s1d", "#ar-s1d"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 9.25);
       tl.fromTo("#ah-s1d", {opacity: 0}, {opacity: 1, duration: 0.12}, 10.05);
       tl.to(["#arh-s1d", "#ar-s1d", "#ah-s1d"], {opacity: 0, duration: 0.4}, 12.85);
-      tl.fromTo(["#arh-s3a", "#ar-s3a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.2);
+      tl.set(["#arh-s3a", "#ar-s3a"], {opacity: 1}, 31.2);
+      tl.fromTo(["#arh-s3a", "#ar-s3a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.2);
       tl.fromTo("#ah-s3a", {opacity: 0}, {opacity: 1, duration: 0.12}, 32.2);
       tl.to(["#arh-s3a", "#ar-s3a", "#ah-s3a"], {opacity: 0, duration: 0.4}, 33.95);
-      tl.fromTo(["#arh-s3b", "#ar-s3b"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.4);
+      tl.set(["#arh-s3b", "#ar-s3b"], {opacity: 1}, 31.4);
+      tl.fromTo(["#arh-s3b", "#ar-s3b"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.4);
       tl.fromTo("#ah-s3b", {opacity: 0}, {opacity: 1, duration: 0.12}, 32.4);
       tl.to(["#arh-s3b", "#ar-s3b", "#ah-s3b"], {opacity: 0, duration: 0.4}, 33.95);
-      tl.fromTo(["#arh-s3c", "#ar-s3c"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.6);
+      tl.set(["#arh-s3c", "#ar-s3c"], {opacity: 1}, 31.6);
+      tl.fromTo(["#arh-s3c", "#ar-s3c"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 1.1, ease: "power2.out"}, 31.6);
       tl.fromTo("#ah-s3c", {opacity: 0}, {opacity: 1, duration: 0.12}, 32.6);
       tl.to(["#arh-s3c", "#ar-s3c", "#ah-s3c"], {opacity: 0, duration: 0.4}, 33.95);
-      tl.fromTo(["#arh-s6a", "#ar-s6a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 1.4, ease: "power2.out"}, 58.85);
+      tl.set(["#arh-s6a", "#ar-s6a"], {opacity: 1}, 58.85);
+      tl.fromTo(["#arh-s6a", "#ar-s6a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 1.4, ease: "power2.out"}, 58.85);
       tl.fromTo("#ah-s6a", {opacity: 0}, {opacity: 1, duration: 0.12}, 60.15);
       tl.to(["#arh-s6a", "#ar-s6a", "#ah-s6a"], {opacity: 0, duration: 0.4}, 65.7);
-      tl.fromTo(["#arh-s7a", "#ar-s7a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 69.1);
+      tl.set(["#arh-s7a", "#ar-s7a"], {opacity: 1}, 69.1);
+      tl.fromTo(["#arh-s7a", "#ar-s7a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 69.1);
       tl.fromTo("#ah-s7a", {opacity: 0}, {opacity: 1, duration: 0.12}, 69.9);
       tl.to(["#arh-s7a", "#ar-s7a", "#ah-s7a"], {opacity: 0, duration: 0.4}, 76.0);
-      tl.fromTo(["#arh-s7b", "#ar-s7b"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 70.4);
+      tl.set(["#arh-s7b", "#ar-s7b"], {opacity: 1}, 70.4);
+      tl.fromTo(["#arh-s7b", "#ar-s7b"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 70.4);
       tl.fromTo("#ah-s7b", {opacity: 0}, {opacity: 1, duration: 0.12}, 71.2);
       tl.to(["#arh-s7b", "#ar-s7b", "#ah-s7b"], {opacity: 0, duration: 0.4}, 76.0);
-      tl.fromTo(["#arh-s8a", "#ar-s8a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.3);
+      tl.set(["#arh-s8a", "#ar-s8a"], {opacity: 1}, 78.3);
+      tl.fromTo(["#arh-s8a", "#ar-s8a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.3);
       tl.fromTo("#ah-s8a", {opacity: 0}, {opacity: 1, duration: 0.12}, 79.1);
       tl.to(["#arh-s8a", "#ar-s8a", "#ah-s8a"], {opacity: 0, duration: 0.4}, 84.6);
-      tl.fromTo(["#arh-s8b", "#ar-s8b"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.5);
+      tl.set(["#arh-s8b", "#ar-s8b"], {opacity: 1}, 78.5);
+      tl.fromTo(["#arh-s8b", "#ar-s8b"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.5);
       tl.fromTo("#ah-s8b", {opacity: 0}, {opacity: 1, duration: 0.12}, 79.3);
       tl.to(["#arh-s8b", "#ar-s8b", "#ah-s8b"], {opacity: 0, duration: 0.4}, 84.6);
-      tl.fromTo(["#arh-s8c", "#ar-s8c"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.7);
+      tl.set(["#arh-s8c", "#ar-s8c"], {opacity: 1}, 78.7);
+      tl.fromTo(["#arh-s8c", "#ar-s8c"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.9, ease: "power2.out"}, 78.7);
       tl.fromTo("#ah-s8c", {opacity: 0}, {opacity: 1, duration: 0.12}, 79.5);
       tl.to(["#arh-s8c", "#ar-s8c", "#ah-s8c"], {opacity: 0, duration: 0.4}, 84.6);
-      tl.fromTo(["#arh-s11a", "#ar-s11a"], {strokeDashoffset: 1, opacity: 1}, {strokeDashoffset: 0, duration: 0.8, ease: "power2.out"}, 113.05);
+      tl.set(["#arh-s11a", "#ar-s11a"], {opacity: 1}, 113.05);
+      tl.fromTo(["#arh-s11a", "#ar-s11a"], {strokeDashoffset: 1}, {strokeDashoffset: 0, duration: 0.8, ease: "power2.out"}, 113.05);
       tl.fromTo("#ah-s11a", {opacity: 0}, {opacity: 1, duration: 0.12}, 113.75);
       tl.to(["#arh-s11a", "#ar-s11a", "#ah-s11a"], {opacity: 0, duration: 0.4}, 119.9);
       tl.fromTo("#map-night", {opacity: 0.55}, {opacity: 0, duration: 2.6, ease: "power1.inOut"}, 7.8);

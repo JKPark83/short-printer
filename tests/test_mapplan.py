@@ -203,8 +203,31 @@ def test_small_box_grows_so_camera_stays_under_close():
 def test_close_up_near_detail_edge_capped():
     f = parts(make_plan([scene(0, camera={"place": "busan", "scale": 1.0}),
                          scene(1, camera={"place": "seoul", "scale": 1.0})]), make_script(("map",) * 4))
-    assert f["cam"][0][4] == mapplan.EDGE   # 부산은 detail 동쪽 끝에서 848px: 1.0이면 화면이 detail 밖으로
+    # 부산은 detail 동쪽 끝에서 848px: 1.0이면 화면이 detail 밖으로 나가 가운데를 서쪽으로 민다(배율은 그대로)
+    lng, lat, s = f["cam"][0][2:]
+    (_, _), (east, _) = mapplan._world_px(DETAIL, 9)
+    (x, _), _ = mapplan._world_px([lng, lat, lng, lat], 9)
+    assert s == 1.0 and lat == 35.18 and abs(x + mapplan.SIZE[0] / 2 - east) < 1
     assert f["cam"][2][2:] == [126.98, 37.57, 1.0]   # 서울은 화면이 detail 안이라 그대로
+
+
+def test_close_box_lets_camera_zoom_past_close_and_fills_screen():
+    """좁은 해협(울돌목)을 말할 때 zoom 9 지도로는 점만 보였다: close 상자 안은 높은 줌 그림으로 더 다가간다."""
+    w = mapplan._world(mapplan.World(box=BOX, zoom=9, detail=DETAIL, close=[126.1, 34.7, 126.5, 34.45], land=[],
+                                     border=[], side="north", places=[], states=[]))
+    assert w["close_zoom"] == 14 and mapplan._tiles(w["close"], 15) > mapplan.CLOSE_TILES   # 타일 상한 안 가장 높은 줌
+    top = mapplan.close_top(w)
+    assert top == 44.8
+    p = make_plan([scene(0, camera={"lng": 126.31, "lat": 34.57, "scale": 60}),
+                   scene(1, camera={"lng": 126.49, "lat": 34.57, "scale": 3}),
+                   scene(2, camera={"place": "seoul", "scale": 3})])
+    p["world"] |= {"close": w["close"], "close_zoom": 14}
+    cam = parts(p)["cam"]
+    assert cam[0][2:] == [126.31, 34.57, top]   # 상한까지
+    lng, _, s = cam[2][2:]   # close 상자를 화면에 채우는 배율로 올리고 동쪽 끝을 넘지 않게 민다
+    (x0, _), (x1, _) = mapplan._world_px(w["close"], 9)
+    assert s == round(mapplan.SIZE[0] / (x1 - x0), 3) and lng < 126.49
+    assert cam[3][4] == mapplan.CLOSE   # close 밖은 CLOSE까지
 
 
 def test_arrows_capped_and_drawn_before_they_end():
@@ -261,7 +284,7 @@ def test_shots_move_camera_inside_scene_and_long_holds_drift():
     assert sum("너무 빨리" in x for x in f["warnings"]) == 1
     shot = round(w[9]["start"] - 0.3, 2)
     assert keys[2:5] == [(round(t[1]["start"] - 0.3, 2), mapplan.MOVE, 126.98),
-                        (shot, mapplan.SHOT_MOVE, 129.07),   # 남쪽으로 → 부산
+                        (shot, mapplan.SHOT_MOVE, 128.1041),   # 남쪽으로 → 부산(detail 안으로 민 가운데)
                         (round(shot + mapplan.SHOT_MOVE + mapplan.HOLD, 2), mapplan.SHOT_MOVE, 139.5)]
     for a, b in zip(cam, cam[1:], strict=False):
         assert b[0] >= round(a[0] + a[1], 2) - 0.01

@@ -109,6 +109,7 @@ class LongCfg(BaseModel):
     max_clips: int = Field(8, ge=0)   # 한 편 Flow 클립 상한(맨 첫 장면 + 고루, 360p 장면당 6크레딧). 넘치면 지도로
     max_facts: int = Field(40, ge=1, le=80)   # 자료 조사 사실 상한(숏폼은 12)
     music: str = "war"   # 배경 음악 분위기(assets/music.json 키)
+    outro: str = ""   # 맨 끝에 붙는 고정 내레이션(구독 인사). 모델이 쓰거나 고치지 않는다
 
     @model_validator(mode="after")
     def _minutes(self):

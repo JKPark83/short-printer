@@ -21,7 +21,7 @@ CUES = {
     "photo": ("shutter", "onset", 0.03, 0.6, 0.6, 0, 0),
 }
 WHOOSH_GAP = 2.0   # 휙 소리끼리 이보다 가까우면 뒤엣것을 뺀다
-MUSIC_VOL = 0.13
+MUSIC_LUFS = -28.0   # 곡마다 이 크기로 맞춘다(내레이션 10 LU 아래). 곡 음량이 10 dB 넘게 달라 고정 배율은 안 된다
 JOIN_FADE = 2.0    # 곡을 이어 붙인 자리의 페이드
 
 
@@ -49,14 +49,23 @@ def _cue(sid: str, role: str, t: float, lib: dict) -> list:
     return [sid, e["file"], round(start, 2), round(length, 2), vol, round(offset, 2), fi, fo]
 
 
+def pick(tracks: list[dict], used: list[str | None]) -> dict:
+    """안 쓴 곡 먼저, 다 썼으면 가장 오래전에 쓴 곡. used는 채널 작업들이 쓴 곡 제목(오래된 것부터)."""
+    last = {t: i for i, t in enumerate(used)}
+    return min(tracks, key=lambda t: last.get(t["title"], -1))
+
+
 def track(path: Path, credit: str) -> dict:
-    """place()에 넘길 곡 정보 {file, duration, credit, head, tail}. head·tail은 곡 앞뒤 무음 초(이어 붙일 때 건너뛴다).
+    """place()에 넘길 곡 정보 {file, duration, credit, head, tail, vol}. head·tail은 곡 앞뒤 무음 초(이어 붙일 때
+    건너뛴다), vol은 곡을 MUSIC_LUFS로 맞추는 배율.
     file은 path 이름이다: 부르는 쪽이 곡을 작업 폴더 assets/<이름>으로 복사한다."""
     dur = ffmpeg.duration(path)
     quiet = ffmpeg.silences(path)
     head = next((b for a, b in quiet if a <= 0.1), 0.0)
     tail = next((dur - a for a, b in quiet if b >= dur - 0.5 and a > head), 0.0)
-    return {"file": path.name, "duration": dur, "credit": credit, "head": round(head, 2), "tail": round(tail, 2)}
+    vol = min(1.0, 10 ** ((MUSIC_LUFS - ffmpeg.loudness(path)["lufs"]) / 20))
+    return {"file": path.name, "duration": dur, "credit": credit, "head": round(head, 2), "tail": round(tail, 2),
+            "vol": round(vol, 3)}
 
 
 def _music(music: dict, spans: list[tuple[float, float]], total: float) -> list[list]:
@@ -79,7 +88,7 @@ def _music(music: dict, spans: list[tuple[float, float]], total: float) -> list[
                 offset = 0 if cuts[k] == 0 else head
             fi = (1.5 if a == 0 else 2.5) if k == 0 else JOIN_FADE
             fo = (3 if to_end else 6) if last else JOIN_FADE
-            out.append([f"music-{len(out) + 1}", music["file"], cuts[k], d, MUSIC_VOL, offset, fi, fo])
+            out.append([f"music-{len(out) + 1}", music["file"], cuts[k], d, music["vol"], offset, fi, fo])
     return out
 
 

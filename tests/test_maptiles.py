@@ -102,6 +102,20 @@ def test_images_layout(tmp_path):
         maptiles.images(raw, tiles, (-45, 80, 45, -30), tmp_path / "map")
 
 
+def test_close_matches_base_map_brightness(tmp_path):
+    def solid(name, c, size):
+        subprocess.run([config.FFMPEG, "-v", "error", "-f", "lavfi", "-i", f"color=c={c}:s={size}", "-frames:v", "1",
+                        "-update", "1", str(tmp_path / name)], check=True)
+        return tmp_path / name
+    tiles = {"z": 2, "x0": 0, "y0": 1, "width": 1024, "height": 512}
+    ctiles = {"z": 4, "x0": 4, "y0": 4, "width": 2048, "height": 1024}
+    base, raw = solid("base.jpg", "0x404040", "1024x512"), solid("close.jpg", "0xc0c0c0", "2048x1024")
+    (tmp_path / "map").mkdir()
+    maptiles.close(raw, ctiles, (-40, 20, 40, -20), base, tiles, tmp_path / "map")
+    want = maptiles._mean_luma(base, maptiles._grade(maptiles._mean_luma(base, "null")))   # 같은 보정을 거친 지도
+    assert abs(maptiles._mean_luma(tmp_path / "map" / "close.jpg", "null") - want) < 3   # z15(0xc0) 밝기가 아니라
+
+
 def _sq(w, s, e, n):
     return [[w, s], [e, s], [e, n], [w, n], [w, s]]
 

@@ -138,3 +138,17 @@ def test_cap_clips_keeps_first_scene_then_spreads_and_checks_want_first_clip():
     s = _s([_sc("가"), _sc("나", "clip", "p")])
     assert any(i.problem == "영상 맨 첫 장면이 clip이 아님" for i in longscript.checks(_ch(clips=2), s, []))
     assert not any("맨 첫" in i.problem for i in longscript.checks(_ch(clips=0), s, []))
+
+
+def test_outro_is_appended_and_never_edited():
+    ch = _ch(clips=0)
+    ch = ch.model_copy(update={"long": ch.long.model_copy(update={"outro": "구독 눌러 주세요!"})})
+    outline = Outline(title="t", description="d", tags=[], thumb=["썸"], sensitive="", spine="왜?",
+                      chapters=[Chapter(title="시작", summary="s", scenes=1)])
+    s, _ = longscript.write(FakeLLM(outline, Scenes(scenes=[Scene(narration="첫", kind="map", visual="v")])), ch, "x")
+    assert s["sentences"] == ["첫", "구독 눌러 주세요!"] and s["scenes"][-1]["outro"]
+    # 고치기 요청이 마무리 인사를 건드려도 그대로 두고, 목록에는 고정이라고 적는다
+    llm = FakeLLM(Revision(title="t", description="d", tags=[], thumb=["썸"],
+                           scenes=[Edit(scene=2, narration="바뀐 인사", kind="map", visual="v")]))
+    new, _ = longscript.revise(llm, ch, s, "끝을 바꿔")
+    assert new["sentences"][-1] == "구독 눌러 주세요!" and "[채널 마무리 인사, 고정" in llm.calls[0]["text"]

@@ -72,6 +72,48 @@ def test_render_drops_old_srt_and_shoots_thumbnail_in_gap_before_turn(monkeypatc
     assert shots == [4.3]   # turn 앞 쉼(구운 자막이 없는 때)
 
 
+class Painter:
+    """무료 이미지를 그리는 영상 공급자 가짜. free=False면 유료라 건너뛴다."""
+    label, hint = "가짜그림", ""
+
+    def __init__(self, free):
+        self.free, self.prompts = free, []
+
+    def image(self, prompt, path, log):
+        self.prompts.append(prompt)
+        if self.free:
+            path.write_bytes(b"JPG")
+        return self.free
+
+
+class ThumbLLM:
+    label = "가짜LLM"
+
+    def ask(self, system, text, schema, **kw):
+        assert "명량" in text and "울돌목" in text
+        return schema(prompt="Joseon warships in a whirlpool strait, no text"), {"model": "m", "cost_usd": 0.01}
+
+
+@pytest.mark.parametrize("free", [True, False])
+def test_render_thumbnail_uses_free_flow_image_else_map_frame(monkeypatch, free):
+    shots, cards = [], []
+    monkeypatch.setattr(longform.hyperframes, "render", lambda project, out, log: out)
+    monkeypatch.setattr(longform.hyperframes, "snapshot", lambda project, at, out: shots.extend(at) or [out / "x.png"])
+    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, *a: cards.append(src))
+    monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
+    job = long_job()
+    job.update(draft_ok=True)
+    job.put("film.json", {"total": 10.0, "credits": []})
+    job.put("timing.json", [{"start": 1.4}])
+    job.put("script.json", {"title": "명량", "thumb": ["폭 293m 울돌목"], "scenes": [{"beat": ""}],
+                            "chapters": [{"title": "물길", "summary": "좁은 해협"}]})
+    painter = Painter(free)
+    longform.step_render(job, services(channel=LONG, video=painter, llm=ThumbLLM()))
+    assert painter.prompts == ["Joseon warships in a whirlpool strait, no text"]
+    assert cards == ([job.dir / "thumb_art.jpg"] if free else [job.dir / "draft" / "x.png"])
+    assert shots == ([] if free else [3.33])   # 유료면 지도 장면을 찍는다
+
+
 def test_render_waits_for_draft_approval():
     job = long_job(*STEPS_LONG[:8])
     pipeline.run(job, services(channel=LONG))
@@ -178,7 +220,7 @@ def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_pa
     (tmp_path / "m.mp3").write_bytes(b"M")
     monkeypatch.setattr(longform.media, "fetch_music", lambda title, url: tmp_path / "m.mp3")
     monkeypatch.setattr(longform.sound, "track", lambda p, credit: {"file": "m.mp3", "duration": 200.0,
-                                                                     "credit": credit, "head": 0, "tail": 0})
+                                                                     "credit": credit, "head": 0, "tail": 0, "vol": 1})
     job = long_job()
     job.put("script.json", {"title": "A&B <C>", "thumb": ["가"], "chapters": [{"title": "1장", "first": 0}],
                             "scenes": [{"narration": "서울 새벽", "kind": "map", "beat": ""},

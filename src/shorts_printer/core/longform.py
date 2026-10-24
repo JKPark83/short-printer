@@ -4,10 +4,12 @@ import html
 import shutil
 from pathlib import Path
 
+from pydantic import BaseModel, Field
+
 from ..infra import ffmpeg, hyperframes, maptiles, media
 from ..ports.llm import add_usage
 from ..ports.video import Refused
-from . import film, longscript, mapplan, scenes, script, sound, subtitles, voice
+from . import film, longscript, mapplan, prompts, scenes, script, sound, subtitles, voice
 from .pipeline import Canceled, Job, Wait, _recent, _unverified, run_steps, step_research
 from .services import Services
 
@@ -164,17 +166,21 @@ def step_plan(job: Job, sv: Services) -> str:
 def step_map(job: Job, sv: Services) -> str:
     """지도 타일을 받아 wide.jpg·detail.jpg와 잘라 쓸 땅·국경 path를 만든다. 지도 값이 그대로면 다시 받지 않는다."""
     w = job.doc("plan.json")["world"]
-    key = {k: w[k] for k in ("box", "zoom", "detail", "land", "border", "border_box")}
+    key = {k: w.get(k) for k in ("box", "zoom", "detail", "land", "border", "border_box", "close", "close_zoom")}
     build, out = job.dir / "film" / "build", job.dir / "film" / "assets" / "map"
-    files = [build / "esri_raw.jpg", out / "wide.jpg", out / "detail.jpg"]
+    files = [build / "esri_raw.jpg", out / "wide.jpg", out / "detail.jpg"] + [out / "close.jpg"] * bool(key["close"])
     if job.data.get("map_key") == key and job.doc("tiles.json") and all(f.exists() for f in files):
         return "그대로"
     tiles = maptiles.fetch(w["box"], w["zoom"], build, job.log)
-    crop = maptiles.images(files[0], tiles, w["detail"] or w["box"], out)["crop"]
+    geo = maptiles.images(files[0], tiles, w["detail"] or w["box"], out)
+    (out / "close.jpg").unlink(missing_ok=True)   # 지난 계획의 close가 남으면 film이 엉뚱한 자리에 띄운다
+    if key["close"]:   # 해협·성처럼 좁은 곳: 높은 줌 그림을 따로
+        ctiles = maptiles.fetch(w["close"], w["close_zoom"], build / "close", job.log)
+        geo["close"] = maptiles.close(build / "close" / "esri_raw.jpg", ctiles, w["close"], files[0], tiles, out)
     job.put("tiles.json", tiles)
-    job.put("geo.json", {"crop": crop} | maptiles.geo(w["land"], w["border"], tiles, w["border_box"]))
+    job.put("geo.json", geo | maptiles.geo(w["land"], w["border"], tiles, w["border_box"]))
     job.update(map_key=key)
-    return f"Esri z{w['zoom']}"
+    return f"Esri z{w['zoom']}" + (f" · z{w['close_zoom']}" if key["close"] else "")
 
 
 def step_clips(job: Job, sv: Services) -> str:
@@ -241,7 +247,10 @@ def step_draft(job: Job, sv: Services) -> str:
     lib, table = sound.tables()
     if ch.long.music not in table:
         raise RuntimeError(f"모르는 음악 분위기예요: [long] music = {ch.long.music} (가능: {', '.join(table)})")
-    m = table[ch.long.music][0]
+    tracks = table[ch.long.music]   # 고른 곡은 작업에 적는다: 다시 그려도 같은 곡, 다음 영상은 다른 곡
+    m = next((t for t in tracks if t["title"] == job.data.get("music")), None) or sound.pick(
+        tracks, [j.data.get("music") for j in Job.all() if j.id != job.id and j.data.get("channel") == ch.id])
+    job.update(music=m["title"])
     path = media.fetch_music(m["title"], m["url"])
     music = sound.track(path, m["credit"])
     _copy(path, project / "assets" / music["file"])
@@ -304,11 +313,33 @@ def step_render(job: Job, sv: Services) -> str:
     # 썸네일은 turn 장면 앞 쉼에서 찍는다: 그 사이엔 구운 자막이 없다
     at = next((t["start"] - TURN_GAP / 2 for t, b in zip(timing, _beats(s), strict=True) if b == "turn"),
               f["total"] / 3)
-    shot = hyperframes.snapshot(project, [round(at, 2)], job.dir / "draft")[0]
+    shot = _thumb_art(job, sv, s) or hyperframes.snapshot(project, [round(at, 2)], job.dir / "draft")[0]
     ffmpeg.text_card(shot, s.get("thumb") or [s["title"]], project / FONT, job.dir / "thumbnail.jpg")
     job.put("credits.json", f["credits"])
     job.update(duration=round(ffmpeg.duration(video), 2))
     return "HyperFrames"
+
+
+class ThumbArt(BaseModel):
+    prompt: str = Field(description="16:9 썸네일 배경 그림 영어 프롬프트 한 단락, 글자 없이")
+
+
+def _thumb_art(job: Job, sv: Services, s: dict) -> Path | None:
+    """영상 공급자가 무료로 그려 주면 썸네일 배경 그림(thumb_art.jpg). 못 그리면 None(지도 장면을 쓴다)."""
+    image = getattr(sv.video, "image", None)
+    if not image:
+        return None
+    ch, out = sv.channel, job.dir / "thumb_art.jpg"
+    text = f"제목: {s['title']}\n썸네일 글자: {' / '.join(s.get('thumb') or [])}\n장:\n" + "\n".join(
+        f"- {c['title']}: {c.get('summary', '')}" for c in s["chapters"])
+    try:
+        art, usage = sv.llm.ask(prompts.render("long_thumb", concept=ch.concept, style=ch.video.style), text, ThumbArt,
+                                refusal=f"{sv.llm.label}가 썸네일 그림 프롬프트를 쓰지 않았어요.", what="썸네일 그림")
+        job.update(usage=add_usage(job.data.get("usage"), usage))
+        return out if image(art.prompt, out, job.log) else None
+    except Exception as e:  # noqa: BLE001  썸네일 그림이 없어도 영상은 올린다(브라우저 시간 초과 포함)
+        job.log(f"썸네일 그림을 건너뛰었어요: {e}")
+        return None
 
 
 def step_final(job: Job, sv: Services) -> str:

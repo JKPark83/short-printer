@@ -92,6 +92,14 @@ def _clean(ch: Channel, sc: dict) -> dict:
     return sc | {"clip_prompt": f"{style} {p}" if style and not p.startswith(style) else p}
 
 
+def _outro(ch: Channel, scenes: list[dict]) -> None:
+    """[long] outro를 맨 끝 지도 장면으로 붙인다. 모델에 맡기면 문구가 바뀌어 코드가 붙인다."""
+    if ch.long.outro and scenes:
+        scenes.append({"narration": ch.long.outro, "kind": "map", "beat": "", "visual": "앞 장면 지도 그대로",
+                       "fact_ids": [], "clip_prompt": "", "clip_prompt_ko": "", "chapter": scenes[-1]["chapter"],
+                       "outro": True})
+
+
 def cap_clips(ch: Channel, scenes: list[dict], prefer: Sequence[int] = ()) -> list[str]:
     """clip이 [long] max_clips를 넘으면 넘친 만큼 map으로 바꾼다(제자리에서).
     고친 장면 → 맨 첫 장면을 남기고, 나머지는 이미 남긴 클립·영상 앞뒤에서 가장 먼 것부터 골라 고루 퍼뜨린다."""
@@ -159,6 +167,7 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: S
             raise RuntimeError(f"{k + 1}장 장면을 받지 못했어요(장면이 비었어요).")
         chapters.append({"title": c.title, "first": len(scenes)})
         scenes += [_clean(ch, s.model_dump() | {"chapter": k}) for s in out.scenes]
+    _outro(ch, scenes)
     head = outline.model_dump(include={"title", "description", "tags", "sensitive", "thumb"})
     return _flat(head, chapters, scenes, cap_clips(ch, scenes)), usage
 
@@ -171,6 +180,9 @@ def _listing(ch: Channel, s: dict) -> str:
         if i in heads:
             lines.append(heads[i])
         p = sc["clip_prompt"].removeprefix(ch.video.style).strip()
+        if sc.get("outro"):
+            lines.append(f"{i + 1}. [채널 마무리 인사, 고정이라 검수·수정하지 않는다] {sc['narration']}")
+            continue
         lines.append(f"{i + 1}. [{sc['kind']}{'/' + sc['beat'] if sc['beat'] else ''}] {sc['narration']}"
                      f"\n   (화면: {sc['visual']}" + (f" / 클립: {p}" if p else "") + ")"
                      + (f"\n   (근거: {', '.join(sc['fact_ids'])})" if sc["fact_ids"] else ""))
@@ -224,6 +236,8 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, facts: Sequence[dict] = ()
     if bad := [e.scene for e in out.scenes if not 1 <= e.scene <= len(scenes)]:
         raise RuntimeError(f"고친 장면 번호가 맞지 않아요({', '.join(map(str, bad))}). 다시 시도하세요.")
     for e in out.scenes:
+        if scenes[e.scene - 1].get("outro"):   # 고정 마무리 인사는 고치지 않는다
+            continue
         scenes[e.scene - 1] = _clean(ch, e.model_dump(exclude={"scene"}) | {"chapter": scenes[e.scene - 1]["chapter"]})
     notes = cap_clips(ch, scenes, prefer=[e.scene - 1 for e in out.scenes])
     return s | _flat(out.model_dump(exclude={"scenes"}), s["chapters"], scenes, notes), usage

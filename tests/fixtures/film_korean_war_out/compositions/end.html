@@ -9,15 +9,12 @@
     #end-body { position: absolute; left: 112px; top: 300px; }
     #end-title { font-size: 96px; font-weight: 900; letter-spacing: -0.03em; }
     #end-sub { font-size: 40px; font-weight: 700; margin-top: 4px; color: #C9302C; }
-    #end-credits { list-style: none; padding: 0; margin: 64px 0 0; }
-    #end-credits li { font-size: 28px; font-weight: 500; line-height: 1.6; color: rgba(243, 239, 231, 0.88); }
   </style>
   <div id="root" data-composition-id="end" data-width="1920" data-height="1080">
     <div id="end-shade"></div>
     <div id="end-body">
       <div id="end-title">한국전쟁 1950 – 1953</div>
       <div id="end-sub">오르내린 선</div>
-      <ul id="end-credits"><li>내레이션 Typecast · 지도 Esri, Maxar, Earthstar Geographics, Natural Earth</li><li>사진 미국 국립문서기록관리청(NARA), 퍼블릭 도메인</li><li>음악 “Dark Times” Kevin MacLeod (incompetech.com), CC BY 4.0</li><li>효과음 Freesound craigsmith, BBQGiraffe, DylanTheFish, Henrythetrain, Kodack (CC0)</li><li>국군 전사자 수 국방부 군사편찬연구소 · 전선은 대략적 위치</li></ul>
     </div>
   </div>
   <script>
@@ -25,7 +22,6 @@
     tl.fromTo("#end-shade", { opacity: 0 }, { opacity: 0.78, duration: 0.8, ease: "power1.inOut" }, 0);
     tl.fromTo("#end-title", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 0.5);
     tl.fromTo("#end-sub", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }, 0.7);
-    tl.fromTo("#end-credits li", { opacity: 0 }, { opacity: 1, duration: 0.4, stagger: 0.08 }, 1.1);
     tl.to({}, { duration: 0.01 }, 6.59);
     window.__timelines["end"] = tl;
   </script>

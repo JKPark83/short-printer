@@ -162,6 +162,26 @@ def images(raw: Path, tiles: dict, detail: Box, out: Path) -> dict:
     return {"crop": crop}
 
 
+def _cut(tiles: dict, box: Box) -> str:
+    x1, y1, x2, y2 = (round(v) for v in (*px(tiles, box[0], box[1]), *px(tiles, box[2], box[3])))
+    return f"format=rgb24,crop={x2 - x1}:{y2 - y1}:{x1}:{y1}"
+
+
+def close(raw: Path, ctiles: dict, box: Box, base: Path, tiles: dict, out: Path) -> list[float]:
+    """높은 줌 타일(ctiles)에서 box를 잘라 out/close.jpg에 쓰고, 지도(tiles) px 자리를 돌려준다.
+
+    Esri는 줌마다 사진 출처가 달라 z15 갯벌·물이 z9보다 두 배쯤 밝다. 같은 자리 지도(base) 밝기에 맞춰야
+    경계가 안 보이고 위 글자 대비도 지도와 같다.
+    """
+    cut, mean = _cut(ctiles, box), _mean_luma(base, _cut(tiles, box))
+    k = f"{mean / max(_mean_luma(raw, cut), 1):.4f}"
+    part = out / "close.part.jpg"
+    run(["-i", raw, "-sws_flags", SWS, "-vf", f"{cut},colorchannelmixer=rr={k}:gg={k}:bb={k},{_grade(mean)}",
+         "-frames:v", "1", "-update", "1", "-q:v", "3", "-pix_fmt", "yuvj420p", part])
+    os.replace(part, out / "close.jpg")
+    return [round(v, 2) for v in (*px(tiles, box[0], box[1]), *px(tiles, box[2], box[3]))]
+
+
 def _countries() -> dict[str, dict]:
     """Natural Earth 10m 나라 geometry, ADM0_A3 코드별. 처음 한 번만 받는다."""
     path = CACHE / "ne_10m_admin0.geojson"

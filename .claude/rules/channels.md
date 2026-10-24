@@ -67,7 +67,8 @@
 | `[long]` `minutes` | 롱폼 목표 길이 [최소, 최대]분(기본 [8, 12]). 장면 수(분×60÷11)·대본 길이를 여기서 센다 |
 | `[long]` `max_clips` | 한 편의 Flow 클립 장면 수 상한(기본 8, 16:9 360p 장면당 6크레딧). 맨 첫 장면은 늘 clip이고(아니면 검수가 지적한다) 나머지는 고루 흩는다. 넘치면 코드가 맨 첫 장면을 남기고 고루 퍼진 clip만 남겨 나머지를 지도로 바꾼다 |
 | `[long]` `max_facts` | 자료 조사 사실 상한 1~80(기본 40). 숏폼은 12 고정 |
-| `[long]` `music` | 배경 음악 분위기, `assets/music.json` 키(기본 `war`) |
+| `[long]` `music` | 배경 음악 분위기, `assets/music.json` 키(기본 `war`). 곡은 채널에서 가장 오래 안 쓴 것을 고르고 -28 LUFS로 맞춘다 |
+| `[long]` `outro` | 맨 끝에 붙는 고정 내레이션(구독 인사). 코드가 마지막 지도 장면으로 붙이고 모델은 쓰거나 고치지 않는다. 비우면 안 붙는다 |
 
 롱폼(`format = "long"`)은 `[script]`의 `scenes`·`sentence`·`duration`, `[thumbnail]`, `thumbnail.md`를 읽지 않는다(길이는 `[long] minutes`, 썸네일 글자는 대본이 정한다). `[style]`은 `accent`·`subtitle_limit`만 쓴다. `thumbnail.md`는 채널을 읽으려면 있어야 해서 짧게 둔다.
 

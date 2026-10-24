@@ -2,7 +2,7 @@
 
 fixture JSON은 스킬 film.py를 한 번 옮긴 것(ffprobe 값은 그때 풀어 넣었다). 클립이 없으면 다른 곳이 없어야 한다.
 gen.py와 일부러 다른 곳(map.html): 점령지를 양끝에서 옆으로 닫는다,
-닫는 길이 땅을 지나면 끝점을 민 점을 더한다(_escape), 지도 위 출처 글이 없다(끝 화면 credits에만),
+닫는 길이 땅을 지나면 끝점을 민 점을 더한다(_escape), 지도 위 출처 글이 없다(출처는 설명란에만, 끝 화면은 제목만),
 불꽃 고리·카메라 흔들림·전선 빛·지명 튀어나옴, 날짜 막대·사진 떨어짐·켄 번스·숫자 막대(story.html)를 더했다.
 """
 import json
@@ -54,6 +54,16 @@ def test_clips_layer(tmp_path):
     f["clips"] = []   # 클립을 다 빼고 다시 만들면 남은 clips.html도 지운다
     film.build(f, tmp_path)
     assert not (tmp_path / "compositions/clips.html").exists()
+
+
+def test_close_layer_sits_over_detail_with_soft_edges(tmp_path):
+    f = _film()
+    f["geo"] = f["geo"] | {"close": [4011.5, 4400.25, 4300.0, 4560.0]}
+    film.build(f, tmp_path)
+    html = (tmp_path / "compositions/map.html").read_text(encoding="utf-8")
+    assert html.index('id="map-detail"') < html.index('<img id="map-close" src="assets/map/close.jpg"')
+    assert "#map-close { left: 4011.5px; top: 4400.25px; width: 288.5px; height: 159.75px;" in html
+    assert "mask-composite: intersect;" in html
 
 
 def test_unit_badges(tmp_path):

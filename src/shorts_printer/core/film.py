@@ -10,7 +10,8 @@ film 키:
 - title, subtitle, lang("ko"), locale("ko-KR"), size([1920, 1080], 빼면 이 값), ink·accent·bg(hex)
 - total: 영상 끝, end_start: 끝 화면 시작
 - tiles: tiles.json {z, x0, y0, width, height} — 지도 이미지의 타일 원점·px 크기
-- geo: geo.json {crop: [x0, y0, x1, y1] detail.jpg 자리, land: 점령지 자를 땅 path, border: 이웃 국경 path}
+- geo: geo.json {crop: [x0, y0, x1, y1] detail.jpg 자리, close: close.jpg 자리(없으면 빠진다),
+  land: 점령지 자를 땅 path, border: 이웃 국경 path}
 - 지도 그림은 assets/map/wide.jpg(전체)·detail.jpg(crop 자리)로 둔다
 - states: {이름: [[lng, lat], ...]} 상태마다 점 개수·순서 같게, side: 점령지 쪽 north|south|west|east
 - front: [[시작, 옮기는 초, 상태]], cam: [[시작, 옮기는 초, lng, lat, scale]] — 키끼리 겹치지 않는다
@@ -25,7 +26,7 @@ film 키:
   원본 w, 원본 h]] — 원본 px 크기는 높이/너비가 None일 때 높이를 정하는 데만 쓴다
 - panels: [[id, 머리글, 큰 글, [항목], 시작, 큰 글 시각, 끝, left, top]]
 - notes: [[id, [[줄, 시각], ...], 시작, 끝, left, top, 글자 px]]
-- counters: [[id, 이름, 값, 단위, 시작, 끝, left, top]], credits: [줄]
+- counters: [[id, 이름, 값, 단위, 시작, 끝, left, top]], credits: [줄](화면에 안 띄운다, 설명란 크레딧)
 - sounds: [[id, assets 안 파일, 시작, 길이, 음량, 파일 안 시작, 페이드 인, 페이드 아웃]]
   길이(초)는 꼭 적는다. id가 music으로 시작하면 11번 줄, 나머지는 12번부터 빈 줄을 차례로 받는다
 - voices: [{id, src, start, duration}] 10번 줄
@@ -45,6 +46,8 @@ FONT_FACE = "\n".join(
     f"src: url('assets/fonts/Pretendard-{n}.woff2') format('woff2'); }}"
     for w, n in [(500, "Medium"), (700, "Bold"), (800, "ExtraBold"), (900, "Black")])
 CLIP_FADE = 0.35
+_FEATHER = ", ".join(f"linear-gradient(to {d}, transparent, #000 6%, #000 94%, transparent)"   # close.jpg 가장자리
+                     for d in ("right", "bottom"))
 CAP_BOTTOM, CAP_SIZE = 112, 50   # 자막 아래 띄움(title-safe 80% 안)·글자 px
 # 화살표를 따라 움직이는 병력 배지: 64×64 오른쪽을 보는 실루엣
 # 현대전 soldier·tank·plane·ship, 그 전 spearman·cavalry·sailship
@@ -139,10 +142,10 @@ def _escape(line: list, side: str, land: str) -> list:
 
 
 def _arrow_svg(a, px):
-    aid, ll, start, draw, end, color, scale = a[:7]
+    aid, ll, start, draw, end, color = a[:6]
     (x1, y1), (cx, cy), (x2, y2) = [px(*p) for p in ll]
     ang = math.atan2(y2 - cy, x2 - cx)
-    h = 30 / scale  # 머리는 이 화살표를 볼 때 카메라 scale에서 화면 30px
+    h = 30  # scale 1에서 30px, render(t)가 --inv로 줄여 어느 줌에서도 화면 30px
     tip = (x2 + math.cos(ang) * h * 0.6, y2 + math.sin(ang) * h * 0.6)
     left = (tip[0] - math.cos(ang - 0.45) * h, tip[1] - math.sin(ang - 0.45) * h)
     right = (tip[0] - math.cos(ang + 0.45) * h, tip[1] - math.sin(ang + 0.45) * h)
@@ -152,7 +155,8 @@ def _arrow_svg(a, px):
     # 머리 채움은 style=에: CSS `path {fill:none}`이 fill 속성을 이긴다
     return (f'<path id="arh-{aid}" class="arrow halo" d="{d}" pathLength="1" data-sw="13" />\n'
             f'      <path id="ar-{aid}" class="arrow" d="{d}" pathLength="1" stroke="{color}" data-sw="7" />\n'
-            f'      <path id="ah-{aid}" class="arrowhead" d="{head}" style="fill:{color}" />')
+            f'      <path id="ah-{aid}" class="arrowhead" d="{head}" '
+            f'style="fill:{color};transform-origin:{x2:.1f}px {y2:.1f}px" />')
 
 
 def _units(F, px):
@@ -216,6 +220,12 @@ def _map(F: dict) -> str:
                         f'clip-path="url(#map-{lid}-clip)" data-sw="{sw}"{dash_attr} />')
     crop = GEO["crop"]
     cx, cy, cw, ch = crop[0], crop[1], crop[2] - crop[0], crop[3] - crop[1]
+    # close.jpg(해협·성): 가장자리를 흐려 아래 detail과 이어 붙인다
+    near = GEO.get("close")
+    close_img = '\n    <img id="map-close" src="assets/map/close.jpg" alt="" />' if near else ""
+    close_css = (f"\n    #map-close {{ left: {near[0]}px; top: {near[1]}px; width: {_r(near[2] - near[0])}px; "
+                 f"height: {_r(near[3] - near[1])}px;\n      mask-image: {_FEATHER}; "
+                 "mask-composite: intersect; }") if near else ""
 
     tweens = []
     for lid, _, _, _, a, b, _, _ in F["labels"]:
@@ -224,7 +234,9 @@ def _map(F: dict) -> str:
                    f'{{opacity: 1, scale: 1, duration: 0.45, ease: "back.out(2.2)"}}, {_r(a)});',
                    _fade(f"#lab-{lid} .lab-in", b)]
     for aid, _, start, draw, end, *_ in F["arrows"]:
-        tweens.append(f'tl.fromTo(["#arh-{aid}", "#ar-{aid}"], {{strokeDashoffset: 1, opacity: 1}}, '
+        # 둥근 끝은 길이 0인 선도 점으로 그린다: 그리기 전엔 opacity 0으로 숨긴다(fromTo의 from은 0초부터 걸린다)
+        tweens.append(f'tl.set(["#arh-{aid}", "#ar-{aid}"], {{opacity: 1}}, {_r(start)});')
+        tweens.append(f'tl.fromTo(["#arh-{aid}", "#ar-{aid}"], {{strokeDashoffset: 1}}, '
                       f'{{strokeDashoffset: 0, duration: {draw}, ease: "power2.out"}}, {_r(start)});')
         tweens.append(f'tl.fromTo("#ah-{aid}", {{opacity: 0}}, {{opacity: 1, duration: 0.12}}, '
                       f'{_r(start + draw - 0.1)});')
@@ -262,10 +274,10 @@ def _map(F: dict) -> str:
 {FONT_FACE}
     #root {{ position: absolute; inset: 0; overflow: hidden; background: {F["bg"]}; font-family: 'Pretendard', sans-serif; }}
     #map-cam {{ position: absolute; left: 0; top: 0; width: {WORLD[0]}px; height: {WORLD[1]}px; transform-origin: 0 0;
-      will-change: transform; --inv: 1; }}
+      --inv: 1; }}   /* will-change를 두면 처음 배율로 한 번만 그려 확대하면 흐려진다 */
     #map-cam img, #map-svg, #map-night {{ position: absolute; }}
     #map-wide {{ left: 0; top: 0; width: {WORLD[0]}px; height: {WORLD[1]}px; }}
-    #map-detail {{ left: {cx}px; top: {cy}px; width: {cw}px; height: {ch}px; }}
+    #map-detail {{ left: {cx}px; top: {cy}px; width: {cw}px; height: {ch}px; }}{close_css}
     #map-night {{ left: 0; top: 0; width: {WORLD[0]}px; height: {WORLD[1]}px; background: #07090c; opacity: 0; }}
     #map-svg {{ left: 0; top: 0; overflow: visible; }}
     #map-svg path {{ fill: none; stroke-linejoin: round; stroke-linecap: round; }}
@@ -274,9 +286,9 @@ def _map(F: dict) -> str:
     #map-front {{ stroke: {F["accent"]}; }}
     .refline {{ stroke: {F["ink"]}; }}
     .ghost {{ stroke: {F["accent"]}; opacity: 0; }}
-    .arrow {{ stroke-dasharray: 1 1; stroke-dashoffset: 1; }}
+    .arrow {{ stroke-dasharray: 1 1; stroke-dashoffset: 1; opacity: 0; }}
     .halo {{ stroke: rgba(15, 12, 10, 0.55); }}
-    .arrowhead {{ stroke: rgba(15, 12, 10, 0.55); stroke-width: calc(4px * var(--inv)); opacity: 0; }}
+    .arrowhead {{ stroke: rgba(15, 12, 10, 0.55); stroke-width: 4px; opacity: 0; transform: scale(var(--inv)); }}
     .flash {{ fill: #F6D27A; opacity: 0; }}
     .ring {{ fill: none; stroke: #F6D27A; opacity: 0; }}
     #map-glow {{ stroke: {F["accent"]}; opacity: 0; }}
@@ -297,7 +309,7 @@ def _map(F: dict) -> str:
   <div id="root" data-composition-id="map" data-width="{W}" data-height="{H}">
   <div id="map-cam" data-layout-allow-overflow data-layout-ignore>
     <img id="map-wide" src="assets/map/wide.jpg" alt="" />
-    <img id="map-detail" src="assets/map/detail.jpg" alt="" />
+    <img id="map-detail" src="assets/map/detail.jpg" alt="" />{close_img}
     <div id="map-night"></div>
     <svg id="map-svg" width="{WORLD[0]}" height="{WORLD[1]}" viewBox="0 0 {WORLD[0]} {WORLD[1]}">
       <defs>
@@ -360,7 +372,7 @@ def _map(F: dict) -> str:
           if (d >= 0 && d < 0.5) {{ const m = 10 * (1 - d / 0.5); sx += Math.sin(d * 70) * m; sy += Math.cos(d * 55) * m; }}
         }}
         cam.style.transform = `translate(${{CX - x * s + sx}}px, ${{CY - y * s + sy}}px) scale(${{s}})`;
-        const inv = 1 / s;
+        const inv = 1 / s, burst = Math.min(1, 1.4 * inv);   // 1.4 = mapplan.CLOSE보다 다가가면 번쩍임 크기를 화면에 고정
         cam.style.setProperty("--inv", inv);
         for (const el of strokes) {{
           el.style.strokeWidth = el.dataset.sw * inv;
@@ -369,10 +381,10 @@ def _map(F: dict) -> str:
         FLASH.forEach((ft, i) => {{
           const p = (t - ft) / 0.55, el = document.getElementById("fl-" + i);
           const e = flE(Math.min(1, Math.max(0, p)));
-          el.setAttribute("r", 24 + 150 * e);
+          el.setAttribute("r", (24 + 150 * e) * burst);
           el.style.opacity = p >= 0 && p < 1 ? 1 - e : 0;
           const q = (t - ft) / 0.9, ring = document.getElementById("fr-" + i), e2 = flE(Math.min(1, Math.max(0, q)));
-          ring.setAttribute("r", 30 + 340 * e2);
+          ring.setAttribute("r", (30 + 340 * e2) * burst);
           ring.style.strokeWidth = 7 * inv;
           ring.style.opacity = q >= 0 && q < 1 ? 0.9 * (1 - e2) : 0;
         }});
@@ -542,7 +554,6 @@ def _story(F: dict) -> str:
 def _end(F: dict) -> str:
     W, H = _size(F)
     d = _r(F["total"] - F["end_start"])
-    lines = "".join(f"<li>{c}</li>" for c in F["credits"])
     return f"""<template>
   <style>
 {FONT_FACE}
@@ -551,15 +562,12 @@ def _end(F: dict) -> str:
     #end-body {{ position: absolute; left: 112px; top: 300px; }}
     #end-title {{ font-size: 96px; font-weight: 900; letter-spacing: -0.03em; }}
     #end-sub {{ font-size: 40px; font-weight: 700; margin-top: 4px; color: {F["accent"]}; }}
-    #end-credits {{ list-style: none; padding: 0; margin: 64px 0 0; }}
-    #end-credits li {{ font-size: 28px; font-weight: 500; line-height: 1.6; color: rgba(243, 239, 231, 0.88); }}
   </style>
   <div id="root" data-composition-id="end" data-width="{W}" data-height="{H}">
     <div id="end-shade"></div>
     <div id="end-body">
       <div id="end-title">{F["title"]}</div>
       <div id="end-sub">{F["subtitle"]}</div>
-      <ul id="end-credits">{lines}</ul>
     </div>
   </div>
   <script>
@@ -567,7 +575,6 @@ def _end(F: dict) -> str:
     tl.fromTo("#end-shade", {{ opacity: 0 }}, {{ opacity: 0.78, duration: 0.8, ease: "power1.inOut" }}, 0);
     tl.fromTo("#end-title", {{ opacity: 0, y: 20 }}, {{ opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }}, 0.5);
     tl.fromTo("#end-sub", {{ opacity: 0, y: 14 }}, {{ opacity: 1, y: 0, duration: 0.4, ease: "power3.out" }}, 0.7);
-    tl.fromTo("#end-credits li", {{ opacity: 0 }}, {{ opacity: 1, duration: 0.4, stagger: 0.08 }}, 1.1);
     tl.to({{}}, {{ duration: 0.01 }}, {d - 0.01});
     window.__timelines["end"] = tl;
   </script>
