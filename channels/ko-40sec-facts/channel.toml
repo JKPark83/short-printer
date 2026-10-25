@@ -57,7 +57,8 @@ domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "k
            "pubmed.ncbi.nlm.nih.gov", "nih.gov", "medlineplus.gov", "my.clevelandclinic.org", "health.harvard.edu",
            "nhs.uk", "who.int", "korean.go.kr",
            "nature.com", "science.org", "cell.com", "nejm.org", "thelancet.com", "bmj.com", "jamanetwork.com",
-           "pnas.org", "physiology.org", "elifesciences.org", "cochranelibrary.com"]
+           "pnas.org", "physiology.org", "elifesciences.org", "cochranelibrary.com",
+           "arxiv.org", "aps.org", "phys.org", "sciencedaily.com", "news.byu.edu", "uwaterloo.ca"]
 news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
         "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
         "bbc.com", "nationalgeographic.com", "sciencetimes.co.kr", "livescience.com", "britannica.com"]
