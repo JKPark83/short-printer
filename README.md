@@ -136,10 +136,10 @@ Flow 등 AI로 만든 장면을 쓴 영상은 공개하기 전에 스튜디오�
 채널 `channel.toml`에 `format = "long"`을 넣으면 그 채널은 쇼츠 대신 16:9 가로 영상(기본 8~12분, `[long] minutes`)을 만듭니다. 위성 지도 위에서 전선·화살표·지명이 움직이는 역사 해설 영상이고, Flow 16:9 클립은 한 편에 많아야 `[long] max_clips`개(기본 8: 맨 첫 장면 + 고루, 360p 장면당 6크레딧)입니다. 장마다 한 장 안팎으로 Wikimedia Commons 퍼블릭 도메인 기록 사진이 지도 오른쪽에 뜹니다. 자막은 음성에 맞춰 화면 아래에 굽습니다. 단계와 구조는 `docs/plan/longform.md`에 있습니다.
 
 ```
-주제 → 자료 조사 → 대본(장 → 장면, 지도/클립) → 대본 검수 → 음성 → 지도 계획 → 지도 이미지 → 장면 클립 → 초안(HyperFrames) → 렌더 → 최종 검수 → 업로드
+주제 → 자료 조사 → 대본(장 → 장면, 지도/클립) → 대본 검수 → 음성 → 지도 계획 → 지도 이미지 → 장면 클립 → 초안(위성 지도) → 렌더 → 최종 검수 → 업로드
 ```
 
-- **Node.js가 필요합니다.** 초안·렌더를 `npx hyperframes`로 돌리며 Node 22 이상이 필요합니다(`/usr/local/bin`의 Node 18은 안 됩니다). 서버를 fnm 등으로 Node 22가 잡힌 셸에서 띄우세요. 없으면 작업이 첫 단계에서 "Node.js 22 이상(npx)을 찾지 못했어요"로 멈춥니다.
+- **Node.js와 `~/lemo-opuscar`가 필요합니다.** 초안 스틸·렌더를 `assets/satellite` 위성 지도 페이지를 lemo-opuscar로 찍어 만듭니다. 없으면 작업이 첫 단계에서 "node나 …lemo-opuscar를 찾지 못했어요"로 멈춥니다.
 - 영상 공급자는 `[video] provider`의 16:9 판을 저절로 씁니다(`flow-auto` → `flow-auto-16x9`). Flow에서 직접 만들 때는 16:9 · 8초로 만듭니다.
 - 배경 음악(`[long] music`, `assets/music.json`의 분위기)은 처음 쓸 때 내려받아 `.cache/music/`에 둡니다.
 

@@ -252,7 +252,7 @@ def test_popular_pick_sends_shorts_ranked_by_views_per_hour_and_keeps_refs(monke
     llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="s", picks=[idea("하품", fit=5).model_copy(update={"refs": [2]})]),
                               USAGE))
     t = trends.Trend.create(CH, popular=True)
-    trends.run(t, sv(llm))
+    trends.run(t, sv(llm, _abroad([])))
     assert calls[0][1]["regionCode"] == "KR" and "인체 | 우리몸" in calls[0][1]["q"]
     assert [v["id"] for v in t.doc("videos.json")] == ["b", "c", "a"]   # 시간당 500·180·100, 긴 것·한국어 없는 것 빠짐
     text = llm.calls[0]["text"]
@@ -268,6 +268,41 @@ def test_popular_pick_sends_shorts_ranked_by_views_per_hour_and_keeps_refs(monke
     assert len(calls) == 3
 
 
+def _abroad(words):
+    ch = channel.load(CH)
+    return ch.model_copy(update={"trends": ch.trends.model_copy(update={"abroad": words})})
+
+
+def test_popular_adds_abroad_shorts_by_total_views_after_home(monkeypatch):
+    monkeypatch.setenv("YOUTUBE_API_KEY", "k")
+    calls = []
+    home = [_video("a", "심장", 10, 1000), _video("b", "뼈", 20, 3000), _video("c", "콩팥", 30, 2000)]
+    far = [_video("x", "Inside your stomach", 24 * 200, 10**6, desc="x"),
+           _video("y", "Why we yawn", 24 * 30, 10**7, desc="y")]
+
+    def api(path, **q):
+        calls.append((path, q))
+        if path == "search":
+            items = far if q["relevanceLanguage"] == "en" else home
+            return {"items": [{"id": {"videoId": i["id"]}} for i in items]}
+        return {"items": [] if path == "channels" else far if q["id"].startswith("x") else home}
+
+    monkeypatch.setattr(trends, "_api", api)
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="s", picks=[idea("하품").model_copy(update={"refs": [4]})]),
+                              USAGE))
+    t = trends.Trend.create(CH, popular=True)
+    trends.run(t, sv(llm, _abroad(["humanbody", "physiology"])))
+    q = calls[3][1]
+    assert q["q"] == "humanbody | physiology" and q["regionCode"] == "US"
+    assert q["publishedAfter"] < (datetime.now(trends.UTC) - trends.timedelta(days=364)).strftime("%Y-%m-%d")
+    videos = t.doc("videos.json")
+    assert [v["id"] for v in videos] == ["b", "a", "c", "y", "x"]   # 국내는 시간당, 해외는 누적 조회수 순
+    assert [bool(v.get("abroad")) for v in videos] == [False] * 3 + [True] * 2
+    text = llm.calls[0]["text"]
+    assert "해외에서 크게 뜬 쇼츠" in text and "4. Why we yawn · c · 조회수 10,000,000 · 시간당 13,889 · 30일 전\n" in text
+    assert t.doc("picks.json")["picks"][0]["refs"] == [4]
+
+
 def test_popular_without_key_fails_with_hint(monkeypatch):
     monkeypatch.delenv("YOUTUBE_API_KEY", raising=False)
     t = trends.Trend.create(CH, popular=True)
@@ -278,7 +313,7 @@ def test_popular_without_key_fails_with_hint(monkeypatch):
 
 def _long_ch():
     """channel.format·long이 없던 때도 돌게 model_copy로 롱폼 값을 얹는다."""
-    return channel.load(CH).model_copy(update={"format": "long",
+    return _abroad([]).model_copy(update={"format": "long",
                                                "long": SimpleNamespace(minutes=(8, 12), max_facts=40)})
 
 

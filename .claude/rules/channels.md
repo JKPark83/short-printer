@@ -58,6 +58,7 @@
 | `[trends]` `production` | 우리 제작 방식 한 단락(주제 찾기 지시문에 들어간다) |
 | `[trends]` `weights` | `trend`(화제성)·`curious`(호기심)·`fit`(제작 적합도)·`fresh`(차별화)·`safe`(안전성) 다섯 개, 합 100 |
 | `[trends]` `keywords` | 주제 찾기 [인기 쇼츠 참고]에서 쓸 YouTube 검색어 목록(OR로 묶는다). 낱말마다 띄어쓰기 없이(`우리몸`), 띄어 쓰면 검색이 거의 안 잡힌다. 비면 인기 쇼츠 참고를 못 쓴다 |
+| `[trends]` `abroad` | 인기 쇼츠 참고를 켰을 때 함께 볼 해외(영어) 검색어. 지난 1년 쇼츠를 누적 조회수 순으로 10개 모아 주제 2~3개를 그 소재에서 고른다(할당량 102 더). 낱말 규칙은 `keywords`와 같다. 비면 해외는 안 본다 |
 | `[research]` `provider` | registry `RESEARCHERS` 이름(`claude`) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |
@@ -79,7 +80,7 @@
 3. `uv run sp youtube-login --channel <id>` → Google 동의 화면에서 그 브랜드 채널을 고른다. 토큰은 `.secrets/channels/<id>/youtube_token.json`.
 4. (선택) 스튜디오 대체 업로드를 쓰면 `publish.channel_id`에 `UC…`를 넣는다.
 5. (선택) Instagram에도 올리면(`publish.also`) 페이스북 페이지에 인스타 프로페셔널 계정을 연결하고 `uv run sp instagram-login --channel <id>`. 토큰은 `.secrets/channels/<id>/instagram_token.json`.
-6. (롱폼) Node.js(`npx`)를 깐다. 초안·렌더가 `npx hyperframes`로 돈다. 없으면 작업이 첫 단계에서 멈춘다.
+6. (롱폼) Node.js와 `~/lemo-opuscar`(위성 지도 렌더러)를 둔다. 초안 스틸·렌더가 `assets/satellite` 페이지를 lemo로 찍는다. 없으면 작업이 첫 단계에서 멈춘다. 그 시기 나라 영역은 `assets/satellite/realms.json`의 `eras`(연도 범위마다 다각형)에서 화면 연도로 고른다. 새 시대 영상이면 거기에 시대를 하나 더한다.
 
 ## 하지 않는 것
 

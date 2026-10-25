@@ -12,15 +12,30 @@ from ..infra import ffmpeg
 
 ASSETS = config.ROOT / "assets"   # sfx.json의 file과 music.json이 이 아래. 작업 폴더 assets/로 같은 경로에 복사한다
 
-# 역할: (sfx 이름, 맞출 곳 onset|peak, 미리 당기는 초, 음량, 맞출 곳 뒤 남길 초 | None=끝까지, 페이드 인, 페이드 아웃)
+# 역할: (sfx 이름들, 맞출 곳 onset|peak, 미리 당기는 초, 음량, 맞출 곳 뒤 남길 초 | None=끝까지, 페이드 인, 페이드 아웃)
+# 이름이 여럿이면 나올 때마다 돌려 써서 같은 소리가 되풀이되지 않게 한다
 CUES = {
-    "move": ("whoosh-cinematic", "peak", 0, 0.35, 1.0, 0, 1.0),   # 카메라가 닿을 때 휙 소리가 가장 크다
-    "turn": ("riser", "peak", 0, 0.3, 0.3, 0.5, 0.2),             # 라이저가 전환 첫 프레임에 터진다
-    "hit": ("distant-boom", "onset", 0, 0.45, None, 0, 0),
-    "final": ("impact-bass-2", "onset", 0, 0.35, None, 0, 0),
-    "photo": ("shutter", "onset", 0.03, 0.6, 0.6, 0, 0),
+    "move": (("whoosh-cinematic",), "peak", 0, 0.35, 1.0, 0, 1.0),   # 카메라가 닿을 때 휙 소리가 가장 크다
+    "turn": (("riser",), "peak", 0, 0.3, 0.3, 0.5, 0.2),             # 라이저가 전환 첫 프레임에 터진다
+    "final": (("impact-bass-2",), "onset", 0, 0.35, None, 0, 0),
+    "photo": (("shutter",), "onset", 0.03, 0.6, 0.6, 0, 0),
+    # 번쩍임(flashes kind): 그 낱말에 소리가 시작한다
+    "cannon": (("distant-boom", "cannon-near", "cannon-fire"), "onset", 0, 0.45, None, 0, 0),
+    "gun": (("gun-1", "gun-2"), "onset", 0, 0.4, None, 0, 0.5),
+    "clash": (("clash-1", "clash-2"), "onset", 0, 0.4, None, 0, 0.8),
+    "arrows": (("arrows-1", "arrows-2"), "onset", 0, 0.45, None, 0, 0.3),
+    "fire": (("fire-1", "fire-2"), "onset", 0, 0.4, None, 0.3, 1.0),
+    "shout": (("shout-1", "shout-2"), "onset", 0, 0.35, None, 0.2, 1.0),
+    # 행군(화살표 unit): 화살표가 그려지기 시작할 때 낮게 깔린다
+    "hooves": (("hooves-1", "hooves-2"), "onset", 0, 0.3, None, 0.3, 1.0),
+    "march": (("march-1", "march-2"), "onset", 0, 0.3, None, 0.3, 1.0),
+    "sea": (("sea-1", "sea-2"), "onset", 0, 0.3, None, 0.5, 1.0),
 }
+# 화살표 병력 그림 → 행군 소리. tank·plane은 맞는 소리가 아직 없어 조용하다
+# ponytail: 현대전 소리(전차 궤도·비행기)가 필요해지면 sfx를 더하고 여기 한 줄씩
+MARCH = {"cavalry": "hooves", "spearman": "march", "soldier": "march", "sailship": "sea", "ship": "sea"}
 WHOOSH_GAP = 2.0   # 휙 소리끼리 이보다 가까우면 뒤엣것을 뺀다
+MARCH_GAP = 6.0    # 같은 행군 소리끼리 이보다 가까우면 뒤엣것을 뺀다(한 장면 화살표 여럿이 한꺼번에 뜬다)
 MUSIC_LUFS = -28.0   # 곡마다 이 크기로 맞춘다(내레이션 10 LU 아래). 곡 음량이 10 dB 넘게 달라 고정 배율은 안 된다
 JOIN_FADE = 2.0    # 곡을 이어 붙인 자리의 페이드
 
@@ -38,9 +53,9 @@ def _big(a: list, b: list) -> bool:
     return max(s0, s1) / min(s0, s1) >= 2 or dist * max(s0, s1) >= 1.0
 
 
-def _cue(sid: str, role: str, t: float, lib: dict) -> list:
-    name, align, lead, vol, tail, fi, fo = CUES[role]
-    e = lib[name]
+def _cue(sid: str, role: str, t: float, lib: dict, k: int = 0) -> list:
+    names, align, lead, vol, tail, fi, fo = CUES[role]
+    e = lib[names[k % len(names)]]
     start, length, offset = t - lead - e[align], e["duration"], 0.0
     if tail is not None:
         length = min(length, e[align] + tail)
@@ -72,7 +87,7 @@ def _music(music: dict, spans: list[tuple[float, float]], total: float) -> list[
     """곡 하나로 구간들을 채운다. 곡보다 긴 구간은 같은 길이로 나눠 이어 붙인다(같은 11번 줄이라 겹치지 않게).
     영상 끝에 닿는 조각은 곡의 진짜 끝이 영상 끝에 오게, 영상 맨 앞 조각은 곡 처음부터,
     그 사이 조각은 곡 앞 무음(head) 뒤에서 시작해 이은 자리에 빈 틈이 생기지 않게 한다."""
-    # ponytail: 11번 줄 하나라 이은 자리는 크로스페이드가 아닌 페이드 아웃→인. film.py가 음악 줄을 둘 쓰면 겹쳐 잇는다
+    # ponytail: 11번 줄 하나라 이은 자리는 크로스페이드가 아닌 페이드 아웃→인. 줄을 둘 쓰면 겹쳐 잇는다
     dur, head = music["duration"], music.get("head", 0)
     usable = dur - head - music.get("tail", 0)
     out = []
@@ -92,11 +107,13 @@ def _music(music: dict, spans: list[tuple[float, float]], total: float) -> list[
     return out
 
 
-def place(*, total: float, end_start: float, cam: list, turns: list[float], hits: list[float], final: float | None,
-          photos: list[float], music: dict, lib: dict, silence: tuple[float, float] | None = None) -> list[list]:
+def place(*, total: float, end_start: float, cam: list, turns: list[float], hits: list[tuple[float, str]],
+          final: float | None, photos: list[float], music: dict, lib: dict, marches: list[tuple[float, str]] = (),
+          silence: tuple[float, float] | None = None) -> list[list]:
     """음악과 효과음을 film dict의 sounds 줄로 놓는다. 끝 화면(end_start 뒤)에는 효과음을 두지 않는다.
 
-    cam: [[시작, 옮기는 초, lng, lat, scale]], music: track()이 돌려준 것, lib: sfx.json,
+    cam: [[시작, 옮기는 초, lng, lat, scale]], hits: [(시각, 번쩍임 kind)], marches: [(시각, 화살표 unit)],
+    music: track()이 돌려준 것, lib: sfx.json,
     silence: 음악을 끄는 정적 (시작, 끝) — 앞 구간은 페이드 아웃으로 끝나고 뒤 구간이 영상 끝까지 간다.
     """
     spans = [(0, silence[0]), (silence[1], total)] if silence else [(0, total)]
@@ -106,9 +123,15 @@ def place(*, total: float, end_start: float, cam: list, turns: list[float], hits
         if key[1] > 0 and _big(prev, key) and arrive - last >= WHOOSH_GAP:
             fx.append(_cue(f"fx-move-{len(fx) + 1}", "move", arrive, lib))
             last = arrive
-    for role, times in [("turn", turns), ("hit", hits), ("final", [final] if final is not None else []),
-                        ("photo", photos)]:
+    for role, times in [("turn", turns), ("final", [final] if final is not None else []), ("photo", photos)]:
         fx += [_cue(f"fx-{role}-{i}", role, t, lib) for i, t in enumerate(times, 1)]
+    heard: dict[str, list[float]] = {}   # 소리 종류마다 놓은 시각: 몇 번째인지로 파일을 돌려 쓴다
+    for t, role, gap in sorted([(t, kind, 0) for t, kind in hits] +
+                               [(t, MARCH[unit], MARCH_GAP) for t, unit in marches if unit in MARCH]):
+        if t - (heard.get(role) or [-math.inf])[-1] >= gap:
+            k = len(heard.setdefault(role, []))
+            heard[role].append(t)
+            fx.append(_cue(f"fx-{role}-{k + 1}", role, t, lib, k))
     fx = sorted((c for c in fx if c[2] < end_start), key=lambda c: c[2])
     return _music(music, spans, total) + fx
 

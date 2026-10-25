@@ -89,7 +89,7 @@
         <details class="script-edit">
           <summary>참고한 인기 쇼츠 {{ videos|length }}개 · 최근 {{ trends.POPULAR_DAYS }}일 시간당 조회수 순</summary>
           <ol class="refs-list">{% for v in videos %}
-            <li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a> <span class="muted small">{{ v.channel }} · 조회수 {{ '{:,}'.format(v.views) }} · 시간당 {{ '{:,}'.format(v.views_per_hour) }}</span></li>
+            <li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a> <span class="muted small">{% if v.abroad %}해외 · {% endif %}{{ v.channel }} · 조회수 {{ '{:,}'.format(v.views) }} · 시간당 {{ '{:,}'.format(v.views_per_hour) }}</span></li>
           {% endfor %}</ol>
         </details>
         {% endif %}

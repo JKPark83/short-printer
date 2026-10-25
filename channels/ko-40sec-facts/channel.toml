@@ -69,3 +69,5 @@ max_pages = 10
 production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 25초(80~90초), 11장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(몸속 단면·장기·세포를 보여 주는 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제와 치료·약·식품 효능을 말해야 답이 되는 주제는 못 만든다."
 weights = { trend = 20, curious = 25, fit = 30, fresh = 10, safe = 15 }
 keywords = ["인체", "우리몸", "몸의비밀", "인체의신비", "인체상식", "건강상식"]
+# 해외에서 조회수가 터진 인체 해설 쇼츠. anatomy는 드라마 Grey's Anatomy가 섞여 뺐다
+abroad = ["humanbody", "insideyourbody", "medicalanimation", "3danatomy", "bodyfacts", "physiology"]

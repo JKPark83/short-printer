@@ -1,11 +1,8 @@
-"""core.mapplan: 가짜 LLM으로 지도 계획 두 단계, film_parts의 시각·카메라·전선·라벨·정리, film.build까지."""
-import json
-from pathlib import Path
+"""core.mapplan: 가짜 LLM으로 지도 계획 두 단계, film_parts의 시각·카메라·전선·라벨·정리."""
 from types import SimpleNamespace
 
-from shorts_printer.core import film, mapplan
+from shorts_printer.core import mapplan
 
-FIX = Path(__file__).parent / "fixtures"
 USAGE = {"model": "m", "input_tokens": 1, "output_tokens": 2, "cost_usd": None}
 CH = SimpleNamespace(concept="지도로 보는 역사", language="ko", lang_name="한국어")
 BOX = [116, 44, 139.5, 32.5]   # 한국전쟁 영상과 같은 상자(fixture tiles와 맞는다)
@@ -103,8 +100,18 @@ def test_times_come_from_word_anchors():
     lab = f["labels"][0]
     assert lab[:4] == ["s1-0", "서울", 126.98, 37.57] and lab[4] == t[1]["words"][2]["start"]   # "서울이"에 걸린다
     assert lab[5] == round(t[1]["end"] + 0.6, 2)
-    assert f["flashes"] == [[round(t[1]["start"] + 0.3, 2), 126.98, 37.57]]   # 못 찾으면 장면 시작 + 0.3
+    assert f["flashes"] == [[round(t[1]["start"] + 0.3, 2), 126.98, 37.57, "cannon"]]   # 못 찾으면 장면 시작 + 0.3
     assert f["date_end"] == t[-1]["end"] + 0.75 and f["date_pos"] == [112, 120] and f["night"] is None
+
+
+def test_gunpowder_sound_before_its_time_becomes_clash():
+    p = make_plan([scene(0, date={"year": "1019", "big": "2월", "at": "새벽"},
+                         flashes=[{"place": "seoul", "at": "새벽", "kind": "cannon"},
+                                  {"place": "seoul", "at": "새벽", "kind": "arrows"}])])
+    f = parts(p)
+    assert sorted(x[3] for x in f["flashes"]) == ["arrows", "clash"] and any("1019년" in w for w in f["warnings"])
+    p["scenes"][0]["date"]["year"] = "1636"
+    assert sorted(x[3] for x in parts(p)["flashes"]) == ["arrows", "cannon"]
 
 
 def test_camera_keys_never_overlap_and_skip_repeats():
@@ -174,22 +181,6 @@ def test_label_cap_and_unknown_ids_dropped():
     assert [a[0] for a in ar] == ["s0-1", "s0-2"] and ar[0][5] == "#F3EFE7" and ar[1][5] == "#C9302C"
     assert len(ar[1][1]) == 3 and ar[1][3] == 0.9 and ar[0][6] == f["cam"][1][4]
     assert f["flashes"] == [] and sum("ghost" in w for w in f["warnings"]) == 3
-
-
-def test_film_build_accepts_parts(tmp_path):
-    base = json.loads((FIX / "film_korean_war.json").read_text(encoding="utf-8"))
-    p = make_plan([scene(0, camera={"place": "seoul", "scale": 0.5}, front="L0",
-                         labels=[{"place": "seoul", "at": "38선을", "left": True}],
-                         arrows=[{"points": ["pyongyang", [126.5, 38.5], "seoul"], "at": "넘었습니다"}],
-                         date={"year": "1950", "big": "6. 25", "at": "6월"},
-                         flashes=[{"place": "seoul", "at": "새벽"}]),
-                   scene(2, camera={"place": "busan", "scale": 0.8}, front="L1")],
-                  {"L0": [[124, 38], [129.5, 38]], "L1": [[124, 35.5], [126, 35.3], [129.5, 35.6]]})
-    f = parts(p)
-    film.build(base | {k: v for k, v in f.items() if k != "warnings"}, tmp_path)
-    html = (tmp_path / "compositions/map.html").read_text(encoding="utf-8")
-    assert 'id="lab-s0-0"' in html and 'id="ar-s0-0"' in html and '"L1"' in html
-    assert (tmp_path / "compositions/story.html").exists() and (tmp_path / "index.html").exists()
 
 
 def test_small_box_grows_so_camera_stays_under_close():

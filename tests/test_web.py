@@ -922,3 +922,20 @@ def test_long_voice_pick_before_voice_only():
     job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True)
     assert client.post(f"/api/jobs/{job.id}/voice", data={"voice": key}).status_code == 409
     assert "voice/s00.mp3" in client.get(f"/jobs/{job.id}").text   # 음성 뒤엔 장면마다 들어 본다
+
+
+def test_long_thumb_edit_saves_and_redraws_only_after_render(monkeypatch):
+    drawn = []
+    monkeypatch.setattr(web.longform, "thumbnail", lambda job: drawn.append(job.doc("script.json")["thumb"]))
+    job = long_job()
+    assert 'data-post="thumb"' in client.get(f"/jobs/{job.id}").text
+    url = f"/api/jobs/{job.id}/thumb"
+    assert client.post(url, data={"thumb": ["가" * 17]}).status_code == 400
+    assert client.post(url, data={"thumb": ["압록강까지 갔는데", "왜 다시 38선?"]}).status_code == 200
+    assert job.doc("script.json")["thumb"] == ["압록강까지 갔는데", "왜 다시 38선?"] and not drawn   # 렌더 전: 저장만
+    job = long_job(status="done", done=STEPS_LONG, script_ok=True, draft_ok=True)
+    (job.dir / "thumbnail.jpg").write_bytes(b"JPG")
+    html = client.get(f"/jobs/{job.id}").text
+    assert html.count('data-post="thumb"') == 1 and html.index('class="thumb-wide"') < html.index('data-post="thumb"')
+    assert client.post(f"/api/jobs/{job.id}/thumb", data={"thumb": ["새 글자", ""]}).status_code == 200
+    assert drawn == [["새 글자"]]

@@ -19,7 +19,7 @@ class Scene(BaseModel):
     # 문장보다 먼저 받는다: 앞 장면과의 관계를 정하고 쓰면 접속어·반전이 내용과 어긋나지 않는다(저장하지 않는다)
     link: str = Field("", description="쓰기 전에 정하는 앞 장면과의 관계 한 줄(규칙은 지시문의 장면 잇기)")
     sentence: str = Field(description="장면 하나의 내레이션(짧은 문장 1~2개)")
-    prompt: str = Field(description="이 장면 동안 보일 한 장면의 영어 영상 생성 프롬프트, 스타일 머리말 없이")
+    prompt: str = Field(description="이 장면 동안 보일 하드 컷 3개(원리 장면은 2개)의 영어 영상 생성 프롬프트, 스타일 머리말 없이")
     fact_ids: list[str] = Field(default_factory=list,
                                 description="이 문장이 근거로 삼은 사실 시트 ID(F1 등). 숫자·사실이 있는 문장은 비우지 않는다")
     prompt_ko: str = Field("", description="prompt를 한국어로 짧게. 검수용")

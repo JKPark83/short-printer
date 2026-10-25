@@ -6,11 +6,32 @@ from pathlib import Path
 from .. import config
 
 
-def run(args: list, cwd: Path | None = None) -> None:
+def run(args: list, cwd: Path | None = None, timeout: int = 600) -> None:
     r = subprocess.run([config.FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *map(str, args)],
-                       capture_output=True, text=True, cwd=cwd, timeout=600)
+                       capture_output=True, text=True, cwd=cwd, timeout=timeout)
     if r.returncode:
         raise RuntimeError(f"ffmpeg 실패({r.returncode}): {r.stderr[-800:]}")
+
+
+def mix(voices: list[tuple[Path, float]], sounds: list[tuple], total: float, out: Path) -> None:
+    """목소리 [(파일, 시작)]와 소리 [(파일, 시작, 길이, 음량, 파일 안 시작, 페이드 인, 페이드 아웃)]를
+    섞어 out(wav)에 쓴다. 필터가 수백 줄이라 명령 줄 대신 out 옆 .txt로 넘긴다."""
+    ins, fl = [], []
+    for path, start in voices:
+        fl.append(f"[{len(ins)}:a]aresample=48000,adelay={round(start * 1000)}:all=1[a{len(ins)}]")
+        ins.append(path)
+    for path, start, length, vol, off, fi, fo in sounds:
+        chain = f"[{len(ins)}:a]aresample=48000,atrim=start={off}:duration={length},asetpts=PTS-STARTPTS"
+        chain += f",afade=t=in:d={fi}" * bool(fi) + f",afade=t=out:st={max(0, length - fo)}:d={fo}" * bool(fo)
+        fl.append(chain + f",volume={vol},adelay={round(start * 1000)}:all=1[a{len(ins)}]")
+        ins.append(path)
+    n = len(ins)
+    fl.append("".join(f"[a{i}]" for i in range(n)) + f"amix=inputs={n}:normalize=0:dropout_transition=0,"
+              f"atrim=duration={total}[out]")
+    script = out.with_suffix(".txt")
+    script.write_text(";\n".join(fl))
+    run([*(x for p in ins for x in ("-i", p)), "-/filter_complex", script, "-map", "[out]", "-ac", "2",
+         "-c:a", "pcm_s16le", out])
 
 
 def has_audio(path: Path) -> bool:

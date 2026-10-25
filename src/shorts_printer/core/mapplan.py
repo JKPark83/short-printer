@@ -1,8 +1,8 @@
 """롱폼 6단계 지도 계획: LLM이 지도 범위·지명·전선 상태(world)와 장면마다 카메라·라벨·화살표·날짜를 쓰고,
-film_parts가 낱말 시각으로 film.build 칸(절대 초)을 만든다. 규칙은 history-map-video 스킬 references/map.md.
+film_parts가 낱말 시각으로 film.json 칸(절대 초)을 만든다. 규칙은 history-map-video 스킬 references/map.md.
 
 LLM은 시각을 쓰지 않는다: 낱말(at)을 고르면 timing의 그 낱말 시작으로 맞춘다.
-좌표·점 개수·키 겹침은 코드가 고친다. 고친 것은 film_parts 결과의 "warnings"(film.build는 모르는 키를 안 읽는다)."""
+좌표·점 개수·키 겹침은 코드가 고친다. 고친 것은 film_parts 결과의 "warnings"(위성 페이지는 모르는 키를 안 읽는다)."""
 import json
 import math
 import re
@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from ..infra import maptiles
 from ..ports.llm import LLM, add_usage
-from . import film, prompts, research
+from . import prompts, research
 from .channel import Channel
 
 SIZE = (1920, 1080)
@@ -24,6 +24,11 @@ CLOSE, FAR = 1.4, 0.3   # 카메라 배율 상한(타일이 흐려지기 전) / 
 EDGE = 0.5   # 화면 가장자리가 detail 밖이어도 되는 상한: wide.jpg(1/4 해상도)가 2배까지 커진다(원본 반도 장면)
 CLOSE_TILES, CLOSE_ZOOM = 400, 16   # close 상자(해협·성): 타일 상한(약 5000px 네모) / 가장 높은 줌
 DRAW, ARROWS = 0.9, 4   # 화살표 그리는 초, 장면마다 화살표 수 상한
+# 화살표 병력 그림. 위성 페이지는 cavalry만 쐐기, 나머지는 점으로 그린다
+UNITS = ("soldier", "tank", "plane", "ship", "spearman", "cavalry", "sailship")
+# 번쩍임 소리(core/sound.py CUES). 화약 무기는 이 해보다 이른 날짜면 칼 소리로 바꾼다
+FLASH_KINDS = ("cannon", "gun", "clash", "arrows", "fire", "shout")
+GUNPOWDER = {"cannon": 1250, "gun": 1500}
 CREDIT = "지도 Esri, Maxar, Earthstar Geographics · Natural Earth"
 PHOTOS, PHOTO_BOX = 8, (1170, 170, 620, 0.75)   # 한 편의 기록 사진 상한 / 오른쪽 칸 left·top·너비·높이/너비 상한
 STAT_POS = (112, 470)   # 숫자 카드: 왼쪽 칸 날짜 아래, 자막 위
@@ -79,7 +84,7 @@ class Arrow(BaseModel):
     points: list[str | list[float]] = Field(description="[시작, 굽이, 끝]: places id 또는 [경도, 위도], 굽이는 온 쪽")
     at: str = Field(description="그리기 시작할 낱말")
     color: str = Field("accent", description="accent · ink · #RRGGBB")
-    unit: Literal["", *film.UNITS] = Field("", description="화살표를 따라 움직일 병력 그림, 군대가 아니면 빈 글")
+    unit: Literal["", *UNITS] = Field("", description="화살표를 따라 움직일 병력 그림, 군대가 아니면 빈 글")
 
 
 class Date(BaseModel):
@@ -99,6 +104,8 @@ class Stat(BaseModel):
 class Flash(BaseModel):
     place: str = Field(description="places id")
     at: str = Field(description="터지는 낱말")
+    kind: Literal[*FLASH_KINDS] = Field("cannon", description="소리: cannon 포격·폭발 · gun 총 · clash 칼·창 백병전 · "
+                                                              "arrows 화살 · fire 불 · shout 함성·돌격")
 
 
 class SceneMap(BaseModel):
@@ -301,7 +308,7 @@ def _said_first(scenes: list[dict], script: dict, warn: list[str]) -> list[dict]
 
 def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, accent: str, ink: str,
                got: dict[int, dict] | None = None) -> dict:
-    """plan → film.build 칸: states, side, front, cam, labels, arrows, flashes, dates, date_pos, date_end, night,
+    """plan → film.json 칸: states, side, front, cam, labels, arrows, flashes, dates, date_pos, date_end, night,
     reflines, ghosts, map_tweens, map_credit, photos, counters.
     시각은 절대 초, 글은 정리했다. 버린 것은 "warnings"(한국어 목록).
     got: 받은 사진 {장면: {file, width, height}}. 못 받은 장면의 사진은 뺀다."""
@@ -462,12 +469,22 @@ def film_parts(plan: dict, script: dict, timing: list[dict], end_start: float, a
             # 끝(사라지기 0.4초 전)이 머리가 뜨기 전이면 머리가 영상 끝까지 남는다
             arrows.append([f"s{n}-{i}", pts, a, DRAW, _r(max(E[n] + 1.0, a + DRAW + 0.5)),
                            color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else accent, cam_scale(a),
-                           ar.get("unit") if ar.get("unit") in film.UNITS else ""])
+                           ar.get("unit") if ar.get("unit") in UNITS else ""])
 
     dates = sorted([at(n, d["at"]), _clean(d["year"]), _clean(d["big"]), _clean(d.get("small") or "")]
                    for n, sm in enumerate(scenes) if (d := sm.get("date")))
-    flashes = [[at(n, f["at"]), *p] for n, sm in enumerate(scenes) for f in sm.get("flashes") or []
-               if (p := pt(n, f["place"]))]
+    flashes = []
+    for n, sm in enumerate(scenes):
+        for f in sm.get("flashes") or []:
+            if not (p := pt(n, f["place"])):
+                continue
+            t, kind = at(n, f["at"]), f.get("kind") if f.get("kind") in FLASH_KINDS else "cannon"
+            shown = [d[1] for d in dates if d[0] <= t] or [d[1] for d in dates[:1]]   # 그 시각 화면 날짜의 해
+            year = re.search(r"\d+", shown[-1]) if shown else None   # 기원전도 숫자만 본다(어차피 이르다)
+            if year and int(year.group()) < GUNPOWDER.get(kind, 0):
+                warn.append(f"장면 {n}: {year.group()}년에 {kind} 소리는 맞지 않아 칼 소리로 바꿨어요")
+                kind = "clash"
+            flashes.append([t, *p, kind])
 
     # 숫자 카드: 장면에 하나, 낱말에 떠서 4.5초쯤(장면 끝 + 0.5까지), 다음 카드 전에 내린다
     stats = sorted((at(n, st["at"]), n, st) for n, sm in enumerate(scenes) for st in (sm.get("stats") or [])[:1]

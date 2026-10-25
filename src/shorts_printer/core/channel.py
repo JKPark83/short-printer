@@ -95,6 +95,7 @@ class TrendsCfg(BaseModel):
     production: str   # 우리 제작 방식 한 단락
     weights: dict[str, int] = {"trend": 20, "curious": 25, "fit": 30, "fresh": 10, "safe": 15}   # 추천 점수 가중치
     keywords: list[str] = []   # 인기 쇼츠 참고 때 YouTube 검색어(OR로 묶는다). 띄어 쓰면 OR가 깨져 거의 안 잡힌다
+    abroad: list[str] = []     # 인기 쇼츠 참고 때 해외(영어) 인기 쇼츠 검색어. 비면 해외는 안 본다
 
     @model_validator(mode="after")
     def _weights(self):

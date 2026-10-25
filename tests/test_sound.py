@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from shorts_printer import config
-from shorts_printer.core import sound
+from shorts_printer.core import mapplan, sound
 from shorts_printer.infra import ffmpeg
 
 LIB, MOODS = sound.tables()
@@ -17,17 +17,18 @@ CAM = [[0, 0, 127.0, 37.5, 0.4], [10, 2.4, 127.0, 37.5, 1.0], [12.5, 0.5, 127.0,
 
 
 def _place(**kw):
-    args = dict(total=600.0, end_start=593.4, cam=CAM, turns=[40.0], hits=[50.0], final=500.0, photos=[60.0],
-                music=MUSIC, lib=LIB) | kw
+    args = dict(total=600.0, end_start=593.4, cam=CAM, turns=[40.0], hits=[(50.0, "cannon")], final=500.0,
+                photos=[60.0], music=MUSIC, lib=LIB) | kw
     return sound.place(**args)
 
 
 def test_library_measured_and_files_exist():
     for name, e in LIB.items():
         assert (sound.ASSETS / e["file"]).exists(), name
-        assert e["role"] in {"move", "turn", "hit", "final", "photo", "bed"}
+        assert e["role"] in sound.CUES.keys() | {"bed"}
         assert 0 <= e["onset"] < e["duration"] and 0 < e["peak"] <= e["duration"]
-    assert {c[0] for c in sound.CUES.values()} <= LIB.keys()
+    assert {n for c in sound.CUES.values() for n in c[0]} <= LIB.keys()
+    assert set(mapplan.FLASH_KINDS) | set(sound.MARCH.values()) <= sound.CUES.keys()
     assert all(t["credit"].startswith(f"“{t['title']}” Kevin MacLeod") for ts in MOODS.values() for t in ts)
 
 
@@ -42,10 +43,23 @@ def test_whoosh_on_big_moves_peak_on_arrival_and_spaced():
 def test_riser_hit_photo_alignment_and_explicit_lengths():
     by = {c[0]: c for c in _place()}
     assert by["fx-turn-1"][2] == round(40.0 - LIB["riser"]["peak"], 2)
-    assert by["fx-hit-1"][2] == round(50.0 - LIB["distant-boom"]["onset"], 2)
+    assert by["fx-cannon-1"][2] == round(50.0 - LIB["distant-boom"]["onset"], 2)
     assert by["fx-photo-1"][2] == round(60.0 - 0.03 - LIB["shutter"]["onset"], 2)
     assert by["fx-final-1"][1] == LIB["impact-bass-2"]["file"]
     assert all(isinstance(c[3], float) and c[3] > 0 for c in by.values())
+
+
+def test_flash_kinds_rotate_files_and_marches_are_spaced():
+    fx = [c for c in _place(hits=[(50.0, "clash"), (70.0, "clash"), (90.0, "clash"), (80.0, "arrows")],
+                            marches=[(100.0, "cavalry"), (100.15, "cavalry"), (104.0, "cavalry"), (106.5, "cavalry"),
+                                     (101.0, "sailship"), (102.0, "tank"), (110.0, "")])
+          if c[0].startswith("fx-") and c[0].split("-")[1] in sound.CUES.keys() - {"move", "turn", "final", "photo"}]
+    by = {c[0]: c[1] for c in fx}
+    assert [by[f"fx-clash-{i}"] for i in (1, 2, 3)] == ["sfx/clash-1.mp3", "sfx/clash-2.mp3", "sfx/clash-1.mp3"]
+    assert by["fx-arrows-1"] == "sfx/arrows-1.mp3"
+    hooves = [c[2] for c in fx if c[0].startswith("fx-hooves")]
+    assert hooves == [100.0, 106.5]   # 같은 장면 화살표 여럿·6초 안 행군은 한 번만, 전차·빈 unit은 소리 없다
+    assert by["fx-hooves-2"] == "sfx/hooves-2.mp3" and by["fx-sea-1"] == "sfx/sea-1.mp3" and len(fx) == 7
 
 
 def test_early_cue_trims_file_head():

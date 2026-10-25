@@ -15,7 +15,16 @@ LONG = channel.load(CH).model_copy(update={"format": "long"})
 @pytest.fixture(autouse=True)
 def npx(monkeypatch):
     """Node가 없는 기계에서도 돈다. 없을 때는 test_run_stops_before_paid_steps_without_npx가 본다."""
-    monkeypatch.setattr(longform.hyperframes, "ready", lambda: True)
+    monkeypatch.setattr(longform.lemo, "ready", lambda: True)
+
+
+def fake_render(monkeypatch, shots):
+    """위성 렌더·소리 섞기·인코딩 대신 빈 파일만 쓴다. stills는 at을 shots에 모은다."""
+    monkeypatch.setattr(longform.lemo, "render", lambda project, out, log: (out.write_bytes(b"V"), out)[1])
+    monkeypatch.setattr(longform.lemo, "stills", lambda project, at, out: shots.extend(at) or [out / "x.jpg"])
+    monkeypatch.setattr(longform.ffmpeg, "mix", lambda voices, sounds, total, out: out.write_bytes(b"W"))
+    monkeypatch.setattr(longform.ffmpeg, "loudness", lambda p: {"lufs": -18.0})
+    monkeypatch.setattr(longform.ffmpeg, "run", lambda args, timeout=600: args[-1].write_bytes(b"F"))
 
 
 def long_job(*done: str) -> Job:
@@ -46,29 +55,29 @@ def test_run_dispatches_long_and_waits_for_script_approval():
 
 
 def test_run_stops_before_paid_steps_without_npx(monkeypatch):
-    monkeypatch.setattr(longform.hyperframes, "ready", lambda: False)
+    monkeypatch.setattr(longform.lemo, "ready", lambda: False)
     monkeypatch.setitem(longform.RUN, "research", lambda job, sv: pytest.fail("돈 드는 조사를 부르면 안 된다"))
     job = long_job()
-    with pytest.raises(RuntimeError, match="Node.js 22 이상"):
+    with pytest.raises(RuntimeError, match="node나 .*lemo-opuscar"):
         pipeline.run(job, services(channel=LONG))
     assert job.data["status"] == "failed" and job.data["error"]["step"] == "research"   # 작업 화면에 남는다
-    assert "Node.js" in job.data["error"]["message"]
+    assert "lemo-opuscar" in job.data["error"]["message"]
 
 
 def test_render_drops_old_srt_and_shoots_thumbnail_in_gap_before_turn(monkeypatch):
     shots = []
-    monkeypatch.setattr(longform.hyperframes, "render", lambda project, out, log: out)
-    monkeypatch.setattr(longform.hyperframes, "snapshot", lambda project, at, out: shots.extend(at) or [out / "x.png"])
+    fake_render(monkeypatch, shots)
     monkeypatch.setattr(longform.ffmpeg, "text_card", lambda *a: None)
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
     job = long_job()
     job.update(draft_ok=True)
-    job.put("film.json", {"total": 10.0, "credits": []})
+    job.put("film.json", {"total": 10.0, "credits": [], "voices": [], "sounds": []})
     job.put("timing.json", [{"start": 1.4}, {"start": 5.0}])
     job.put("script.json", {"title": "t", "scenes": [{"beat": ""}, {"beat": "turn"}]})
     (job.dir / "captions.srt").write_text("1\n")   # 예전 작업: 남으면 업로드가 CC로 또 붙인다
     longform.step_render(job, services(channel=LONG))
     assert not (job.dir / "captions.srt").exists()
+    assert (job.dir / "final.mp4").exists() and not (job.dir / "sat.mp4").exists()   # 수 GB 원본은 지운다
     assert shots == [4.3]   # turn 앞 쉼(구운 자막이 없는 때)
 
 
@@ -97,20 +106,19 @@ class ThumbLLM:
 @pytest.mark.parametrize("free", [True, False])
 def test_render_thumbnail_uses_free_flow_image_else_map_frame(monkeypatch, free):
     shots, cards = [], []
-    monkeypatch.setattr(longform.hyperframes, "render", lambda project, out, log: out)
-    monkeypatch.setattr(longform.hyperframes, "snapshot", lambda project, at, out: shots.extend(at) or [out / "x.png"])
+    fake_render(monkeypatch, shots)
     monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, *a: cards.append(src))
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
     job = long_job()
     job.update(draft_ok=True)
-    job.put("film.json", {"total": 10.0, "credits": []})
+    job.put("film.json", {"total": 10.0, "credits": [], "voices": [], "sounds": []})
     job.put("timing.json", [{"start": 1.4}])
     job.put("script.json", {"title": "명량", "thumb": ["폭 293m 울돌목"], "scenes": [{"beat": ""}],
                             "chapters": [{"title": "물길", "summary": "좁은 해협"}]})
     painter = Painter(free)
     longform.step_render(job, services(channel=LONG, video=painter, llm=ThumbLLM()))
     assert painter.prompts == ["Joseon warships in a whirlpool strait, no text"]
-    assert cards == ([job.dir / "thumb_art.jpg"] if free else [job.dir / "draft" / "x.png"])
+    assert cards == ([job.dir / "thumb_art.jpg"] if free else [job.dir / "draft" / "x.jpg"])
     assert shots == ([] if free else [3.33])   # 유료면 지도 장면을 찍는다
 
 
@@ -206,16 +214,14 @@ def test_registry_falls_back_to_16x9_flow_for_long_channel(monkeypatch):
         update={"provider": "flow-auto"})}))[0] == "flow"
 
 
-def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_path):
-    hf = longform.hyperframes
-    report = {"ok": True, "lint": {"errorCount": 0, "warningCount": 1, "findings": []}, "saved": {}}
-    monkeypatch.setattr(hf, "init", lambda project, title: project.mkdir(parents=True, exist_ok=True))
-    monkeypatch.setattr(hf, "check", lambda project: report)
+def test_draft_builds_satellite_project(monkeypatch, tmp_path):
+    built = []
+    monkeypatch.setattr(longform.satellite, "build", lambda film, job_dir, project: built.append(film))
 
-    def snapshot(project, at, out):
+    def stills(project, at, out):
         out.mkdir(parents=True, exist_ok=True)
-        return [out / f"at-{t:g}s.png" for t in at]
-    monkeypatch.setattr(hf, "snapshot", snapshot)
+        return [out / f"at-{t:g}.jpg" for t in at]
+    monkeypatch.setattr(longform.lemo, "stills", stills)
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 1.5)   # 음성(2초)보다 짧게 올린 클립
     (tmp_path / "m.mp3").write_bytes(b"M")
     monkeypatch.setattr(longform.media, "fetch_music", lambda title, url: tmp_path / "m.mp3")
@@ -254,29 +260,30 @@ def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_pa
     job.update(draft_ok=True)
     sv = services(channel=LONG, tts=TTS())
 
-    assert longform.step_draft(job, sv) == "HyperFrames 14초"
+    assert longform.step_draft(job, sv) == "위성 14초"
     film = job.doc("film.json")
-    project = job.dir / "film"
+    project = job.dir / "sat"
+    assert built == [film]
     assert (film["total"], film["end_start"]) == (14.15, 7.55)
     assert film["clips"] == [{"id": "c01", "src": "assets/clips/clip1.mp4", "start": 4.8, "duration": 1.5}]
-    assert film["title"] == "A&amp;B &lt;C&gt;"   # film.build는 이스케이프하지 않는다
+    assert film["title"] == "A&B <C>"   # 캔버스에 그리므로 이스케이프하지 않는다
     assert [v["src"] for v in film["voices"]] == ["assets/voice/s00.mp3", "assets/voice/s01.mp3"]
     # 사진: "새벽"(2.4초)에 떠서 다음 clip 장면 시작(4.8초)에 내린다. 세로 사진은 높이/너비 0.75로 자른다
     assert film["photos"] == [["p0", "p0.jpg", "1950 서울", 2.4, 4.8, 1170, 170, 620, -2, 0.75, 1280, 1600]]
-    assert (project / "assets/photos/p0.jpg").exists() and any(x[1] == "sfx/shutter.mp3" for x in film["sounds"])
+    assert any(x[1] == "sfx/shutter.mp3" for x in film["sounds"])
     assert film["credits"][:3] == ["내레이션 가짜음성", film["map_credit"], "사진 Wikimedia Commons(퍼블릭 도메인)"]
     assert film["credits"][3] == "음악 " + \
         longform.sound.tables()[1][LONG.long.music][0]["credit"]
-    assert all((project / "assets" / s[1]).exists() for s in film["sounds"])   # 음악·효과음을 프로젝트로 복사
-    assert (project / "index.html").exists() and (project / "assets/clips/clip1.mp4").exists()
+    assert all((project / "assets" / s[1]).exists() for s in film["sounds"])   # 렌더 때 섞을 음악·효과음
+    assert all((project / v["src"]).exists() for v in film["voices"])
     shots = job.doc("draft.json")["snapshots"]
-    assert shots == [{"chapter": 0, "title": "1장", "at": 2.9, "file": "draft/at-2.9s.png"},
-                     {"chapter": None, "title": "사진 · 1950 서울", "at": 3.4, "file": "draft/at-3.4s.png"}]
+    assert shots == [{"chapter": 0, "title": "1장", "at": 2.9, "file": "draft/at-2.9.jpg"},
+                     {"chapter": None, "title": "사진 · 1950 서울", "at": 3.4, "file": "draft/at-3.4.jpg"}]
     assert job.data["draft_ok"] is False   # 초안이 바뀌면 다시 승인받는다
     assert film["subtitle"] == "가"   # 끝 화면 부제는 썸네일 첫 줄(장 제목 아님)
     # 자막은 영상에 굽는다(덩어리는 splitter 한도의 두 배)
     assert film["captions"] == [[1.4, 3.4, "서울 새벽"], [4.8, 6.8, "끝"]]
-    assert (project / "compositions/captions.html").exists() and job.doc("cues.json")[0]["text"] == "서울 새벽"
+    assert job.doc("cues.json")[0]["text"] == "서울 새벽"
     style = LONG.style.model_copy(update={"subtitle_limit": 2})   # 채널이 정하면 그 길이
     longform.step_draft(job, services(channel=LONG.model_copy(update={"style": style}), tts=TTS()))
     assert [c[2] for c in job.doc("film.json")["captions"]] == ["서울", "새벽", "끝"]
@@ -285,10 +292,6 @@ def test_draft_builds_film_project_and_stops_on_check_errors(monkeypatch, tmp_pa
     job.edit("script.json", lambda s: s | {"thumb": ["A&B <C>"]})   # 제목과 같은 썸네일 줄은 부제로 안 쓴다
     longform.step_draft(job, sv)
     assert job.doc("draft.json")["snapshots"][1]["at"] == 3.9 and job.doc("film.json")["subtitle"] == ""
-
-    report["lint"] = {"errorCount": 1, "findings": [{"severity": "error", "message": "겹침"}]}
-    with pytest.raises(RuntimeError, match="초안 검사 오류: 겹침"):
-        longform.step_draft(job, sv)
 
     bad = LONG.model_copy(update={"long": LONG.long.model_copy(update={"music": "없는분위기"})})
     with pytest.raises(RuntimeError, match="모르는 음악 분위기예요"):
@@ -350,3 +353,19 @@ def test_final_ignores_quiet_end_card_but_flags_body_silence(monkeypatch):
     monkeypatch.setattr(longform.ffmpeg, "silences", lambda p, min_s: [(2.0, 6.0), (12.9, 20.0)])
     assert longform.step_final(job, services(channel=LONG)) == "지적 1개"   # 끝 화면(13.4~) 무음은 0.5초만 남아 빠진다
     assert job.doc("final.json")["silences"] == [[2.0, 6.0]]
+
+
+def test_thumbnail_reuses_render_frame_without_new_snapshot(monkeypatch):
+    """렌더 뒤 글자만 고칠 때: 렌더 때 찍은 화면을 다시 쓰고 다시 찍지 않는다."""
+    cards = []
+    monkeypatch.setattr(longform.lemo, "stills", lambda *a: pytest.fail("다시 찍었다"))
+    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, lines, *a: cards.append((src, lines)))
+    job = long_job()
+    job.put("film.json", {"total": 10.0})
+    job.put("timing.json", [{"start": 1.4}])
+    job.put("script.json", {"title": "t", "thumb": ["배 13척으로", "133척을 막았다"], "scenes": [{"beat": ""}]})
+    shot = job.dir / "draft" / "at-3.33.jpg"
+    shot.parent.mkdir(parents=True, exist_ok=True)
+    shot.write_bytes(b"PNG")
+    longform.thumbnail(job)
+    assert cards == [(shot, ["배 13척으로", "133척을 막았다"])]

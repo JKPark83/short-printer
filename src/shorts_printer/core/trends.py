@@ -1,7 +1,8 @@
 """주제 찾기: 채널 기본 추천 기준(prompts/trend_idea.md + 채널 ideas.md·trends.md)으로 LLM이 웹을 찾아
 주제 IDEA_N개를 고른다. 사용자가 적은 추가 요청이 있으면 기본 기준에 더해 따른다.
 인기 쇼츠 참고(popular)를 켜면 채널 검색어(trends.keywords)로 최근 뜨는 쇼츠를 YouTube Data API로 모아
-시간당 조회수 순으로 함께 넘긴다. 롱폼 채널(format long)은 4~20분 영상을 모으고 prompts/long_trend_idea.md를 쓴다.
+시간당 조회수 순으로 함께 넘긴다. 해외 검색어(trends.abroad)가 있으면 지난 ABROAD_DAYS일 영어 쇼츠도
+누적 조회수 순으로 덧붙인다. 롱폼 채널(format long)은 4~20분 영상을 모으고 prompts/long_trend_idea.md를 쓴다.
 단계는 선정 하나. 작업(Job)과 같은 규칙으로 실패하면 다시 시도할 수 있다."""
 import json
 import re
@@ -30,6 +31,9 @@ IDEA_N = 10          # 추천 수
 MAX_REQUEST = 1000   # 추가 요청 최대 글자
 POPULAR_N = 15       # 지시문에 넣을 인기 쇼츠 수
 POPULAR_DAYS = 7     # 인기 쇼츠를 찾을 기간
+ABROAD_N = 10        # 지시문에 넣을 해외 인기 쇼츠 수
+ABROAD_DAYS = 365    # 해외 인기 쇼츠를 찾을 기간. 터진 소재는 오래 쌓인 조회수로 본다
+ABROAD_LANG = "en"
 MAX_SEC = 180        # 쇼츠 최대 길이
 SAME = 0.6           # 띄어쓰기·문장부호를 뺀 글자 닮음 비율. 이 이상이면 말만 바꾼 같은 주제로 본다
 # 나이 구간(시간 이하, 이름). 갓 올린 쇼츠일수록 시간당 조회수가 부풀어 같은 구간끼리만 순위를 매긴다
@@ -148,25 +152,22 @@ def _subs(ids: list[str]) -> dict[str, int]:
             and (n := int(st.get("subscriberCount", 0)))}
 
 
-def popular_videos(ch: Channel) -> list[dict]:
-    """채널 검색어로 최근 POPULAR_DAYS일 쇼츠(롱폼 채널은 4~20분 영상)를 조회수 순으로 찾아
-    시간당 조회수 상위 POPULAR_N개.
-    구독자 대비 배수(per_sub)를 붙여 큰 채널의 평소 성적과 작은 채널의 대박을 가른다.
-    검색어가 없으면 지역 전체 인기(드라마·아이돌)가 모여 채널과 상관없는 주제가 나와 막는다. 할당량은 102."""
-    if not config.secret("YOUTUBE_API_KEY"):
-        raise RuntimeError(NO_KEY)
-    if not ch.trends.keywords:
-        raise RuntimeError(f"채널 channel.toml의 [trends] keywords에 인기 {_kind(ch)} 검색어를 넣어 주세요.")
+def _search(ch: Channel, keywords: list[str], language: str, days: int) -> list[dict]:
+    """검색어로 최근 days일 쇼츠(롱폼 채널은 4~20분 영상)를 조회수 순으로 찾아 rank를 거친 목록. 할당량 101."""
     now = datetime.now(UTC)
     q = {"part": "snippet", "type": "video", "videoDuration": "medium" if _long(ch) else "short",   # medium = 4~20분
          "order": "viewCount", "maxResults": 50,
-         "relevanceLanguage": ch.language, "q": " | ".join(ch.trends.keywords),   # | 는 YouTube 검색의 OR
-         "publishedAfter": (now - timedelta(days=POPULAR_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    if region := REGIONS.get(ch.language):
+         "relevanceLanguage": language, "q": " | ".join(keywords),   # | 는 YouTube 검색의 OR
+         "publishedAfter": (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    if region := REGIONS.get(language):
         q["regionCode"] = region
     ids = [it["id"]["videoId"] for it in _api("search", **q).get("items", [])]
     items = _api("videos", part="snippet,contentDetails,statistics", id=",".join(ids)).get("items", []) if ids else []
-    top = rank(items, now, ch.language, _long(ch))[:POPULAR_N]
+    return rank(items, now, language, _long(ch))
+
+
+def _with_subs(top: list[dict]) -> list[dict]:
+    """구독자 대비 배수(per_sub)를 붙여 큰 채널의 평소 성적과 작은 채널의 대박을 가른다. 할당량 1."""
     subs = _subs(sorted({v["channel_id"] for v in top}))
     for v in top:
         if n := subs.get(v["channel_id"]):
@@ -174,19 +175,40 @@ def popular_videos(ch: Channel) -> list[dict]:
     return top
 
 
+def popular_videos(ch: Channel) -> list[dict]:
+    """채널 검색어로 최근 POPULAR_DAYS일 쇼츠(롱폼 채널은 4~20분 영상)를 조회수 순으로 찾아
+    시간당 조회수 상위 POPULAR_N개.
+    검색어가 없으면 지역 전체 인기(드라마·아이돌)가 모여 채널과 상관없는 주제가 나와 막는다. 할당량은 102."""
+    if not config.secret("YOUTUBE_API_KEY"):
+        raise RuntimeError(NO_KEY)
+    if not ch.trends.keywords:
+        raise RuntimeError(f"채널 channel.toml의 [trends] keywords에 인기 {_kind(ch)} 검색어를 넣어 주세요.")
+    return _with_subs(_search(ch, ch.trends.keywords, ch.language, POPULAR_DAYS)[:POPULAR_N])
+
+
+def abroad_videos(ch: Channel) -> list[dict]:
+    """해외 검색어(trends.abroad)로 지난 ABROAD_DAYS일 영어 쇼츠를 누적 조회수 상위 ABROAD_N개(abroad 표시).
+    지금 화제가 아니라 소재 힘(해외에서 터진 물음)의 근거다. 할당량은 102."""
+    found = sorted(_search(ch, ch.trends.abroad, ABROAD_LANG, ABROAD_DAYS), key=lambda v: v["views"], reverse=True)
+    return [v | {"abroad": True} for v in _with_subs(found[:ABROAD_N])]
+
+
 def _age(v: dict) -> str:
     """나이·구간 순위·구독자 대비 배수. 예전 기록에는 없는 값은 빼고 쓴다."""
-    s = f" · {v['hours']}시간 전" if "hours" in v else ""
-    if "age" in v:
+    if v.get("abroad"):
+        s = f" · {v['hours'] // 24}일 전"
+    else:
+        s = f" · {v['hours']}시간 전" if "hours" in v else ""
+    if "age" in v and not v.get("abroad"):
         s += f" · {v['age']} {v['age_n']}개 중 {v['age_rank']}위"
     return s + (f" · 구독자의 {v['per_sub']:g}배" if "per_sub" in v else "")
 
 
-def _popular_text(videos: list[dict]) -> str:
+def _popular_text(videos: list[dict], start: int = 1) -> str:
     return "\n".join(f"{i}. {v['title']} · {v['channel']} · 조회수 {v['views']:,} · 시간당 {v['views_per_hour']:,}"
                      + _age(v)
                      + (f"\n   설명: {d}" if (d := " ".join(v["description"].split())) else "")
-                     for i, v in enumerate(videos, 1))
+                     for i, v in enumerate(videos, start))
 
 
 # ---------- 선정 ----------
@@ -304,12 +326,20 @@ def step_pick(t: Trend, sv: Services) -> str:
         if (videos := t.doc("videos.json")) is None:   # 다시 시도할 때 할당량을 또 쓰지 않는다
             t.log(f"YouTube에서 최근 {POPULAR_DAYS}일 인기 {kind} 찾는 중: {' | '.join(ch.trends.keywords)}")
             videos = popular_videos(ch)
+            if ch.trends.abroad and len(videos) >= 3:   # 국내가 모자라 멈출 거면 할당량을 더 쓰지 않는다
+                t.log(f"YouTube에서 지난 {ABROAD_DAYS}일 해외 인기 {kind} 찾는 중: {' | '.join(ch.trends.abroad)}")
+                videos += abroad_videos(ch)
             t.put("videos.json", videos)
-        if len(videos) < 3:
-            raise RuntimeError(f"인기 {kind}{'을' if _long(ch) else '를'} {len(videos)}개만 찾았어요. "
+        home, far = [v for v in videos if not v.get("abroad")], [v for v in videos if v.get("abroad")]
+        if len(home) < 3:
+            raise RuntimeError(f"인기 {kind}{'을' if _long(ch) else '를'} {len(home)}개만 찾았어요. "
                                "channel.toml의 [trends] keywords를 넓혀 보세요.")
-        t.log(f"인기 {kind} {len(videos)}개(시간당 조회수 순): " + ", ".join(v["title"] for v in videos[:5]) + " …")
-        head += f"\n\n요즘 뜨는 {kind}(최근 {POPULAR_DAYS}일, 시간당 조회수 순):\n{_popular_text(videos)}"
+        t.log(f"인기 {kind} {len(home)}개(시간당 조회수 순): " + ", ".join(v["title"] for v in home[:5]) + " …")
+        head += f"\n\n요즘 뜨는 {kind}(최근 {POPULAR_DAYS}일, 시간당 조회수 순):\n{_popular_text(home)}"
+        if far:   # 번호는 videos.json 순서(국내 다음 해외)와 같아 refs가 그대로 맞는다
+            t.log(f"해외 인기 {kind} {len(far)}개(누적 조회수 순): " + ", ".join(v["title"] for v in far[:5]) + " …")
+            head += (f"\n\n해외에서 크게 뜬 {kind}(지난 {ABROAD_DAYS}일, 누적 조회수 순):\n"
+                     + _popular_text(far, len(home) + 1))
     t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
     kept, seen = [], made + avoid
     for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다

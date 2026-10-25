@@ -552,7 +552,7 @@ def _job_long(request: Request, job: Job, ch: Channel, s: dict | None, facts: li
     for p in (draft or {}).get("snapshots", []):   # 다시 만들어도 파일 이름이 같아 mtime으로 캐시를 깬다
         x = job.dir / p["file"]
         p["v"] = x.stat().st_mtime_ns if x.exists() else ""
-    final = job.dir / "final.mp4"
+    final, thumb = job.dir / "final.mp4", job.dir / "thumbnail.jpg"
     return _page(request, "job_long.html", {
         "job": job.data, "ch": ch, "gate": longform.gate(job.data), "script": s, "facts": facts,
         "unverified": script.unverified(s, facts) if s and facts else [], "proofread": job.doc("proofread.json"),
@@ -563,7 +563,8 @@ def _job_long(request: Request, job: Job, ch: Channel, s: dict | None, facts: li
         "has_srt": (job.dir / "captions.srt").exists(), "desc": pipeline.description(job, ch) if s else "",
         "publisher": registry.publisher(ch), "also": {n: registry.publisher(ch, n) for n in ch.publish.also},
         "can_upload": _can_upload(job.data), "to_map": _clip_to_map_open(job.data), "log": _tail(job),
-        "final_v": final.stat().st_mtime_ns if final.exists() else ""})   # 최종 검수 중엔 finished_at이 비어 있다
+        "final_v": final.stat().st_mtime_ns if final.exists() else "",   # 최종 검수 중엔 finished_at이 비어 있다
+        "thumb_v": thumb.stat().st_mtime_ns if thumb.exists() else ""})   # 글자만 다시 얹어도 캐시를 깬다
 
 
 @app.get("/api/jobs/{job_id}")
@@ -768,6 +769,29 @@ def approve(job_id: str, what: str):
         job.update(cancel=None, **{f"{what}_ok": True})
         q.enqueue(job_id)
     return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/thumb")
+def long_thumb(job_id: str, thumb: list[str] = Form([])):  # noqa: B008
+    """롱폼 썸네일 글자를 손으로 고친다. 렌더 뒤면 thumbnail.jpg만 다시 얹는다(영상은 그대로).
+    끝 화면 부제(첫 줄)는 초안에 구워져 초안을 다시 만들 때 바뀐다."""
+    hand = [_clean(x) for x in thumb if x.strip()]
+    if not 1 <= len(hand) <= 2 or any(len(x) > 16 for x in hand):   # 16자 넘으면 1280px에 글자가 너무 작다
+        raise HTTPException(400, "썸네일 글자는 1~2줄, 줄마다 16자 안으로 적어 주세요")
+    job = _load(Job, job_id)
+    if job.data.get("format") != "long" or not (s := job.doc("script.json")):
+        raise HTTPException(409, "롱폼 대본이 있을 때만 고칠 수 있어요")
+    if not q.redo(job_id, (), files={"script.json": s | {"thumb": hand}}):
+        raise HTTPException(409, "만들거나 올리는 중에는 고칠 수 없어요")
+    if job.data["steps"]["render"]["status"] != "done":
+        return {"ok": True, "msg": "저장했어요. 렌더할 때 이 글자로 썸네일을 만들어요"}
+    try:
+        longform.thumbnail(job)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e)) from e
+    if (job.data.get("upload") or {}).get("status") == "done":
+        return {"ok": True, "msg": "썸네일을 바꿨어요. 이미 올린 영상은 YouTube 스튜디오에서 새 썸네일로 바꿔 주세요"}
+    return {"ok": True, "msg": "썸네일을 새 글자로 바꿨어요"}
 
 
 @app.post("/api/jobs/{job_id}/draft/revise")

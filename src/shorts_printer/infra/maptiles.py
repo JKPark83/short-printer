@@ -38,6 +38,13 @@ def px(tiles: dict, lng: float, lat: float) -> tuple[float, float]:
     return ((lng + 180) / 360 * n - tiles["x0"]) * 256, (y - tiles["y0"]) * 256
 
 
+def lnglat(tiles: dict, x: float, y: float) -> tuple[float, float]:
+    """세계 px → 경도·위도(px의 역)."""
+    n = 2 ** tiles["z"]
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y / 256 + tiles["y0"]) / n))))
+    return (x / 256 + tiles["x0"]) / n * 360 - 180, lat
+
+
 def _range(box: Box, zoom: int) -> tuple[int, int, int, int]:
     """상자를 덮는 타일 번호 (x0, y0, x1, y1), 양끝 포함."""
     w, n, e, s = box
@@ -154,9 +161,10 @@ def images(raw: Path, tiles: dict, detail: Box, out: Path) -> dict:
         raise RuntimeError(f"상세 지도 상자가 받은 타일 밖이에요: {detail}")
     out.mkdir(parents=True, exist_ok=True)
     cut = f"format=rgb24,crop={x2 - x1}:{y2 - y1}:{x1}:{y1}"   # yuv420 그대로 자르면 홀수 좌표가 짝수로 밀린다
-    for name, vf, mean_vf in (("wide", "scale=trunc(iw/4):trunc(ih/4):flags=lanczos", "null"), ("detail", cut, cut)):
+    grade = _grade(_mean_luma(raw, "null"))   # 두 판을 같은 보정으로: 따로 맞추면 겹치는 가장자리에 밝기 턱이 진다
+    for name, vf in (("wide", "scale=trunc(iw/4):trunc(ih/4):flags=lanczos"), ("detail", cut)):
         part = out / f"{name}.part.jpg"   # q:v 3 ≈ PIL quality 85(파일 크기가 비슷하다)
-        run(["-i", raw, "-sws_flags", SWS, "-vf", f"{vf},{_grade(_mean_luma(raw, mean_vf))}",
+        run(["-i", raw, "-sws_flags", SWS, "-vf", f"{vf},{grade}",
              "-frames:v", "1", "-update", "1", "-q:v", "3", "-pix_fmt", "yuvj420p", part])
         os.replace(part, out / f"{name}.jpg")
     return {"crop": crop}
@@ -175,8 +183,9 @@ def close(raw: Path, ctiles: dict, box: Box, base: Path, tiles: dict, out: Path)
     """
     cut, mean = _cut(ctiles, box), _mean_luma(base, _cut(tiles, box))
     k = f"{mean / max(_mean_luma(raw, cut), 1):.4f}"
-    part = out / "close.part.jpg"
-    run(["-i", raw, "-sws_flags", SWS, "-vf", f"{cut},colorchannelmixer=rr={k}:gg={k}:bb={k},{_grade(mean)}",
+    part = out / "close.part.jpg"   # 보정은 wide·detail과 같게(images): 밝기만 맞추고 대비 기준은 지도 전체
+    run(["-i", raw, "-sws_flags", SWS, "-vf",
+         f"{cut},colorchannelmixer=rr={k}:gg={k}:bb={k},{_grade(_mean_luma(base, 'null'))}",
          "-frames:v", "1", "-update", "1", "-q:v", "3", "-pix_fmt", "yuvj420p", part])
     os.replace(part, out / "close.jpg")
     return [round(v, 2) for v in (*px(tiles, box[0], box[1]), *px(tiles, box[2], box[3]))]

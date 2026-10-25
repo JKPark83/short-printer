@@ -1,15 +1,14 @@
 """롱폼(16:9 지도 역사 영상) 열 단계(docs/plan/longform.md). 쇼츠와 같은 run_steps로 돌고, 끝난 단계는 건너뛴다.
 사람 승인 두 번: 대본(script_ok) 전엔 음성을 읽지 않고, 초안(draft_ok) 전엔 렌더하지 않는다."""
-import html
 import shutil
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from ..infra import ffmpeg, hyperframes, maptiles, media
+from ..infra import ffmpeg, lemo, maptiles, media
 from ..ports.llm import add_usage
 from ..ports.video import Refused
-from . import film, longscript, mapplan, prompts, scenes, script, sound, subtitles, voice
+from . import longscript, mapplan, prompts, satellite, scenes, script, sound, subtitles, voice
 from .pipeline import Canceled, Job, Wait, _recent, _unverified, run_steps, step_research
 from .services import Services
 
@@ -22,7 +21,7 @@ END_PAD, END_CARD = 0.75, 6.6   # 마지막 장면 끝 → 끝 화면, 끝 화�
 CLIP_MAX = 8   # Flow 클립 길이(초)
 INK, BG = "#F3EFE7", "#2b2a27"
 LOCALES = {"ko": "ko-KR", "ja": "ja-JP", "en": "en-US"}
-FONT = "assets/fonts/Pretendard-ExtraBold.woff2"   # hyperframes.init이 프로젝트에 넣는다
+FONT = satellite.TEMPLATE / "fonts" / "Pretendard-ExtraBold.woff2"   # 썸네일 글자
 LUFS, LUFS_TOL, PEAK, LEN_TOL, QUIET = -16, 1, -1, 1.5, 3
 # ponytail: 롱폼 자막(16:9 화면 아래 한 줄)은 쇼츠 자막 덩어리의 두 배. 언어마다 맞는 값은 쓰다가 정한다
 CAP_SCALE = 2
@@ -210,12 +209,12 @@ def step_clips(job: Job, sv: Services) -> str:
 
 
 def step_draft(job: Job, sv: Services) -> str:
-    """film.json → HyperFrames 프로젝트(film/) → check → 장마다 스냅샷 한 장. 사람이 보고 draft_ok를 준다."""
+    """film.json → 위성 지도 페이지(sat/) → 장마다 스틸 한 장. 사람이 보고 draft_ok를 준다.
+    소리 파일은 sat/assets 아래 film.json 경로로 모아 두고 렌더 때 따로 섞는다."""
     ch, s, timing, plan = sv.channel, job.doc("script.json"), job.doc("timing.json"), job.doc("plan.json")
-    project, beats = job.dir / "film", _beats(s)
+    project, beats = job.dir / "sat", _beats(s)
     S = [t["start"] for t in timing]
     _, end_start, total = clock([t["duration"] for t in timing], beats)
-    hyperframes.init(project, s["title"])
     for t in timing:
         _copy(job.dir / t["file"], project / "assets" / t["file"])
     voices = [{"id": f"vo-{i + 1:02d}", "src": f"assets/{t['file']}", "start": t["start"], "duration": t["duration"]}
@@ -223,7 +222,6 @@ def step_draft(job: Job, sv: Services) -> str:
     clips = []
     for i, sc in enumerate(s["scenes"]):
         if sc["kind"] == "clip":
-            _copy(job.dir / "clips" / f"clip{i}.mp4", project / "assets" / "clips" / f"clip{i}.mp4")
             clips.append({"id": f"c{i:02d}", "src": f"assets/clips/clip{i}.mp4", "start": S[i],   # 짧게 올린 클립
                           "duration": round(min(CLIP_MAX, timing[i]["duration"],
                                                 ffmpeg.duration(job.dir / "clips" / f"clip{i}.mp4")), 3)})
@@ -238,7 +236,6 @@ def step_draft(job: Job, sv: Services) -> str:
         if not info:
             job.log(f"퍼블릭 도메인 사진을 못 찾아 건너뛰었어요({ph['query']})")
             continue
-        _copy(dst, project / "assets" / "photos" / dst.name)
         got[ph["scene"]] = info | {"file": dst.name}
         job.log(f"사진 장면 {ph['scene'] + 1}: {info['title']} ({info['license']}) {info['url']}")
     parts = mapplan.film_parts(plan, s, timing, end_start, ch.style.accent, INK, got)
@@ -256,7 +253,8 @@ def step_draft(job: Job, sv: Services) -> str:
     _copy(path, project / "assets" / music["file"])
     sounds = sound.place(total=total, end_start=end_start, cam=parts["cam"],
                          turns=[S[i] for i, b in enumerate(beats) if b == "turn"],
-                         hits=[x[0] for x in parts["flashes"]],
+                         hits=[(x[0], x[3]) for x in parts["flashes"]],
+                         marches=[(a[2], a[7]) for a in parts["arrows"]],
                          final=next((S[i] for i, b in enumerate(beats) if b == "final"), None),
                          photos=[p[3] for p in parts["photos"]], music=music, lib=lib)
     for name in {x[1] for x in sounds} - {music["file"]}:
@@ -268,24 +266,15 @@ def step_draft(job: Job, sv: Services) -> str:
                *(["사진 Wikimedia Commons(퍼블릭 도메인)"] if parts["photos"] else []),
                *sound.credits(lib, {Path(f).stem for _, f, *_ in sounds}, music)]
     sub = (s.get("thumb") or [""])[0]   # 끝 화면 부제: 썸네일 첫 줄. 장 제목("6월 25일 새벽")은 어색하다
-    # film.build는 글을 이스케이프하지 않는다(mapplan 글은 film_parts가 이미 걸렀다)
-    data = parts | {"title": html.escape(s["title"]),
-                    "subtitle": html.escape(sub if sub != s["title"] else ""),
+    # 글은 캔버스에 그린다: 이스케이프하지 않는다
+    data = parts | {"title": s["title"], "subtitle": sub if sub != s["title"] else "",
                     "lang": ch.language, "locale": LOCALES.get(ch.language, ch.language), "size": list(mapplan.SIZE),
                     "ink": INK, "accent": ch.style.accent, "bg": BG, "total": total, "end_start": end_start,
                     "tiles": job.doc("tiles.json"), "geo": job.doc("geo.json"), "voices": voices, "clips": clips,
-                    "captions": [[c["start"], c["end"], html.escape(c["text"])] for c in cues],
+                    "captions": [[c["start"], c["end"], c["text"]] for c in cues],
                     "sounds": sounds, "credits": credits, "panels": [], "notes": []}
     job.put("film.json", data)
-    film.build(data, project)
-    report = hyperframes.check(project)
-    summary = {k: {"errors": v.get("errorCount", 0), "warnings": v.get("warningCount", 0)}
-               for k, v in report.items() if isinstance(v, dict) and "errorCount" in v}
-    if any(v["errors"] for v in summary.values()):
-        msgs = [x["message"] for v in report.values() if isinstance(v, dict)
-                for x in v.get("findings", []) if x.get("severity") == "error"]
-        raise RuntimeError("초안 검사 오류: " + " / ".join(
-            msgs[:3] or [f"{k} {v['errors']}개" for k, v in summary.items() if v["errors"]]))
+    satellite.build(data, job.dir, project)
     # 장 첫 장면 가운데: 지명 글씨가 다 뜬 뒤라 사람이 글씨를 볼 수 있다
     # 사진은 다 뜬 뒤 한 장씩: 사진이 그 장면과 맞는지 사람이 본다
     want = [{"chapter": k, "title": c["title"],
@@ -293,31 +282,53 @@ def step_draft(job: Job, sv: Services) -> str:
             for k, c in enumerate(s["chapters"])]
     want += [{"chapter": None, "title": f"사진 · {p[2]}", "at": round(p[3] + 1.0, 2)} for p in parts["photos"]]
     want.sort(key=lambda x: x["at"])
-    shots = hyperframes.snapshot(project, [x["at"] for x in want], job.dir / "draft")
-    job.put("draft.json", {"check": summary, "snapshots": [
+    shots = lemo.stills(project, [x["at"] for x in want], job.dir / "draft")
+    job.put("draft.json", {"check": {}, "snapshots": [
         x | {"file": f"draft/{p.name}"} for x, p in zip(want, shots, strict=True)]})
     job.update(draft_ok=False)   # 초안이 바뀌면 다시 본다
-    return f"HyperFrames {total:.0f}초"
+    return f"위성 {total:.0f}초"
 
 
 def step_render(job: Job, sv: Services) -> str:
     """final.mp4 · thumbnail.jpg(1280x720) · credits.json. 자막은 초안에서 영상에 구웠다."""
     if not job.data.get("draft_ok"):
         raise Wait("초안을 확인하고 승인해 주세요")
-    f, timing = job.doc("film.json"), job.doc("timing.json")
-    project, video = job.dir / "film", job.dir / "final.mp4"
-    hyperframes.render(project, video, job.log)
+    f = job.doc("film.json")
+    project, video = job.dir / "sat", job.dir / "final.mp4"
+    raw, wav = lemo.render(project, job.dir / "sat.mp4", job.log), job.dir / "mix.wav"
+    ffmpeg.mix([(project / v["src"], v["start"]) for v in f["voices"]],
+               [(project / "assets" / name, *rest) for _, name, *rest in f["sounds"]], f["total"], wav)
+    gain = LUFS - ffmpeg.loudness(wav)["lufs"]   # 섞은 소리를 -16 LUFS로, 봉우리는 -1.5dBFS 아래로 누른다
+    tmp = video.with_name("final.part.mp4")
+    ffmpeg.run(["-i", raw, "-i", wav, "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "medium",
+                "-b:v", "9M", "-maxrate", "12M", "-bufsize", "18M", "-pix_fmt", "yuv420p",
+                "-af", f"volume={gain:.2f}dB,alimiter=limit=0.84:level=false", "-c:a", "aac", "-b:a", "192k",
+                "-shortest", "-movflags", "+faststart", tmp], timeout=3600)
+    tmp.replace(video)
+    raw.unlink()   # 34Mbps 원본은 수 GB
+    wav.unlink()
     # 예전 작업의 SRT: 남아 있으면 업로드가 CC로 또 붙여 자막이 겹친다
     (job.dir / "captions.srt").unlink(missing_ok=True)
     s = job.doc("script.json")
-    # 썸네일은 turn 장면 앞 쉼에서 찍는다: 그 사이엔 구운 자막이 없다
-    at = next((t["start"] - TURN_GAP / 2 for t, b in zip(timing, _beats(s), strict=True) if b == "turn"),
-              f["total"] / 3)
-    shot = _thumb_art(job, sv, s) or hyperframes.snapshot(project, [round(at, 2)], job.dir / "draft")[0]
-    ffmpeg.text_card(shot, s.get("thumb") or [s["title"]], project / FONT, job.dir / "thumbnail.jpg")
+    (job.dir / "thumb_art.jpg").unlink(missing_ok=True)   # 이번에 못 그리면 지난 그림 말고 지도 장면을 쓴다
+    thumbnail(job, _thumb_art(job, sv, s))
     job.put("credits.json", f["credits"])
     job.update(duration=round(ffmpeg.duration(video), 2))
-    return "HyperFrames"
+    return "위성"
+
+
+def thumbnail(job: Job, art: Path | None = None) -> None:
+    """thumbnail.jpg: 바탕 위에 대본 thumb 글자를 얹는다. 렌더 뒤 글자만 고칠 때도 부른다(렌더는 다시 안 한다).
+    바탕은 그린 그림(thumb_art.jpg), 없으면 turn 장면 앞 쉼 화면(그 사이엔 구운 자막이 없다)."""
+    s, art = job.doc("script.json"), art or job.dir / "thumb_art.jpg"
+    if not art.exists():
+        f, timing = job.doc("film.json"), job.doc("timing.json")
+        at = round(next((t["start"] - TURN_GAP / 2 for t, b in zip(timing, _beats(s), strict=True) if b == "turn"),
+                        f["total"] / 3), 2)
+        art = job.dir / "draft" / f"at-{at:g}.jpg"   # 렌더 때 찍어 둔 화면(lemo.stills 이름)
+        if not art.exists():
+            art = lemo.stills(job.dir / "sat", [at], job.dir / "draft")[0]
+    ffmpeg.text_card(art, s.get("thumb") or [s["title"]], FONT, job.dir / "thumbnail.jpg")
 
 
 class ThumbArt(BaseModel):
@@ -376,8 +387,8 @@ def _step(f, sv: Services):
     def go(rec: Job) -> str:
         # 단계마다 먼저 본다: 조사·LLM·음성에 돈을 쓴 뒤 초안에서 Node가 없어 멈추지 않게.
         # run_steps 안에서 던져야 실패가 작업에 남는다(밖에서 던지면 상태가 running에 갇힌다)
-        if not hyperframes.ready():
-            raise RuntimeError("Node.js 22 이상(npx)을 찾지 못했어요. 롱폼 초안·렌더에 필요해요")
+        if not lemo.ready():
+            raise RuntimeError(f"node나 {lemo.ROOT}를 찾지 못했어요. 롱폼 초안·렌더에 필요해요")
         return f(rec, sv)
     return go
 

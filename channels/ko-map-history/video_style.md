@@ -7,5 +7,5 @@
 - 다치거나 죽는 모습, 피, 시신, 총에 맞는 순간을 그리지 않는다. 전투는 먼 곳의 섬광·연기·포성이 남긴 흔적으로 보여 준다.
 - 지도·글자·간판·깃발·군 표식·국가 상징을 넣지 않는다(AI가 틀린 글자와 깃발을 만든다). 깃발이 필요한 이야기는 지도 장면에서 말한다.
 - 아이·아기는 넣지 않는다. 피란 장면도 어른 무리로 쓴다.
-- 카메라는 천천히 움직인다(slow push-in, slow lateral dolly, static wide). 빠른 컷·흔들림은 쓰지 않는다.
-- 동작은 8초 동안 하나만: 무엇이 어디서 어디로 움직이는지 적는다(a long line of refugees carrying bundles trudges south across a snowy bridge).
+- 8초를 3초·3초·2초 세 컷으로 나눈다: 넓게 → 가운데 → 가깝게. 컷 안에서 카메라는 천천히 움직이고(slow push-in, slow lateral dolly, static) 흔들지 않는다.
+- 동작은 컷마다 하나만: 무엇이 어디서 어디로 움직이는지 적는다(a long line of refugees carrying bundles trudges south across a snowy bridge).
