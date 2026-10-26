@@ -62,6 +62,7 @@ domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "k
 news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
         "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
         "bbc.com", "nationalgeographic.com", "sciencetimes.co.kr", "livescience.com", "britannica.com"]
+open = true
 languages = ["ko", "en"]
 queries_per_topic = 7
 max_pages = 10

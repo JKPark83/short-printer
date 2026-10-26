@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from shorts_printer.core import channel, pipeline, research, trends
+from shorts_printer.core import channel, pipeline, trends
 from shorts_printer.ports.llm import add_usage
 
 CH = "ko-40sec-facts"
@@ -106,7 +106,7 @@ def test_pick_message_has_request_today_weights_and_this_channels_topics():
     assert "- 우리 채널 주제" in text and "다른 채널 주제" not in text
     assert "trend 화제성 (가중치 20)" in text and "fit 제작 적합도 (가중치 35)" in text and "(가중치 5)" in text
     assert "좁힐 주제" not in text
-    assert call["system"] == trends.system_idea(ch) and call["web"] == research.sites(ch) and call["images"] == []
+    assert call["system"] == trends.system_idea(ch) and call["web"] == trends._web(ch) and call["images"] == []
     with pytest.raises(StopIteration):
         trends.step_pick(new(), sv(llm, ch))
     assert "추가 요청: 없음" in llm.calls[1]["text"]
