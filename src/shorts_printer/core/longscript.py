@@ -213,7 +213,7 @@ def proofread(llm: LLM, ch: Channel, s: dict, facts: Sequence[dict] = (), topic:
     """롱폼 대본 검수. 모델 채점(날짜 순서·사실 출처·화면과 내레이션·흐름) + 코드 점검(checks).
     고치지 않는다. 떨어지면 호출한 쪽이 지적을 남기고 사람 확인으로 멈춘다."""
     text = ((f"주제: {topic}\n" if topic else "") + f"제목: {s['title']}\n설명: {s['description']}\n"
-            f"장면 {len(s['scenes'])}개:\n{_listing(ch, s)}")
+            f"썸네일: {' / '.join(s.get('thumb') or [])}\n장면 {len(s['scenes'])}개:\n{_listing(ch, s)}")
     if facts:
         text += "\n\n" + script.sheet_block(facts)
     verdict, usage = llm.ask(prompts.render("long_proofread", **values(ch)), text, Verdict,

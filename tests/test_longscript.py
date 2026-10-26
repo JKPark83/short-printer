@@ -95,7 +95,8 @@ def test_proofread_lists_scenes_and_adds_code_checks():
     llm = FakeLLM(Verdict(issues=[Issue(scene=1, kind="문장", severity="작음", problem="p", fix="f")]))
     out, usage = longscript.proofread(llm, ch, s, FACTS, topic="한국전쟁")
     text = llm.calls[0]["text"]
-    assert text.startswith("주제: 한국전쟁\n제목: t") and "## 1장. 시작\n1. [map] 1950년" in text
+    assert text.startswith("주제: 한국전쟁\n제목: t") and "\n썸네일: 썸\n" in text
+    assert "## 1장. 시작\n1. [map] 1950년" in text
     assert "## 2장. 반격\n3. [clip] 배가 닿는다\n   (화면: v / 클립: boats)" in text and "2. [map/turn]" in text
     assert "(근거: F1)" in text and "F1. 1950년" in text and usage == USAGE
     # 모델 지적 + clip 상한(0개) + 짧은 길이 + 근거 없는 날짜(2번)
