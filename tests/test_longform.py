@@ -67,7 +67,7 @@ def test_run_stops_before_paid_steps_without_npx(monkeypatch):
 def test_render_drops_old_srt_and_shoots_thumbnail_in_gap_before_turn(monkeypatch):
     shots = []
     fake_render(monkeypatch, shots)
-    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda *a: None)
+    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda *a, **k: None)
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
     job = long_job()
     job.update(draft_ok=True)
@@ -107,7 +107,7 @@ class ThumbLLM:
 def test_render_thumbnail_uses_free_flow_image_else_map_frame(monkeypatch, free):
     shots, cards = [], []
     fake_render(monkeypatch, shots)
-    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, *a: cards.append(src))
+    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, *a, **k: cards.append(src))
     monkeypatch.setattr(longform.ffmpeg, "duration", lambda p: 10.0)
     job = long_job()
     job.update(draft_ok=True)
@@ -204,6 +204,15 @@ def test_publish_sets_captions_and_failure_is_only_a_note(fail):
     assert job.data["upload"]["note"] is None
 
 
+def test_publish_puts_series_episode_before_title():
+    job = long_job(*STEPS_LONG)
+    job.update(series={"name": "광개토왕 남정", "no": 2, "of": 3, "parts": ["a", "b", "c"]})
+    job.put("script.json", {"title": "5만 군대는 어디까지", "description": "d", "tags": [], "sentences": ["a"]})
+    sv = services(channel=LONG, publisher=Publisher())
+    pipeline.publish(job, sv)
+    assert sv.publisher.sent[0][1]["title"] == "[광개토왕 남정 2편] 5만 군대는 어디까지"
+
+
 def test_registry_falls_back_to_16x9_flow_for_long_channel(monkeypatch):
     monkeypatch.setattr(registry.VIDEOS["flow-auto-16x9"], "ready", lambda: False)
     monkeypatch.setattr(registry.VIDEOS["flow-auto"], "ready", lambda: False)
@@ -245,7 +254,8 @@ def test_draft_builds_satellite_project(monkeypatch, tmp_path):
                                       "date": None, "flashes": [{"place": "seoul", "at": "새벽"}]},
                                      {"scene": 1, "camera": None, "front": "", "labels": [], "arrows": [],
                                       "date": None, "flashes": []}],
-                          "photos": [{"scene": 0, "query": "Seoul 1950", "caption": "1950 서울", "at": "새벽"}]})
+                          "photos": [{"scene": 0, "query": "Seoul 1950", "caption": "1950 서울", "at": "새벽"},
+                                     {"scene": 1, "query": "Seoul", "caption": "서울", "at": "끝"}]})   # 같은 사진
 
     def photo(query, dst):   # Commons 대신: 세로 사진 하나
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -359,7 +369,7 @@ def test_thumbnail_reuses_render_frame_without_new_snapshot(monkeypatch):
     """렌더 뒤 글자만 고칠 때: 렌더 때 찍은 화면을 다시 쓰고 다시 찍지 않는다."""
     cards = []
     monkeypatch.setattr(longform.lemo, "stills", lambda *a: pytest.fail("다시 찍었다"))
-    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, lines, *a: cards.append((src, lines)))
+    monkeypatch.setattr(longform.ffmpeg, "text_card", lambda src, lines, *a, **k: cards.append((src, lines)))
     job = long_job()
     job.put("film.json", {"total": 10.0})
     job.put("timing.json", [{"start": 1.4}])

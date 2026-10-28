@@ -153,3 +153,17 @@ def test_outro_is_appended_and_never_edited():
                            scenes=[Edit(scene=2, narration="바뀐 인사", kind="map", visual="v")]))
     new, _ = longscript.revise(llm, ch, s, "끝을 바꿔")
     assert new["sentences"][-1] == "구독 눌러 주세요!" and "[채널 마무리 인사, 고정" in llm.calls[0]["text"]
+
+
+def test_series_lists_episodes_and_picks_outro_by_next_episode():
+    ch = _ch(clips=0)
+    ch = ch.model_copy(update={"long": ch.long.model_copy(update={"outro": "다른 이야기", "outro_next": "다음 편"})})
+    outline = Outline(title="t", description="d", tags=[], thumb=["썸"], sensitive="", spine="왜?",
+                      chapters=[Chapter(title="시작", summary="s", scenes=1)])
+    series = {"name": "한국전쟁", "no": 1, "of": 2, "parts": ["새벽", "인천"]}
+    for no, end in ((1, "다음 편"), (2, "다른 이야기")):
+        llm = FakeLLM(outline, Scenes(scenes=[Scene(narration="첫", kind="map", visual="v")]))
+        s, _ = longscript.write(llm, ch, "x", series=series | {"no": no})
+        assert s["sentences"][-1] == end
+        assert f"시리즈: 한국전쟁 {no}/2편\n1. 새벽" in llm.calls[0]["text"] and "← 이번 편" in llm.calls[1]["text"]
+    assert not longscript.has_next(None) and longscript.has_next(series)

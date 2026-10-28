@@ -89,7 +89,7 @@ def step_script(job: Job, sv: Services) -> str:
         job.log(f"대본 고침: {note}")
     else:
         s, usage = longscript.write(llm, sv.channel, job.data["topic"], job.data.get("brief"), _recent(job, sv),
-                                    facts, _unverified(research_doc.get("notes", [])))
+                                    facts, _unverified(research_doc.get("notes", [])), job.data.get("series"))
     for n in s["notes"]:
         job.log(f"대본 메모: {n}")
     job.put("script.json", s)
@@ -236,6 +236,9 @@ def step_draft(job: Job, sv: Services) -> str:
         if not info:
             job.log(f"퍼블릭 도메인 사진을 못 찾아 건너뛰었어요({ph['query']})")
             continue
+        if any(g["title"] == info["title"] for g in got.values()):   # 같은 탁본이 두 장면에 뜨지 않게
+            job.log(f"앞 장면과 같은 사진이라 건너뛰었어요({info['title']})")
+            continue
         got[ph["scene"]] = info | {"file": dst.name}
         job.log(f"사진 장면 {ph['scene'] + 1}: {info['title']} ({info['license']}) {info['url']}")
     parts = mapplan.film_parts(plan, s, timing, end_start, ch.style.accent, INK, got)
@@ -272,7 +275,8 @@ def step_draft(job: Job, sv: Services) -> str:
                     "ink": INK, "accent": ch.style.accent, "bg": BG, "total": total, "end_start": end_start,
                     "tiles": job.doc("tiles.json"), "geo": job.doc("geo.json"), "voices": voices, "clips": clips,
                     "captions": [[c["start"], c["end"], c["text"]] for c in cues],
-                    "sounds": sounds, "credits": credits, "panels": [], "notes": []}
+                    "sounds": sounds, "credits": credits, "panels": [], "notes": [],
+                    "next": longscript.has_next(job.data.get("series"))}   # 끝 화면 "다음 편에 계속"
     job.put("film.json", data)
     satellite.build(data, job.dir, project)
     # 장 첫 장면 가운데: 지명 글씨가 다 뜬 뒤라 사람이 글씨를 볼 수 있다
@@ -328,7 +332,8 @@ def thumbnail(job: Job, art: Path | None = None) -> None:
         art = job.dir / "draft" / f"at-{at:g}.jpg"   # 렌더 때 찍어 둔 화면(lemo.stills 이름)
         if not art.exists():
             art = lemo.stills(job.dir / "sat", [at], job.dir / "draft")[0]
-    ffmpeg.text_card(art, s.get("thumb") or [s["title"]], FONT, job.dir / "thumbnail.jpg")
+    ffmpeg.text_card(art, s.get("thumb") or [s["title"]], FONT, job.dir / "thumbnail.jpg",
+                     tag=longscript.series_tag(job.data.get("series")))
 
 
 class ThumbArt(BaseModel):

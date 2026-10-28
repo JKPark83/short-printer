@@ -111,6 +111,7 @@ class LongCfg(BaseModel):
     max_facts: int = Field(40, ge=1, le=80)   # 자료 조사 사실 상한(숏폼은 12)
     music: str = "war"   # 배경 음악 분위기(assets/music.json 키)
     outro: str = ""   # 맨 끝에 붙는 고정 내레이션(구독 인사). 모델이 쓰거나 고치지 않는다
+    outro_next: str = ""   # 시리즈에 다음 편이 있을 때 outro 대신. 비우면 outro
 
     @model_validator(mode="after")
     def _minutes(self):

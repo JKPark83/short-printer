@@ -181,20 +181,45 @@ function drawRealms(t, cam) {
 }
 
 // 다각형을 3차원에서 지평선(보이는 땅 P·C > R²)과 카메라 앞 1km 면으로 잘라 화면 점으로 돌린다.
-// 안 보이는 점을 그대로 투영하면 뒤집힌 점 때문에 확대·기울인 장면에서 색 구역이 찢어진다
+// 안 보이는 점을 그대로 투영하면 뒤집힌 점 때문에 확대·기울인 장면에서 색 구역이 찢어진다.
+// 지평선 밖으로 나갔다 들어오는 토막은 직선(현)이 아니라 지평선 원호로 잇는다: 현은 보이는 땅을 가로질러
+// 넓은 땅 고리(land.json)의 가림을 뒤집는다. 원호 방향은 밖 토막이 지평선 축을 돈 각도로 정한다
 function clipRing(cam, ring) {
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], c = Math.hypot(...cam.C);
-  let pts = ring.map(([lon, lat]) => ecef(lat, lon));
-  for (const [n, d] of [[cam.C.map(x => x / c), R * R / c], [cam.f, dot(cam.C, cam.f) + 1]]) {
-    const out = [];
-    pts.forEach((a, i) => {
-      const b = pts[(i + 1) % pts.length], da = dot(a, n) - d, db = dot(b, n) - d;
-      if (da >= 0) out.push(a);
-      if ((da >= 0) !== (db >= 0)) out.push(a.map((x, k) => x + (b[k] - x) * da / (da - db)));
-    });
-    pts = out;
-  }
-  return pts.map(P => { const r = Math.hypot(...P); return project(cam, Math.asin(P[2] / r) * 180 / Math.PI, Math.atan2(P[1], P[0]) * 180 / Math.PI, r - R); });
+  const n = cam.C.map(x => x / c), d = R * R / c, rho = Math.sqrt(R * R - d * d);
+  const t = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], tn = dot(t, n), e1n = Math.hypot(...t.map((x, k) => x - n[k] * tn));
+  const e1 = t.map((x, k) => (x - n[k] * tn) / e1n), e2 = [n[1] * e1[2] - n[2] * e1[1], n[2] * e1[0] - n[0] * e1[2], n[0] * e1[1] - n[1] * e1[0]];
+  const ang = P => Math.atan2(dot(P, e2), dot(P, e1)), wrap = a => a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  const arc = a => n.map((x, k) => x * d + rho * (Math.cos(a) * e1[k] + Math.sin(a) * e2[k]));
+  const cut = (a, b, da, db) => a.map((x, k) => x + (b[k] - x) * da / (da - db));
+  // 긴 변은 1°씩 쪼갠다: 3차원 직선은 땅속으로 파고들고(80° 변이면 1,500km) 밖 토막의 각도도 놓친다
+  let pts = ring.flatMap(([lon, lat], i) => {
+    const [lo, la] = ring[(i + 1) % ring.length], m = Math.max(1, Math.ceil(Math.max(Math.abs(lo - lon), Math.abs(la - lat))));
+    return Array.from({ length: m }, (_, k) => ecef(lat + (la - lat) * k / m, lon + (lo - lon) * k / m));
+  });
+  const s = pts.findIndex(P => dot(P, n) >= d);   // 보이는 점에서 시작해야 밖 토막마다 나간 점이 먼저 온다
+  if (s < 0) return [];
+  pts = pts.slice(s).concat(pts.slice(0, s));
+  let out = [], a0 = 0, sweep = 0, last = 0;
+  pts.forEach((a, i) => {
+    const b = pts[(i + 1) % pts.length], da = dot(a, n) - d, db = dot(b, n) - d;
+    if (da >= 0) out.push(a);
+    else { sweep += wrap(ang(a) - last); last = ang(a); }
+    if ((da >= 0) === (db >= 0)) return;
+    const X = cut(a, b, da, db);
+    if (da >= 0) { out.push(X); a0 = last = ang(X); sweep = 0; return; }
+    sweep += wrap(ang(X) - last);
+    for (let k = 1, m = Math.ceil(Math.abs(sweep) / 0.03); k < m; k++) out.push(arc(a0 + sweep * k / m));
+    out.push(X);
+  });
+  const fd = dot(cam.C, cam.f) + 1;
+  pts = out, out = [];
+  pts.forEach((a, i) => {
+    const b = pts[(i + 1) % pts.length], da = dot(a, cam.f) - fd, db = dot(b, cam.f) - fd;
+    if (da >= 0) out.push(a);
+    if ((da >= 0) !== (db >= 0)) out.push(cut(a, b, da, db));
+  });
+  return out.map(P => { const r = Math.hypot(...P); return project(cam, Math.asin(P[2] / r) * 180 / Math.PI, Math.atan2(P[1], P[0]) * 180 / Math.PI, r - R); });
 }
 
 // ------------------------------------------------------------------ 전선·점령지(64.52초부터)
@@ -207,6 +232,17 @@ function drawFront(t, cam) {
   const line = mix(F.states[ka[2]], F.states[kb[2]]);   // 점령지는 칠하지 않는다: 위성 땅이 붉게 덮인다
   if (ka !== kb && p > 0 && p < 1) hair(ctx, () => pathLL(ctx, cam, line), { w: 18, col: RED, alpha: a * 0.4 * Math.sin(Math.PI * p), halo: 0, cap: 'round' });
   hair(ctx, () => pathLL(ctx, cam, line), { w: 3, col: RED, alpha: a, dash: [16, 9], off: -t * 12, halo: 4 });
+  // 무슨 선인지 이름을 단다: 화면 가운데에서 가장 가까운 선 위 점(카메라가 움직여도 미끄러지듯 따라간다)
+  const P = line.map(([lo, la]) => project(cam, la, lo)), cx = cam.W / 2, cy = cam.H / 2;
+  let best = null;
+  P.forEach((A, i) => {
+    const B = P[i + 1];
+    if (!B || !A[2] || !B[2]) return;
+    const dx = B[0] - A[0], dy = B[1] - A[1], k = clamp(((cx - A[0]) * dx + (cy - A[1]) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+    const q = [A[0] + dx * k, A[1] + dy * k], d = Math.hypot(q[0] - cx, q[1] - cy);
+    if (!best || d < best[2]) best = [...q, d];
+  });
+  if (best) text(ctx, '전선', best[0], best[1] - 16, { font: '800 30px SC', col: RED, align: 'center', track: 6, alpha: a, halo: 10 });
 }
 
 // 기울이면 먼 쪽이 대기에 흐려진다(먼 곳이 낮은 해상도 판으로 넘어가는 경계도 가린다)
@@ -451,6 +487,8 @@ function drawEnd(t) {
   parts.forEach((p, i) => text(ctx, p + (i < parts.length - 1 ? ',' : ''), x, 400 + i * 100 + 20 * (1 - a1), { font, alpha: a1, halo: 16, track: -1 }));
   text(ctx, F.subtitle, x + 2, 400 + parts.length * 100 + 6, { font: '700 42px SC', col: C.amber, alpha: a2, halo: 8 });
   text(ctx, '선을 긋다  ·  SATELLITE BRIEFING', x + 2, 400 + parts.length * 100 + 66, { font: '500 24px PM', alpha: a3 * 0.85, halo: 6, track: 2 });
+  // 시리즈에 다음 편이 있으면 오른쪽 아래에 띄운다(film.json next)
+  if (F.next) text(ctx, '다음 편에 계속', W - 112, H - 140, { font: '800 56px SC', col: C.amber, align: 'right', alpha: eo(seg(t, t0 + 1.2, t0 + 1.7)), halo: 12 });
 }
 
 window.render = t => render(t);

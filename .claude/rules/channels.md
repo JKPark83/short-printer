@@ -70,6 +70,7 @@
 | `[long]` `max_facts` | 자료 조사 사실 상한 1~80(기본 40). 숏폼은 12 고정 |
 | `[long]` `music` | 배경 음악 분위기, `assets/music.json` 키(기본 `war`). 곡은 채널에서 가장 오래 안 쓴 것을 고르고 -28 LUFS로 맞춘다 |
 | `[long]` `outro` | 맨 끝에 붙는 고정 내레이션(구독 인사). 코드가 마지막 지도 장면으로 붙이고 모델은 쓰거나 고치지 않는다. 비우면 안 붙는다 |
+| `[long]` `outro_next` | 시리즈에 다음 편이 있을 때 `outro` 대신 붙는 내레이션(끝 화면에는 "다음 편에 계속"이 뜬다). 비우면 `outro` |
 
 롱폼(`format = "long"`)은 `[script]`의 `scenes`·`sentence`·`duration`, `[thumbnail]`, `thumbnail.md`를 읽지 않는다(길이는 `[long] minutes`, 썸네일 글자는 대본이 정한다). `[style]`은 `accent`·`subtitle_limit`만 쓴다. `thumbnail.md`는 채널을 읽으려면 있어야 해서 짧게 둔다.
 

@@ -344,3 +344,25 @@ def test_long_popular_searches_medium_videos_without_shorts_filter(monkeypatch):
     assert [v["id"] for v in videos] == ["b", "c", "a"]   # 시간당 300·180·100, 40초짜리도 남는다
     assert videos[2]["url"].endswith("watch?v=a")
     assert "요즘 뜨는 영상" in llm.calls[0]["text"] and "지도 규칙" in llm.calls[0]["system"]
+
+
+def test_series_splits_one_pick_into_ordered_episodes():
+    ch = channel.load(CH).model_copy(update={"format": "long"})
+    out = trends.SeriesOut(name="한국전쟁", summary="국면별", picks=[idea("6월 25일 새벽", fit=1), idea("인천", fit=5),
+                                                                 idea("장진호", fit=3)])
+    llm = FakeLLM(lambda *a: (out, USAGE))
+    t = trends.Trend.create(CH, "3편으로", series={"topic": "한국전쟁 3년", "brief": "방향: 낙동강까지"})
+    trends.step_pick(t, sv(llm, ch))
+    assert llm.calls[0]["system"] == trends.system_series(ch)
+    assert "고른 추천: 한국전쟁 3년\n방향: 낙동강까지" in llm.calls[0]["text"] and "추가 요청: 3편으로" in llm.calls[0]["text"]
+    picks = t.doc("picks.json")["picks"]   # 총점으로 섞지 않고 시간 순서 그대로
+    assert [p["topic"] for p in picks] == ["6월 25일 새벽", "인천", "장진호"]
+    assert picks[1]["series"] == {"name": "한국전쟁", "no": 2, "of": 3, "parts": ["6월 25일 새벽", "인천", "장진호"]}
+    assert t.again().data["series"]["topic"] == "한국전쟁 3년"   # 다시 뽑아도 시리즈 나누기
+
+
+def test_series_needs_two_episodes():
+    out = trends.SeriesOut(name="x", summary="s", picks=[idea("하나")])
+    t = trends.Trend.create(CH, series={"topic": "x", "brief": "b"})
+    with pytest.raises(RuntimeError, match="1개만"):
+        trends.step_pick(t, sv(FakeLLM(lambda *a: (out, USAGE))))

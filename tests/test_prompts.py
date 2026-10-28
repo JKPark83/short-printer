@@ -27,10 +27,10 @@ def test_every_prompt_file_renders_for_a_real_channel():
 
 
 def test_every_long_prompt_renders_for_a_real_channel():
-    from shorts_printer.core import channel, longscript, research
+    from shorts_printer.core import channel, longscript, research, trends
     ch = channel.load("ko-40sec-facts").model_copy(update={"format": "long"})
     v = longscript.values(ch)
-    for s in (prompts.render("long_outline", **v), prompts.render("long_scenes", **v),
+    for s in (prompts.render("long_outline", **v), prompts.render("long_scenes", **v), trends.system_series(ch),
               prompts.render("long_proofread", **v), prompts.render("long_revise"), research.system(ch),
               prompts.render("long_thumb", concept=ch.concept, style=ch.video.style)):
         assert s and "${" not in s and "---" not in s.splitlines()[0]

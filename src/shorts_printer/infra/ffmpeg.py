@@ -90,17 +90,22 @@ def silences(path: Path, noise: str = "-35dB", min_s: float = 2.0) -> list[tuple
     return [(max(a, 0.0), b) for a, b in zip(starts, ends, strict=True)]
 
 
-def text_card(src: Path, lines: list[str], font: Path, out: Path, w: int = 1280, h: int = 720) -> None:
+def text_card(src: Path, lines: list[str], font: Path, out: Path, w: int = 1280, h: int = 720, tag: str = "") -> None:
     """src 그림을 w×h로 채워 자르고 왼쪽 아래에 lines를 굵은 흰 글씨(검은 테)로 얹어 out(jpg)에 쓴다.
-    글은 textfile로 넘겨 drawtext 이스케이프를 피한다."""
+    tag(시리즈 편)가 있으면 왼쪽 위에 호박색 띠로 얹는다. 글은 textfile로 넘겨 drawtext 이스케이프를 피한다."""
     # ponytail: 글자 크기는 가장 긴 줄 글자 수로 어림(한글 폭 기준). 라틴 문자는 작게 나온다
     size = min(110, int((w - 144) / max(map(len, lines), default=1)))
     txt, part = out.with_suffix(".txt"), out.with_name(out.stem + ".part.jpg")
+    tagf = out.with_suffix(".tag.txt")
     txt.write_text("\n".join(lines), encoding="utf-8")
+    tagf.write_text(tag, encoding="utf-8")
+    top = (f",drawtext=fontfile='{font}':textfile='{tagf}':fontsize=56:fontcolor=black:box=1:boxcolor=0xFFBE55:"
+           f"boxborderw=18:x=72:y=72") if tag else ""
     try:
         run(["-i", src, "-vf", f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},"
              f"drawtext=fontfile='{font}':textfile='{txt}':fontsize={size}:fontcolor=white:borderw=8:"
-             f"bordercolor=black:line_spacing=10:x=72:y=h-th-72", "-frames:v", 1, "-q:v", 3, part])
+             f"bordercolor=black:line_spacing=10:x=72:y=h-th-72{top}", "-frames:v", 1, "-q:v", 3, part])
     finally:
         txt.unlink(missing_ok=True)
+        tagf.unlink(missing_ok=True)
     part.replace(out)

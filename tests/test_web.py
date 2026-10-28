@@ -621,7 +621,7 @@ def test_job_cost_adds_research_and_page_shows_step():
 
 
 def test_credits_shows_shorts_left(monkeypatch):
-    """장면 11개·문장 56~63자 → 한 편 ElevenLabs 654자, Flow 132크레딧. 적은 쪽이 편수를 정한다."""
+    """장면 11개·문장 56~63자 → 한 편 ElevenLabs 654자, Flow 66크레딧. 적은 쪽이 편수를 정한다."""
     from shorts_printer.adapters.elevenlabs import ElevenLabs
     from shorts_printer.adapters.flow_auto import FlowAuto
     monkeypatch.setattr(web, "_left_cache", {})
@@ -631,7 +631,7 @@ def test_credits_shows_shorts_left(monkeypatch):
     monkeypatch.setattr(FlowAuto, "credits", lambda self: 5883)
     assert 'data-src="/credits"' in client.get("/").text   # 대시보드는 자리만 두고 바로 그린다
     html = client.get("/credits").text
-    assert "6,540" in html and "편당 654 · 10편" in html and "편당 132 · 44편" in html
+    assert "6,540" in html and "편당 654 · 10편" in html and "편당 66 · 89편" in html
     assert "약 <strong>10편</strong>" in html and "ElevenLabs가 먼저" in html
 
     def broken(self):
@@ -715,13 +715,13 @@ def drain():
 
 
 def test_long_script_gate_page_and_approve(two_clips, monkeypatch):
-    monkeypatch.setattr(registry.VIDEOS["flow-auto"], "ready", lambda: True)   # 쇼츠 채널 CH라 9:16 720p 판
+    monkeypatch.setattr(registry.VIDEOS["flow-auto"], "ready", lambda: True)   # 쇼츠 채널 CH라 9:16 판
     job = long_job()
     assert not web.in_review(job.data) and not web.in_voice_review(job.data)
     html = client.get(f"/jobs/{job.id}").text
     assert "대본 승인 대기" in html and 'data-retry="approve/script"' in html and "1장. 남침" in html
     assert "뜻1" in html and "보임3" in html and "검수 90점 · 통과" in html and "클립 1/2" in html
-    assert "대본 25자 · 클립 1개 × 12크레딧" in html   # 승인 전 비용 어림(내레이션 5자 × 5)
+    assert "대본 25자 · 클립 1개 × 6크레딧" in html   # 승인 전 비용 어림(내레이션 5자 × 5)
     assert 'data-post="scenes/1/kind"' in html and 'data-post="script/revise"' in html
     assert "대본 승인 대기" in client.get("/").text
     url = f"/api/jobs/{job.id}/approve"

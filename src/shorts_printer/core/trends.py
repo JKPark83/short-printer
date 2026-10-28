@@ -3,6 +3,7 @@
 인기 쇼츠 참고(popular)를 켜면 채널 검색어(trends.keywords)로 최근 뜨는 쇼츠를 YouTube Data API로 모아
 시간당 조회수 순으로 함께 넘긴다. 해외 검색어(trends.abroad)가 있으면 지난 ABROAD_DAYS일 영어 쇼츠도
 누적 조회수 순으로 덧붙인다. 롱폼 채널(format long)은 4~20분 영상을 모으고 prompts/long_trend_idea.md를 쓴다.
+롱폼 추천 하나는 시리즈로 나눌 수 있다(series): 같은 선정 단계가 prompts/long_series.md로 편 목록을 고른다.
 단계는 선정 하나. 작업(Job)과 같은 규칙으로 실패하면 다시 시도할 수 있다."""
 import json
 import re
@@ -28,6 +29,7 @@ from .services import Services
 STEPS = ("pick",)
 LABELS = {"pick": "선정"}
 IDEA_N = 10          # 추천 수
+SERIES = (2, 6)      # 시리즈 편 수 [최소, 최대]
 MAX_REQUEST = 1000   # 추가 요청 최대 글자
 POPULAR_N = 15       # 지시문에 넣을 인기 쇼츠 수
 POPULAR_DAYS = 7     # 인기 쇼츠를 찾을 기간
@@ -66,15 +68,17 @@ class Trend(Record):
         return config.TRENDS_DIR
 
     @classmethod
-    def create(cls, channel: str, keyword: str = "", *, popular: bool = False) -> "Trend":
+    def create(cls, channel: str, keyword: str = "", *, popular: bool = False, series: dict | None = None) -> "Trend":
         """keyword는 사용자 추가 요청(자유 글). 예전 기록·스케줄과 맞추려고 저장 키 이름은 keyword 그대로 둔다.
-        popular면 요즘 인기 쇼츠를 모아 주제 고르기에 함께 넘긴다."""
-        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:MAX_REQUEST], popular=popular)
+        popular면 요즘 인기 쇼츠를 모아 주제 고르기에 함께 넘긴다.
+        series = {"topic", "brief"}면 새 주제 대신 그 추천 하나를 시리즈 편으로 나눈다."""
+        return cls._new(STEPS, channel=channel, keyword=keyword.strip()[:MAX_REQUEST], popular=popular, series=series)
 
     def again(self) -> "Trend":
         """같은 채널·추가 요청으로 다시 뽑는 새 기록. 앞서 나온 주제(이어진 기록 포함, 최근 50개)는 피하게 넘긴다."""
         shown = self.data.get("avoid", []) + [p["topic"] for p in (self.doc("picks.json") or {}).get("picks", [])]
-        t = Trend.create(self.data["channel"], self.data["keyword"], popular=self.data.get("popular", False))
+        t = Trend.create(self.data["channel"], self.data["keyword"], popular=self.data.get("popular", False),
+                         series=self.data.get("series"))
         t.update(avoid=shown[-50:])
         return t
 
@@ -250,8 +254,8 @@ def system_idea(ch: Channel) -> str:
                           duration=ch.script.duration, scenes=ch.script.scenes)
 
 
-def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
-    """LLM 답에 총점(채널 weights, 합 100)을 붙여 total 내림차순 상위 IDEA_N개.
+def finish_ideas(out: IdeasOut, weights: dict[str, int], ordered: bool = False) -> dict:
+    """LLM 답에 총점(채널 weights, 합 100)을 붙여 total 내림차순(ordered면 받은 순서 그대로) 상위 IDEA_N개.
     refs는 참고한 인기 쇼츠 번호(1부터). excluded는 예전 기록과 화면 모양을 맞추려고 빈 값으로 둔다."""
     picks = []
     for p in out.picks:
@@ -260,7 +264,8 @@ def finish_ideas(out: IdeasOut, weights: dict[str, int]) -> dict:
         picks.append({"topic": p.topic.strip()[:80], "angle": p.angle.strip()[:200], "content": p.content.strip()[:500],
                       "format": p.format, "why_now": p.why_now, "scores": scores, "total": total, "refs": p.refs,
                       "search_terms": p.search_terms})
-    picks.sort(key=lambda p: p["total"], reverse=True)
+    if not ordered:
+        picks.sort(key=lambda p: p["total"], reverse=True)
     return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
 
 
@@ -316,7 +321,45 @@ def _criteria(w: dict[str, int], keys) -> str:
     return "\n".join(f"- {k} {CRITERIA[k][0]} (가중치 {w[k]}): {CRITERIA[k][1]}" for k in keys)
 
 
+class SeriesOut(BaseModel):
+    name: str = Field(description="시리즈 이름. 사건 이름만 짧게(예: 한국전쟁)")
+    summary: str = Field(description="편을 이렇게 나눈 까닭 한두 문장")
+    picks: list[IdeaOut] = Field(description=f"편 목록 {SERIES[0]}~{SERIES[1]}개, 시간 순서")
+
+
+def system_series(ch: Channel) -> str:
+    lo, hi = ch.long.minutes
+    return prompts.render("long_series", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
+                          minutes=f"{lo}~{hi}분", facts=ch.long.max_facts, lo=SERIES[0], hi=SERIES[1])
+
+
+def step_series(t: Trend, sv: Services) -> str:
+    """추천 하나 → 시리즈 편 목록(picks.json). 편마다 series {name, no, of, parts}를 달아 작업이 편 목록을 받는다.
+    편은 시간 순서 그대로 둔다(총점으로 섞지 않는다). 만들기는 사람이 편마다 하나씩 누른다."""
+    ch, src = sv.channel, t.data["series"]
+    web = _web(ch)
+    text = (f"오늘: {datetime.now():%Y-%m-%d}\n고른 추천: {src['topic']}\n{src['brief']}\n\n"
+            f"추가 요청: {t.data['keyword'] or '없음'}\n\n점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n"
+            f"이미 만든 작업 주제:\n{_bullets(_made(ch.id))}")
+    t.log(f"{_where(web)} '{src['topic']}'을 시리즈 편으로 나누는 중")
+    out, usage = sv.llm.ask(system_series(ch), text, SeriesOut, what="시리즈 편", web=web,
+                            refusal=f"{sv.llm.label}가 이 주제를 시리즈로 나누지 않았어요. 추가 요청을 바꿔 보세요.")
+    t.update(usage=add_usage(t.data["usage"], usage))
+    if len(out.picks) < SERIES[0]:
+        raise RuntimeError(f"편을 {len(out.picks)}개만 받았어요. 시리즈로 나눌 국면이 모자란 주제예요.")
+    picks = finish_ideas(IdeasOut(summary=out.summary, picks=out.picks[:SERIES[1]]), ch.trends.weights, ordered=True)
+    parts = [p["topic"] for p in picks["picks"]]
+    for k, p in enumerate(picks["picks"], 1):
+        p["series"] = {"name": out.name.strip()[:40], "no": k, "of": len(parts), "parts": parts}
+    t.put("picks.json", picks)
+    t.update(series=src | {"name": out.name.strip()[:40]})
+    _log_picks(t, picks)
+    return usage["model"]
+
+
 def step_pick(t: Trend, sv: Services) -> str:
+    if t.data.get("series"):
+        return step_series(t, sv)
     ch = sv.channel
     made, avoid, web = _made(ch.id), _shown(t), _web(ch)
     head = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"

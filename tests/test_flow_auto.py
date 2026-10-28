@@ -21,13 +21,19 @@ def test_count_reads_credit_label():
 class _Page:
     """타일이 끝난 바로 뒤에는 빈 영상을 주다가 sizes 순서대로 받기를 돌려준다."""
 
-    def __init__(self, sizes):
-        self.sizes, self.waits = list(sizes), []
+    def __init__(self, sizes, stuck=False):
+        self.sizes, self.waits, self.stuck, self.keys, self.texts = list(sizes), [], stuck, [], []
+        self.keyboard = self
+
+    def press(self, key):
+        self.keys.append(key)
 
     def locator(self, *a, **k):
+        self.texts.append(k.get("has_text"))
         return self
 
     def filter(self, **k):
+        self.texts.append(k.get("has_text"))
         return self
 
     first = property(lambda self: self)
@@ -40,7 +46,8 @@ class _Page:
         pass
 
     def click(self):
-        pass
+        if self.stuck:   # 메뉴 항목이 늦게 떠 누르지 못함
+            raise TimeoutError("Locator.click: Timeout 30000ms exceeded.")
 
     def wait_for_timeout(self, ms):
         self.waits.append(ms)
@@ -70,10 +77,20 @@ def test_download_retries_empty_blob_without_regenerating(tmp_path, monkeypatch)
     page = _Page([0, 0, 7])
     _download(page, tmp_path / "clip0.mp4")
     assert (tmp_path / "clip0.mp4").stat().st_size == 7 and page.waits == [0, 5000, 15000]
+    assert page.texts[-3:] == ["다운로드", "업스케일링됨", "720p"]   # 무료 720p 업스케일로 받는다
 
     with pytest.raises(RuntimeError, match="0바이트"):
         _download(_Page([0, 0, 0, 0]), tmp_path / "clip1.mp4")
     assert list(tmp_path.iterdir()) == [tmp_path / "clip0.mp4"]
+
+
+def test_download_closes_menu_when_click_fails(tmp_path, monkeypatch):
+    """받기 메뉴를 못 누르면 열린 메뉴를 닫고 던진다. 안 닫으면 다음 장면이 프롬프트 칸을 못 누른다."""
+    monkeypatch.setattr(flow_auto, "_wait", lambda *a: ("done", ""))
+    page = _Page([7], stuck=True)
+    with pytest.raises(TimeoutError):
+        _download(page, tmp_path / "clip0.mp4")
+    assert page.keys == ["Escape", "Escape"]
 
 
 def test_refetch_finds_lost_tile_by_position_skipping_refused():
@@ -130,8 +147,8 @@ class El:
 
 def test_aspect_defaults_to_shorts_and_long_form_picks_16_9():
     assert flow_auto.FlowAuto().aspect == "9:16" and flow_auto.FlowAuto("16:9").aspect == "16:9"
-    page = Page("동영상 crop_16_9 720p 8초 x1")
+    page = Page("동영상 crop_16_9 360p 8초 x1")
     flow_auto._settings(page, "16:9")
-    assert page.clicked == ["동영상", "소재", "16:9", "720p", "8초", "x1"]
+    assert page.clicked == ["동영상", "소재", "16:9", "360p", "8초", "x1"]
     with pytest.raises(RuntimeError, match="Flow 설정을 맞추지 못했어요"):   # 화면비가 안 바뀌면 멈춘다
-        flow_auto._settings(Page("동영상 crop_9_16 720p 8초 x1"), "16:9")
+        flow_auto._settings(Page("동영상 crop_9_16 360p 8초 x1"), "16:9")

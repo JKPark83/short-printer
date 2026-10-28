@@ -49,7 +49,7 @@
           {% set tc = channels.get(t.channel) %}
           <li><a class="job-row" href="/trends/{{ t.id }}">
             <span class="jr-main">
-              <span class="jr-topic">{{ t.keyword|truncate(40) if t.keyword else '기본 기준' }}{% if t.popular %} · 인기 쇼츠{% endif %}</span>
+              <span class="jr-topic">{% if t.series %}시리즈 · {{ t.series.topic|truncate(40) }}{% else %}{{ t.keyword|truncate(40) if t.keyword else '기본 기준' }}{% endif %}{% if t.popular %} · 인기 쇼츠{% endif %}</span>
               <span class="jr-meta">{% if not ch and tc %}<span class="badge b-ch">{{ tc.name }}</span> {% endif %}{{ t.created_at|hm }}{% if t.usage and t.usage.cost_usd is not none %} · ${{ '%.3f'|format(t.usage.cost_usd) }}{% endif %}</span>
             </span>
             <span class="dots" role="img" aria-label="{% for s in trends.STEPS %}{{ trends.LABELS[s] }} {{ STATE[t.steps[s].status] }}{{ ', ' if not loop.last }}{% endfor %}">

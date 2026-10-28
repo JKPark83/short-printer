@@ -30,7 +30,7 @@ UNITS = ("soldier", "tank", "plane", "ship", "spearman", "cavalry", "sailship")
 FLASH_KINDS = ("cannon", "gun", "clash", "arrows", "fire", "shout")
 GUNPOWDER = {"cannon": 1250, "gun": 1500}
 CREDIT = "지도 Esri, Maxar, Earthstar Geographics · Natural Earth"
-PHOTOS, PHOTO_BOX = 8, (1170, 170, 620, 0.75)   # 한 편의 기록 사진 상한 / 오른쪽 칸 left·top·너비·높이/너비 상한
+PHOTOS, PHOTO_BOX = 16, (1170, 170, 620, 0.75)   # 한 편의 기록 사진 상한 / 오른쪽 칸 left·top·너비·높이/너비 상한
 STAT_POS = (112, 470)   # 숫자 카드: 왼쪽 칸 날짜 아래, 자막 위
 STAT_MIN = 10   # 숫자 카드는 이만큼부터: 0→3처럼 짧게 오르면 세는 맛이 없다
 

@@ -92,10 +92,30 @@ def _clean(ch: Channel, sc: dict) -> dict:
     return sc | {"clip_prompt": f"{style} {p}" if style and not p.startswith(style) else p}
 
 
-def _outro(ch: Channel, scenes: list[dict]) -> None:
-    """[long] outro를 맨 끝 지도 장면으로 붙인다. 모델에 맡기면 문구가 바뀌어 코드가 붙인다."""
-    if ch.long.outro and scenes:
-        scenes.append({"narration": ch.long.outro, "kind": "map", "beat": "", "visual": "앞 장면 지도 그대로",
+def has_next(series: dict | None) -> bool:
+    """시리즈에 이 편 다음 편이 있나. series = {"name", "no", "of", "parts"}(추천의 시리즈 나누기)."""
+    return bool(series) and series["no"] < series["of"]
+
+
+def series_tag(series: dict | None) -> str:
+    """제목 앞·썸네일 위에 붙는 편 표시(광개토왕 남정 1편). 모델에 맡기지 않아 편마다 꼴이 같다."""
+    return f"{series['name']} {series['no']}편" if series else ""
+
+
+def _series(series: dict | None) -> str:
+    """대본 요청에 붙일 시리즈 편 목록. 다른 편과 겹치지 않고 다음 편을 예고하게."""
+    if not series:
+        return ""
+    parts = "\n".join(f"{k}. {t}" + (" ← 이번 편" if k == series["no"] else "")
+                      for k, t in enumerate(series["parts"], 1))
+    return f"\n\n시리즈: {series['name']} {series['no']}/{series['of']}편\n{parts}"
+
+
+def _outro(ch: Channel, scenes: list[dict], nxt: bool = False) -> None:
+    """[long] outro(다음 편이 있으면 outro_next)를 맨 끝 지도 장면으로 붙인다.
+    모델에 맡기면 문구가 바뀌어 코드가 붙인다."""
+    if (text := nxt and ch.long.outro_next or ch.long.outro) and scenes:
+        scenes.append({"narration": text, "kind": "map", "beat": "", "visual": "앞 장면 지도 그대로",
                        "fact_ids": [], "clip_prompt": "", "clip_prompt_ko": "", "chapter": scenes[-1]["chapter"],
                        "outro": True})
 
@@ -124,8 +144,9 @@ def _flat(head: dict, chapters: list[dict], scenes: list[dict], notes: list[str]
                    "sentences": [s["narration"] for s in scenes], "fact_ids": [s["fact_ids"] for s in scenes]}
 
 
-def _request(ch: Channel, topic: str, brief: str | None, recent: Sequence[str], unverified: Sequence[str]) -> str:
-    text = f"주제: {topic}"
+def _request(ch: Channel, topic: str, brief: str | None, recent: Sequence[str], unverified: Sequence[str],
+             series: dict | None = None) -> str:
+    text = f"주제: {topic}" + _series(series)
     if brief:
         text += f"\n\n참고(추천 주제 방향). 방향·내용은 따르되 문장을 베끼지 않는다:\n{brief}"
     if unverified:
@@ -143,13 +164,15 @@ def _toc(o: Outline) -> str:
 
 
 def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: Sequence[str] = (),
-          facts: Sequence[dict] = (), unverified: Sequence[str] = ()) -> tuple[dict, dict | None]:
+          facts: Sequence[dict] = (), unverified: Sequence[str] = (), series: dict | None = None
+          ) -> tuple[dict, dict | None]:
     """목차 한 번 + 장마다 한 번. 장을 쓸 때 목차와 앞 장 내레이션을 같이 줘 이어지게 한다.
+    series가 있으면 편 목록을 같이 줘 다른 편과 겹치지 않게 하고, 다음 편이 있으면 마무리 인사를 outro_next로.
     돌려주는 dict는 script.json 롱폼 꼴(docs/plan/longform.md). notes: 코드가 바꾼 것."""
     v = values(ch)
     sheet = "\n\n" + script.sheet_block(facts) if facts else ""
     refusal = f"{llm.label}가 이 주제로는 목차를 쓰지 않았어요. 주제를 바꿔 보세요."
-    outline, usage = llm.ask(prompts.render("long_outline", **v), _request(ch, topic, brief, recent, unverified)
+    outline, usage = llm.ask(prompts.render("long_outline", **v), _request(ch, topic, brief, recent, unverified, series)
                              + sheet, Outline, refusal=refusal, what="목차")
     if not outline.chapters:
         raise RuntimeError("목차를 받지 못했어요(장이 비었어요).")
@@ -157,7 +180,8 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: S
     chapters: list[dict] = []
     for k, c in enumerate(outline.chapters):
         before = "\n".join(f"{i}. {s['narration']}" for i, s in enumerate(scenes, 1)) or "(첫 장)"
-        text = (f"주제: {topic}\n제목: {outline.title}\n줄기: {outline.spine}\n\n목차:\n{_toc(outline)}\n\n"
+        text = (f"주제: {topic}{_series(series)}\n제목: {outline.title}\n줄기: {outline.spine}\n\n"
+                f"목차:\n{_toc(outline)}\n\n"
                 f"지금 쓸 장: {k + 1}. {c.title}. 장면 약 {c.scenes}개, 박자 {', '.join(c.beats) or '없음'}\n\n"
                 f"앞 장 내레이션:\n{before}{sheet}")
         out, u = llm.ask(prompts.render("long_scenes", **v), text, Scenes, what=f"{k + 1}장 장면",
@@ -167,7 +191,7 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: S
             raise RuntimeError(f"{k + 1}장 장면을 받지 못했어요(장면이 비었어요).")
         chapters.append({"title": c.title, "first": len(scenes)})
         scenes += [_clean(ch, s.model_dump() | {"chapter": k}) for s in out.scenes]
-    _outro(ch, scenes)
+    _outro(ch, scenes, has_next(series))
     head = outline.model_dump(include={"title", "description", "tags", "sensitive", "thumb"})
     return _flat(head, chapters, scenes, cap_clips(ch, scenes)), usage
 

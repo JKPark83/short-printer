@@ -510,7 +510,7 @@ def create_job(topic: str = Form(""), voice: str = Form(...), cid: str = Form(""
             raise HTTPException(400, "그 추천을 찾지 못했어요")
         p = picks[pick]
         job = Job.create(ch.id, p["topic"], voice, brief=trends.brief(t, p), source={"trend": trend, "pick": pick},
-                         review=True)
+                         review=True, series=p.get("series"))
         q.enqueue(job.id)
         return RedirectResponse(f"/jobs/{job.id}", status_code=303)
     ch = _channel(cid, 400)
@@ -1010,6 +1010,20 @@ def trend_again(trend_id: str):
     if trend.data["status"] != "done":
         raise HTTPException(409, "끝난 추천만 다시 뽑을 수 있어요")
     new = trend.again()
+    q.enqueue_trend(new.id)
+    return RedirectResponse(f"/trends/{new.id}", status_code=303)
+
+
+@app.post("/trends/{trend_id}/series")
+def trend_series(trend_id: str, pick: int = Form(...), keyword: str = Form("")):
+    """롱폼 추천 하나를 시리즈 편으로 나누는 새 추천 기록. 편 만들기는 편마다 [이 주제로 만들기]."""
+    trend = _load(Trend, trend_id)
+    ch = _channel(trend.data.get("channel"), 400)
+    picks = _picks(trend)
+    if ch.format != "long" or not 0 <= pick < len(picks):
+        raise HTTPException(400, "롱폼 추천만 시리즈로 나눌 수 있어요")
+    p = picks[pick]
+    new = Trend.create(ch.id, keyword, series={"topic": p["topic"], "brief": trends.brief(trend, p)})
     q.enqueue_trend(new.id)
     return RedirectResponse(f"/trends/{new.id}", status_code=303)
 

@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}{{ ('“' ~ t.keyword|truncate(40) ~ '” 추천') if t.keyword else '기본 기준 추천' }} · shorts-printer{% endblock %}
+{% block title %}{{ ('“' ~ t.series.topic|truncate(40) ~ '” 시리즈') if t.series else ('“' ~ t.keyword|truncate(40) ~ '” 추천') if t.keyword else '기본 기준 추천' }} · shorts-printer{% endblock %}
 {% block main %}
 {% set busy = t.status in ACTIVE %}
 {% macro wait(step, running, pending='이 단계가 끝나면 여기에 나와요') %}
@@ -19,10 +19,11 @@
 
   <header id="head" class="job-head">
     <div class="jh-text">
-      <h1>{{ ('“' ~ t.keyword|truncate(40) ~ '” 추천') if t.keyword else '기본 기준 추천' }}</h1>
+      <h1>{{ ('“' ~ t.series.topic|truncate(40) ~ '” 시리즈') if t.series else ('“' ~ t.keyword|truncate(40) ~ '” 추천') if t.keyword else '기본 기준 추천' }}</h1>
       <p class="meta"><code>{{ t.id }}</code> · {{ ch.name }} · {{ ch.lang_name }} · {{ t.created_at|hm }}</p>
       {% if t.popular %}<p class="summary request"><strong>참고</strong>요즘 인기 쇼츠 {{ videos|length or '' }}개</p>{% endif %}
       {% if t.keyword %}<p class="summary request"><strong>추가 요청</strong>{{ t.keyword }}</p>{% endif %}
+      {% if t.series %}<p class="summary request"><strong>시리즈</strong>{{ t.series.name or '' }} · 편 순서대로 하나씩 골라 만들어요</p>{% endif %}
     </div>
     <div class="jh-actions">
       <span class="badge b-{{ t.status }}">{{ TSTATUS[t.status] }}</span>
@@ -98,7 +99,7 @@
       <section id="c-picks" class="card" aria-labelledby="h-picks">
         <div class="card-head">
           <h2 id="h-picks"><span class="num">2</span>추천 주제</h2>
-          {% if picks %}<span class="mono muted">{{ picks.picks|length }}개 · 총점 순</span>{% endif %}
+          {% if picks %}<span class="mono muted">{{ picks.picks|length }}{{ '편 · 시간 순' if t.series else '개 · 총점 순' }}</span>{% endif %}
         </div>
         {% if picks %}
         <p class="summary"><strong>이번 방향</strong>{{ picks.summary }}</p>
@@ -108,6 +109,7 @@
             <div class="pick-head">
               <span class="rank" aria-label="{{ loop.index }}위">{{ loop.index }}</span>
               <h3>{{ p.topic }}</h3>
+              {% if p.series %}<span class="chip">{{ p.series.name }} {{ p.series.no }}/{{ p.series.of }}편</span>{% endif %}
               <span class="chip">{{ p.format }}</span>
             </div>
             <div class="total">
@@ -135,6 +137,14 @@
               <select id="pv-{{ i }}" name="voice">{% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == ch.tts.default }}>{{ label }}</option>{% endfor %}</select>
               <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>이 주제로 만들기</span></button>
             </form>
+            {% if ch.format == 'long' and not p.series %}
+            <form class="pick-form" method="post" action="/trends/{{ t.id }}/series">
+              <input type="hidden" name="pick" value="{{ i }}">
+              <label for="ps-{{ i }}">시리즈 요청</label>
+              <input id="ps-{{ i }}" name="keyword" maxlength="{{ trends.MAX_REQUEST }}" placeholder="선택. 예: 5편으로, 휴전 협상까지">
+              <button class="btn btn-secondary" type="submit" data-busy="나누는 중…" title="이 주제를 국면별 편으로 나눠 편마다 따로 만들어요">{{ icon('loader', 16, 'spin when-busy') }}<span>시리즈로 나누기</span></button>
+            </form>
+            {% endif %}
           </li>
           {% endfor %}
         </ol>

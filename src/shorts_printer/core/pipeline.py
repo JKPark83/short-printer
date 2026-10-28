@@ -6,7 +6,7 @@ from typing import ClassVar
 from ..infra.store import Record, now, redact, store, upload_state
 from ..ports.llm import add_usage
 from ..ports.video import Refused
-from . import render, research, scenes, script, subtitles, thumbnail, voice
+from . import longscript, render, research, scenes, script, subtitles, thumbnail, voice
 from .channel import Channel
 from .channel import load as load_channel
 from .services import Services
@@ -37,11 +37,13 @@ class Job(Record):
 
     @classmethod
     def create(cls, channel: str, topic: str, voice: str, brief: str | None = None,
-               source: dict | None = None, review: bool = False, long: bool | None = None) -> "Job":
+               source: dict | None = None, review: bool = False, long: bool | None = None,
+               series: dict | None = None) -> "Job":
         """brief: 대본에 넘길 참고 방향, source: 추천 주제에서 만들었으면 {"trend", "pick"}.
         review: 사람이 대본·음성·자막을 확정(confirmed)해야 영상 소스부터 만든다
         (화면에서 만든 작업. 스케줄·CLI는 끝까지 돈다). long: 롱폼 단계(longform.STEPS_LONG), format="long".
-        비우면 채널 format으로 정한다(화면·스케줄·CLI가 모두 여기서 갈린다)."""
+        비우면 채널 format으로 정한다(화면·스케줄·CLI가 모두 여기서 갈린다).
+        series: 롱폼 시리즈의 한 편이면 {"name", "no", "of", "parts"}(추천의 시리즈 나누기)."""
         if long is None:
             try:
                 long = load_channel(channel).format == "long"
@@ -50,7 +52,7 @@ class Job(Record):
         if long:
             from .longform import STEPS_LONG  # longform이 이 모듈을 import한다
             return cls._new(STEPS_LONG, channel=channel, topic=topic, voice=voice, brief=brief, source=source,
-                            review=review, format="long")
+                            review=review, format="long", series=series)
         return cls._new(STEPS, channel=channel, topic=topic, voice=voice, brief=brief, source=source, review=review)
 
     def set_upload(self, target: str | None, state: dict | None, **fields) -> None:
@@ -377,6 +379,8 @@ def publish(job: Job, sv: Services, target: str | None = None) -> None:
     job.log(f"{p.label} 업로드 시작")
     s = job.doc("script.json")
     meta = {k: s[k] for k in ("title", "description", "tags")} | {"description": description(job, sv.channel)}
+    if tag := longscript.series_tag(job.data.get("series")):
+        meta["title"] = f"[{tag}] {meta['title']}"
     try:
         video_id = p.upload(job.dir / "final.mp4", meta, job.log)
     except BaseException as e:   # Ctrl+C도 실패로 남긴다

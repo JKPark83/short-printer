@@ -26,7 +26,7 @@ class Refused(RuntimeError):
     """Flow가 정책으로 거절했다. 같은 프롬프트로 다시 해도 또 거절되므로 다시 시도하지 않는다."""
 
 
-def _settings(page, aspect: str, quality: str = "720p") -> None:
+def _settings(page, aspect: str, quality: str = "360p") -> None:
     # 에이전트 모드(새 로그인 첫 기본값)면 설정 버튼이 숨는다. 끄면 Flow가 기억한다
     chip = page.locator("button.agent-mode-chip").first
     chip.wait_for(timeout=30_000)
@@ -80,7 +80,7 @@ def _wait(page, until, timeout: int):
 
 
 def _generate(page, prompt: str, path: Path) -> None:
-    """프롬프트 하나 → 새 타일이 끝나면 원본 크기로 받아 path에. 실패하면 던진다(장면만 건너뜀)."""
+    """프롬프트 하나 → 새 타일이 끝나면 720p 업스케일로 받아 path에. 실패하면 던진다(장면만 건너뜀)."""
     tiles = page.evaluate(SNAPSHOT)
     before, pos = len(tiles), sum(not t["error"] for t in tiles)
     box = page.locator('[contenteditable="true"]').first
@@ -127,15 +127,22 @@ def _refetch(page, pos: int, path: Path) -> None:
 
 def _save(page, tile, path: Path) -> None:
     tmp = path.with_suffix(".tmp.mp4")
+    # 360p로 만들고 Flow의 720p 업스케일(무료)로 받는다. ffmpeg로 3배 키우면 흐리다. 4K(유료)는 고르지 않는다.
     # 다운로드는 페이지가 받아 둔 영상(blob:)을 저장한다. 타일이 막 끝나면 아직 비어 0바이트가 오니
     # 조금 기다렸다 다시 받는다(받기는 크레딧이 들지 않는다)
     for wait in (0, 5, 15, 30):
         page.wait_for_timeout(wait * 1000)
         tile.hover()
-        with page.expect_download(timeout=60_000) as d:
-            tile.locator('button[aria-label="옵션 더보기"]').click()
-            page.locator('[role="menuitem"]', has_text="다운로드").first.hover()
-            page.locator('[role="menuitem"]', has_text="원본 크기").first.click()
+        try:
+            with page.expect_download(timeout=300_000) as d:   # 업스케일을 기다린다
+                tile.locator('button[aria-label="옵션 더보기"]').click()
+                page.locator('[role="menuitem"]', has_text="다운로드").first.hover()
+                page.locator('[role="menuitem"]', has_text="업스케일링됨").filter(has_text="720p").first.click()
+        except Exception:
+            # 메뉴가 열린 채 남으면 프롬프트 칸을 덮어 다음 장면이 모두 막힌다. 하위 메뉴까지 두 겹 닫는다
+            page.keyboard.press("Escape")
+            page.keyboard.press("Escape")
+            raise
         if data := base64.b64decode(page.evaluate(READ_BLOB, d.value.url)):
             tmp.write_bytes(data)
             os.replace(tmp, path)
@@ -155,9 +162,9 @@ def _count(text: str) -> int:
 class FlowAuto:
     label = "Google Flow(자동)"
 
-    def __init__(self, aspect: str = "9:16", quality: str = "720p"):
+    def __init__(self, aspect: str = "9:16", quality: str = "360p"):
         self.aspect = aspect   # Flow 설정의 화면비 이름. 쇼츠 9:16, 롱폼 16:9
-        self.quality = quality   # 쇼츠 720p, 롱폼 360p(클립이 많아 크레딧을 아낀다)
+        self.quality = quality   # 쇼츠·롱폼 모두 360p(720p의 반값). 받을 때 Flow가 무료로 720p로 키운다
         self.hint = (f"Flow 크레딧 · 장면마다 {CREDITS[quality]}크레딧 · "
                      "처음 한 번 uv run sp chrome으로 띄운 창에서 Google 로그인")
 
