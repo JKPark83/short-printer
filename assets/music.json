@@ -1,0 +1,19 @@
+{
+  "war": [
+    {"title": "Five Armies", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Five%20Armies.mp3", "credit": "“Five Armies” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Clash Defiant", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Clash%20Defiant.mp3", "credit": "“Clash Defiant” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Crusade - Heavy Industry", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Crusade%20-%20Heavy%20Industry.mp3", "credit": "“Crusade - Heavy Industry” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Rynos Theme", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Rynos%20Theme.mp3", "credit": "“Rynos Theme” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "loss": [
+    {"title": "Sad Trio", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Sad%20Trio.mp3", "credit": "“Sad Trio” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Despair and Triumph", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Despair%20and%20Triumph.mp3", "credit": "“Despair and Triumph” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "march": [
+    {"title": "Heroic Age", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Heroic%20Age.mp3", "credit": "“Heroic Age” Kevin MacLeod (incompetech.com), CC BY 4.0"},
+    {"title": "Lord of the Land", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Lord%20of%20the%20Land.mp3", "credit": "“Lord of the Land” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ],
+  "reflective": [
+    {"title": "Echoes of Time v2", "url": "https://incompetech.com/music/royalty-free/mp3-royaltyfree/Echoes%20of%20Time%20v2.mp3", "credit": "“Echoes of Time v2” Kevin MacLeod (incompetech.com), CC BY 4.0"}
+  ]
+}

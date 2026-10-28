@@ -12,13 +12,36 @@
 <body>
 <a class="skip" href="#page">본문으로 건너뛰기</a>
 <header class="topbar">
-  <a class="brand" href="/">{{ icon('film', 18) }}shorts-printer</a>
-  {% set here = 'trends' if request.url.path.startswith('/trends') else 'home' %}
+  <a class="brand" href="/" aria-label="shorts-printer 홈">{{ icon('film', 18) }}<span>shorts-printer</span></a>
+  {% set path = request.url.path %}
+  {% set here = 'trends' if path.startswith('/trends') else 'schedules' if path.startswith('/schedules') else 'home' %}
   <nav class="nav" aria-label="주 메뉴">
     <a href="/"{% if here == 'home' %} aria-current="page"{% endif %}>대시보드</a>
     <a href="/trends"{% if here == 'trends' %} aria-current="page"{% endif %}>{{ icon('trending', 14) }}주제 찾기</a>
+    <a href="/schedules"{% if here == 'schedules' %} aria-current="page"{% endif %}>{{ icon('clock', 14) }}스케줄</a>
   </nav>
-  <span class="stack">Claude · 영상 공급자 · TTS · ffmpeg</span>
+  <form class="ch-pick" method="get" action="{{ path if path == '/schedules/new' else {'trends': '/trends', 'schedules': '/schedules'}.get(here, '/') }}">
+    <label class="sr-only" for="ch-sel">채널</label>
+    <select id="ch-sel" name="channel" data-autosubmit>
+      {% for c in channels.values() %}<option value="{{ c.id }}"{{ ' selected' if c.id == sel }}>{{ c.name }}</option>{% endfor %}
+      <option value="{{ ALL }}"{{ ' selected' if sel == ALL }}>전체 채널</option>
+    </select>
+    <noscript><button class="btn btn-secondary" type="submit">보기</button></noscript>
+  </form>
+  {% set levels = checks|map(attribute=0)|list %}
+  {% set lv = 'bad' if 'bad' in levels else 'warn' if 'warn' in levels else 'ok' %}
+  <button class="env-btn env-{{ lv }}" type="button" popovertarget="env-pop" title="환경 점검"
+          aria-label="환경 점검: {{ {'ok': '모두 정상', 'warn': '확인할 항목 있음', 'bad': '문제 있음'}[lv] }}, 자세히 보기"><span class="dot" aria-hidden="true"></span>환경</button>
+  <div id="env-pop" class="env-pop" popover>
+    {% set cc = channels.get(sel) or (channels.values()|first) %}
+    <h2>환경 점검 · {{ cc.name }}</h2>
+    <ul class="checks">
+      {% for level, label, hint in checks %}
+      <li class="c-{{ level }}">{{ icon(CHECK_ICON[level]) }}<div><span>{{ label }}</span><small>{{ hint }}</small></div></li>
+      {% endfor %}
+    </ul>
+  </div>
+  <button class="btn-icon reload" type="button" onclick="location.reload()" aria-label="새로 고침" title="새로 고침">{{ icon('rotate', 18) }}</button>
 </header>
 {% block main %}{% endblock %}
 <div id="toast" class="toast" role="status" aria-live="polite"></div>

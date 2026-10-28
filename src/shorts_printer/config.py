@@ -18,24 +18,37 @@ def load_dotenv(path: Path = ROOT / ".env") -> None:
 load_dotenv()
 
 FFMPEG = os.environ.get("SP_FFMPEG") or "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"   # 빈 값이면 기본값
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL") or "claude-opus-5-5"
+CLAUDE_MODEL = "claude-opus-5-5"   # 대본·검수·조사 모두 이 모델로 고정한다(출력 상한 128000)
 JOBS_DIR = ROOT / "jobs"
-TRENDS_DIR = ROOT / "trends"   # 주제 찾기(인기 쇼츠 분석) 결과
-# YouTube 업로드: 데스크톱 앱 OAuth 클라이언트 JSON 경로(.env)와 sp youtube-login이 남기는 토큰
+TRENDS_DIR = ROOT / "trends"   # 주제 찾기(추천) 기록 폴더
+SCHEDULES_DIR = ROOT / "schedules"   # 정해진 시각에 만들어 올리는 스케줄
+DB = ROOT / "shorts.db"   # 상태·로그·JSON 결과물(SQLite). 미디어는 위 폴더에 남는다
+CHANNELS_DIR = ROOT / "channels"   # 채널 설정. 폴더 하나 = 채널 하나
+PROMPTS_DIR = ROOT / "prompts"   # 모든 채널 공통 LLM 지시문
+SECRETS_DIR = ROOT / ".secrets"   # 로그인 토큰·전용 Chrome 프로필. 내용을 출력하지 않는다
+# YouTube 업로드: 데스크톱 앱 OAuth 클라이언트 JSON 경로(.env).
+# 토큰은 채널마다 .secrets/channels/<id>/youtube_token.json
 YOUTUBE_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET") or None
-YOUTUBE_TOKEN = ROOT / ".secrets" / "youtube_token.json"
 # 웹 화면이 받는 호스트 이름. tailscale serve로 열 때는 .env의 SP_HOSTS에 machine.tailnet.ts.net을 쉼표로 더한다
+# 알림에 넣는 이 화면 주소. tailscale serve로 열면 .env SP_URL에 https://machine.tailnet.ts.net
+URL = (os.environ.get("SP_URL") or "http://127.0.0.1:8765").rstrip("/")
 HOSTS = ["127.0.0.1", "localhost", *filter(None, map(str.strip, os.environ.get("SP_HOSTS", "").split(",")))]
-
-# 채널 분야. 대본과 추천 주제가 이 분야 안에서 돈다
-CHANNEL = os.environ.get("SP_CHANNEL") or "사람들에게 실제로 도움이 되는 상식"
-VIDEO = os.environ.get("SP_VIDEO") or "flow"   # 영상 공급자(video.VIDEO 키). flow | stock
 
 
 def secret(name: str) -> str | None:
     return os.environ.get(name) or None
 
 
-# ElevenLabs(유료): 키와 목소리 ID가 둘 다 있어야 켜진다(voice.ElevenLabs.ready)
+# Claude 남은 크레딧(선택): ANTHROPIC_ADMIN_API_KEY로 비용 보고서를 읽어 SINCE(YYYY-MM-DD) 날의 잔액 USD에서 뺀다
+CLAUDE_CREDIT_USD = os.environ.get("CLAUDE_CREDIT_USD") or None
+CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
+
+# Claude Code(구독): channel.toml [script] llm = "claude-code"일 때 대본 모델·생각 깊이(low·medium·high·xhigh·max)
+CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL") or "claude-opus-5-5"
+CLAUDE_CODE_EFFORT = os.environ.get("CLAUDE_CODE_EFFORT") or "high"
+
+# ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
-ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_multilingual_v2"
+ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_v4"
+# Typecast(유료): 목소리는 channel.toml [tts.voices]의 tc_… ID
+TYPECAST_MODEL = os.environ.get("TYPECAST_MODEL") or "ssfm-v30"

@@ -1,0 +1,257 @@
+<title>식중독 예방 숏폼 공모전 기획</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Sans+KR:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 레이아웃: 한 단 읽기 문서, 위에 손보구가세 다섯 칸 띠, 표는 각자 가로 스크롤 */
+:root{
+  --bg:#f6f8f7; --surface:#ffffff; --fg:#17302c; --muted:#5b6f6b; --line:#d5dfdc;
+  --accent:#0b7a68; --accent-soft:#dff1ec; --warn:#b4560f; --warn-soft:#fbeadb;
+  --display:"Do Hyeon","IBM Plex Sans KR","Apple SD Gothic Neo",sans-serif;
+  --body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1716; --surface:#16211f; --fg:#e3ece9; --muted:#9db1ac; --line:#2a3a37;
+  --accent:#4fd1b4; --accent-soft:#173a33; --warn:#f0a465; --warn-soft:#3a2615; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1716; --surface:#16211f; --fg:#e3ece9; --muted:#9db1ac; --line:#2a3a37;
+  --accent:#4fd1b4; --accent-soft:#173a33; --warn:#f0a465; --warn-soft:#3a2615; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.75 var(--body);padding-inline:16px;padding-block:32px 64px}
+main{max-width:46rem;margin:0 auto;display:flex;flex-direction:column;gap:2.5rem}
+h1,h2,h3{font-family:var(--display);font-weight:400;text-wrap:balance;line-height:1.3;margin:0}
+h1{font-size:clamp(2rem,6vw,2.8rem)}
+h2{font-size:1.65rem;padding-top:.5rem;border-top:2px solid var(--fg)}
+h3{font-size:1.25rem;margin-top:.5rem}
+p{margin:0}
+section{display:flex;flex-direction:column;gap:1rem;min-width:0}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.lede{font-size:1.08rem}
+strong{font-weight:700}
+.rules{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.rules div{background:var(--surface);border:1px solid var(--line);padding:.6rem .4rem;text-align:center;min-width:0}
+.rules b{display:block;font-family:var(--display);font-weight:400;font-size:2rem;color:var(--accent);line-height:1.1}
+.rules span{font-size:.78rem;color:var(--muted);line-height:1.35;display:block}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.facts div{background:var(--surface);padding:.75rem .9rem;min-width:0}
+.facts dt{font-size:.78rem;color:var(--muted)}
+.facts dd{margin:0;font-weight:600;font-variant-numeric:tabular-nums}
+.verdict{background:var(--accent-soft);padding:1rem 1.1rem;border-left:4px solid var(--accent)}
+.caution{background:var(--warn-soft);padding:1rem 1.1rem;border-left:4px solid var(--warn)}
+.tbl{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;line-height:1.55}
+th,td{padding:.55rem .7rem;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-weight:600;color:var(--muted);font-size:.8rem;white-space:nowrap;background:var(--bg)}
+tr:last-child td{border-bottom:0}
+.script td:first-child{font-family:var(--mono);font-size:.8rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.script table{min-width:44rem}
+.ideas table,.check table{min-width:36rem}
+.idea{display:flex;flex-direction:column;gap:.5rem;padding:1rem 1.1rem;background:var(--surface);border:1px solid var(--line)}
+.idea h3{margin:0}
+.idea dl{margin:0;display:grid;grid-template-columns:5.5rem 1fr;gap:.35rem .8rem}
+.idea dt{color:var(--muted);font-size:.85rem}
+.idea dd{margin:0;min-width:0}
+.pick{border:2px solid var(--accent)}
+.tag{font-family:var(--mono);font-size:.72rem;color:var(--accent);letter-spacing:.06em}
+.miss{color:var(--warn);font-weight:600}
+ul{margin:0;padding-left:1.2rem;display:flex;flex-direction:column;gap:.35rem}
+.src{font-size:.85rem;color:var(--muted)}
+@media (max-width:520px){.rules b{font-size:1.5rem}.idea dl{grid-template-columns:1fr}.idea dt{margin-top:.3rem}}
+</style>
+
+<main>
+<header style="display:flex;flex-direction:column;gap:1rem">
+  <p class="eyebrow">식약처 식중독 예방 숏폼 영상 공모전 · 2026-10-23 조사</p>
+  <h1>웃기게 끌고, 손보구가세로 끝낸다</h1>
+  <p class="lede">이 공모에서 이기는 작품은 겁을 주지 않는다. <strong>웃긴 상황 하나에 정확한 수칙 하나</strong>를 담는다. 식약처와 다른 공공기관 숏폼 수상작은 패러디·의인화·대비(vs)·노래·짧은 상황극이 대부분이었고, 공포 톤으로 상을 받은 작품은 찾지 못했다. 추천안은 소풍 식중독 사건을 탐정이 되감아 추적하는 <strong>「식중독 탐정: 3시간 전으로」</strong>다. 공모전에도 훅은 필요하다. 다만 여기서 훅은 <strong>첫 3초 안에 식중독 이야기라는 것을 보여 주는 장면</strong>이다.</p>
+  <div class="rules" aria-label="식약처 식중독 예방 5대 수칙">
+    <div><b>손</b><span>비누로 30초 이상 손 씻기</span></div>
+    <div><b>보</b><span>냉장 5℃ 이하 · 냉동 -18℃ 이하</span></div>
+    <div><b>구</b><span>날음식·조리식품 구분, 도마·칼 따로</span></div>
+    <div><b>가</b><span>중심 75℃ 1분 이상 (어패류 85℃)</span></div>
+    <div><b>세</b><span>식재료·조리기구 세척·소독</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>확인된 공모 조건</h2>
+  <dl class="facts">
+    <div><dt>접수</dt><dd>10/26(월) ~ 11/23(월) 23:59</dd></div>
+    <div><dt>길이</dt><dd>20초 이상 ~ 59초 이내</dd></div>
+    <div><dt>규격</dt><dd>9:16 · 1080×1920 · MP4/AVI · 500MB 이하</dd></div>
+    <div><dt>제출</dt><dd>영상 + 신청서 + 개인정보 동의서, 이메일</dd></div>
+    <div><dt>시상</dt><dd>10편 · 총 550만 원</dd></div>
+    <div><dt>상금</dt><dd>대상 200 · 최우수 100 · 우수 50×3 · 장려 20×5 (만 원)</dd></div>
+  </dl>
+  <p>주제 예시는 네 가지다. 일상 속 예방 실천, 특정 균(살모넬라·대장균·노로바이러스) 예방, 소풍·축제 같은 행사 때 주의, <strong>식약처 정책(손보구가세, 식품안심업소) 안내·홍보</strong>. 포스터에는 '손' 모양 마스코트와 "식중독 NO!", 식약처 슬로건 "국민 안심이 기준입니다"가 있다. <a href="https://www.wevity.com/?c=find&s=1&gbn=viewok&ix=111834">위비티</a> · <a href="https://www.wevity.com/upload/contest/20261023181729_20b53227.jpg">공식 포스터</a></p>
+  <p class="caution"><strong>정식 공고문은 아직 보지 못했다.</strong> 심사 기준·배점, 온라인 투표 반영, 생성형 AI 허용, 음원·초상권·저작권 귀속 조항은 미확인이다. 원래 게시처인 sotong.go.kr은 점검 중이었고 주소를 modu.go.kr로 옮긴다고 안내했다. 10월 24일 이후 그쪽이나 <a href="https://www.mfds.go.kr/brd/m_74/list.do">식약처 공지</a>에서 확인한다.</p>
+</section>
+
+<section>
+  <h2>수상작은 메시지 하나를 이야기로 감쌌다</h2>
+  <p>식약처가 '식중독 예방'만 주제로 연 영상 공모전 수상작은 2019~2025년에 찾지 못했다. 이번이 사실상 첫 식중독 전용 숏폼 공모다. 가장 가까운 비교 대상은 식약처의 다른 식품안전 숏폼 공모다.</p>
+  <p>배점을 모두 공개한 곳은 2023 HACCP 숏폼뿐이다. <strong>기획의도 20 · 전달성 20 · 이해도 15 · 활용도 15 · 창의성 10 · 독창성 10 · 완성도 10</strong>. 전달 관련 항목이 55점이고 편집 완성도는 10점이니, 화려한 영상보다 정확하고 쉽게 전하는 작품이 이긴다. 심사는 홍보 전문가 3인이 2배수를 고르고, 내·외부 전문가가 다시 본 뒤, 온라인 검증 10일을 거쳤다. 개인 SNS에 올린 영상의 좋아요 1점·댓글 2점·공유 3점도 점수에 넣었다. <a href="https://www.mfds.go.kr/brd/m_99/view.do?seq=47565">식약처 2023-08-21</a></p>
+  <h3>제목에서 반복되는 네 가지 꼴</h3>
+  <ul>
+    <li><strong>영화 패러디</strong>: 「미션 임파서블: 해썹」(2026 HACCP AI 최우수), 「명량_멸균의 바다」(장려)</li>
+    <li><strong>세균 의인화·역발상</strong>: 「세균의 취업난」(우수)</li>
+    <li><strong>가족 밥상 이야기</strong>: 「우리 가족의 안전한 식탁」(2025 식품안전나라 대상). 일상 고민을 공식 서비스로 해결하는 줄거리</li>
+    <li><strong>실용 정보 약속</strong>: 「짧지만 자세한 HACCP 이야기」(2023 대상), 「1초 만에 안전한 식품 고르는 방법」(최우수)</li>
+  </ul>
+  <p>식약처 밖에서도 같은 그림이다. 안산 상록수보건소 최우수 「세균이 좋아합니다 vs 세균이 싫어합니다」는 "직관적이고 위트 있게"라는 평을 받았다. 노동부 산재예방 최우수 「안전보장송」은 "기억하기 쉽고 중독성 있는" 노래였다. 도박예방 대상은 중독자를 주변인의 시선으로 그렸고, 식약처 마약예방 공모에서는 기숙사 수사극이 상을 받았다.</p>
+  <p class="verdict">공통점은 세 가지다. <strong>메시지를 하나로 좁히고, 비유·대비·반복·이야기로 감싸고, 끝에 따라 할 행동을 남긴다.</strong> 칭찬하는 심사평에 나온 말은 "직관적", "위트", "기억하기 쉬운", "친근한"이었다.</p>
+  <p>정확성은 엄격하다. 식약처는 2026년 9월 자체 숏폼 「편의점 소화제, 약국 소화제랑 왜 다를까?」가 과한 표현과 분류 오류로 비판받자 비공개로 돌렸다(<a href="https://www.kpanews.co.kr/news/articleView.html?idxno=546830">약사공론</a>). 활용도가 배점에 들어가므로, 수치가 틀리거나 특정 업종을 깎아내리는 영상은 재미와 상관없이 떨어진다.</p>
+</section>
+
+<section>
+  <h2>유머로 끌고, 위험은 정확히, 끝은 쉬운 행동 하나</h2>
+  <p>공포 소구 메타분석(127편·27,372명)에서는 평균 효과가 있었고 역효과는 없었다. 효과가 커지는 조건은 <strong>할 수 있는 행동을 함께 제시할 때</strong>였다(<a href="https://pubmed.ncbi.nlm.nih.gov/26501228/">Tannenbaum 외 2015</a>). 위협이 "할 수 있다"는 느낌보다 크면 사람들은 행동하지 않고 외면한다(Witte EPPM). 2026년 체계적 검토(실험 62개)는 유머가 <strong>관심이 낮은 사람</strong>에게 특히 잘 통한다고 했다. 다만 심각한 질환이나 취약층을 다룰 때는 조심하라고 권했다(<a href="https://researchwith.montclair.edu/en/publications/health-message-outcomes-of-humor-appeals-a-systematic-review/">Limbu 외 2026</a>).</p>
+  <p>식중독은 "배탈 좀 나는 것"으로 가볍게 여겨지는 위험이라 유머로 끌어들이는 편이 맞다. 위협은 겁이 아니라 <strong>통념을 깨는 놀람</strong>으로 올리고, 영유아 중증이나 사망은 웃음거리로 삼지 않는다. 「Dumb Ways to Die」는 칸 그랑프리 5개를 받았지만 Effie 심사위원은 행동 변화와의 연결이 "빈약"하다고 봤다. 재미만 남고 수칙이 흐리면 주제 적합성과 전달성에서 진다.</p>
+  <h3>대본에 쓸 한국 사실 (2025년, 식약처 발표 보도)</h3>
+  <dl class="facts">
+    <div><dt>발생</dt><dd>319건 · 9,780명 (환자 +28%)</dd></div>
+    <div><dt>원인균 1위</dt><dd>살모넬라, 환자의 43%</dd></div>
+    <div><dt>원인 식품</dt><dd>달걀류, 환자의 24%</dd></div>
+    <div><dt>가장 많은 달</dt><dd>9월</dd></div>
+    <div><dt>겨울 환자</dt><dd>712명 → 1,625명</dd></div>
+  </dl>
+  <p class="src">출처: <a href="https://www.foodtoday.or.kr/news/article.html?no=207005">식품투데이 2026-08-07</a>. 6월 잠정치 9,612명과 다르니 확정치 9,780명을 쓴다. 가열 기준은 육류 75℃, 노로바이러스·어패류 85℃라서 숫자를 섞지 않는다.</p>
+</section>
+
+<section>
+  <h2>아이디어 여섯 개</h2>
+  <div class="tbl ideas"><table>
+    <thead><tr><th>안</th><th>형식</th><th>닮은 수상 꼴</th><th>수칙</th><th>실사 촬영</th><th>독창성 위험</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A. 식중독 탐정: 3시간 전으로</strong></td><td>수사극·되감기·콜백</td><td>수사극, 영화 패러디</td><td>손보구가세 5개</td><td>쉬움</td><td>낮음</td></tr>
+      <tr><td>B. 세균 입주 거절기</td><td>세균 1인칭 의인화</td><td>「세균의 취업난」</td><td>5개</td><td>보통(그래픽 필요)</td><td>중간</td></tr>
+      <tr><td>C. 손보구가세 송</td><td>다섯 박자 노래·손가락 접기</td><td>「안전보장송」</td><td>5개</td><td>쉬움</td><td>중간</td></tr>
+      <tr><td>D. 착한 실수</td><td>반전 코미디(생닭 씻기)</td><td>대비·반전</td><td>구·세</td><td>쉬움</td><td>낮음</td></tr>
+      <tr><td>E. 김밥 2시간 생중계</td><td>스포츠 중계 패러디</td><td>패러디</td><td>보</td><td>쉬움</td><td>낮음</td></tr>
+      <tr><td>F. 패딩 입은 노로</td><td>계절 반전 의인화</td><td>의인화·통념 깨기</td><td>손·가</td><td>보통</td><td>낮음</td></tr>
+    </tbody>
+  </table></div>
+
+  <article class="idea pick">
+    <p class="tag">추천</p>
+    <h3>A. 식중독 탐정: 3시간 전으로</h3>
+    <dl>
+      <dt>컨셉</dt><dd>소풍 다녀온 가족 넷이 화장실 앞에 줄을 서 있다. 트렌치코트 탐정이 "3시간 전으로" 되감아 범인을 찾는다. 단서는 공 만진 손으로 집은 김밥, 차에 두고 온 아이스박스, 생고기 썬 도마에 그대로 썬 채소. 범인은 음식이 아니라 "습관"이다.</dd>
+      <dt>왜 통하나</dt><dd>수사극은 식약처 공모에서 상을 받은 꼴이다. 원인을 추적하는 과정이 그대로 수칙 교육이 된다. 주제 예시 가운데 '소풍·행사'와 '손보구가세 정책'을 한꺼번에 채운다. 결과를 먼저 보여 주니 첫 2초가 훅이 되고, 마지막 장면이 첫 장면을 되받는다.</dd>
+      <dt>메시지</dt><dd>식중독의 범인은 습관이고, 손보구가세로 막는다.</dd>
+      <dt>위험</dt><dd>탐정 드라마 음악이나 대사를 그대로 쓰면 저작권 문제가 생기므로 분위기만 빌린다. 화장실 장면은 발을 동동 구르는 정도로 그친다. 출연자가 셋 이상 필요하고, 아이가 나오면 동의서를 받는다.</dd>
+    </dl>
+  </article>
+
+  <article class="idea">
+    <h3>B. 세균 입주 거절기</h3>
+    <dl>
+      <dt>컨셉</dt><dd>"나 살모넬라, 오늘 김밥에 입주한다." 사람이 손·보·구·가·세를 하나씩 할 때마다 세균이 한 칸씩 쫓겨나고, 다섯 번째에 짐을 싸서 나간다.</dd>
+      <dt>왜 통하나</dt><dd>의인화는 검증된 장치이고, 다섯 번 반복이 그대로 리듬이 된다.</dd>
+      <dt>위험</dt><dd>「세균의 취업난」과 결이 겹쳐 독창성에서 손해를 볼 수 있다. 캐릭터를 만들려면 그래픽이나 AI가 필요하다. 화면을 둘로 나누는 대비는 안산 수상작과 꼴이 같으니 피한다.</dd>
+    </dl>
+  </article>
+
+  <article class="idea">
+    <h3>C. 손보구가세 송</h3>
+    <dl>
+      <dt>컨셉</dt><dd>"손! 보! 구! 가! 세!" 다섯 박자 후렴에 맞춰 손가락을 하나씩 접는 챌린지 노래. 손 씻는 30초 동안 부를 수 있는 길이로 만든다.</dd>
+      <dt>왜 통하나</dt><dd>노래는 「안전보장송」처럼 기억에 남는다. SNS 반응 점수가 있으면 따라 하기 쉬운 쪽이 유리하다.</dd>
+      <dt>위험</dt><dd>음원을 직접 만들어야 하고 품질이 낮으면 완성도에서 크게 깎인다. 식약처가 이미 식중독 예방 노래를 배포했으니 차별점이 따로 필요하다.</dd>
+    </dl>
+  </article>
+
+  <article class="idea">
+    <h3>D. 착한 실수</h3>
+    <dl>
+      <dt>컨셉</dt><dd>"깨끗하게 하려고" 생닭을 씻었는데 튄 물이 부엌 전체에 세균을 퍼뜨린다. USDA 실험에서 생닭을 씻은 사람의 26%가 샐러드에 세균을 옮겼다.</dd>
+      <dt>왜 통하나</dt><dd>"다들 하는 습관이 틀렸다"는 놀람이 겁주지 않고도 위험을 실감하게 한다.</dd>
+      <dt>위험</dt><dd>근거가 미국·영국 자료다. 식약처의 같은 입장을 찾지 못했고, 메시지가 구·세 두 수칙에 쏠린다.</dd>
+    </dl>
+  </article>
+
+  <article class="idea">
+    <h3>E. 김밥 2시간 생중계</h3>
+    <dl>
+      <dt>컨셉</dt><dd>돗자리 위 김밥을 스포츠 중계처럼 해설한다. 구석의 '세균 스코어'가 오르다가 아이스박스가 교체 투입돼 경기를 끝낸다.</dd>
+      <dt>왜 통하나</dt><dd>2025년 원인 식품 1위가 김밥 같은 복합조리식품이었다. 숫자가 움직이니 소리 없이 봐도 이해된다.</dd>
+      <dt>위험</dt><dd>"20분마다 두 배"는 USDA의 최대치라 '예시'로 표시해야 한다. 수칙이 '보' 하나에 몰린다.</dd>
+    </dl>
+  </article>
+
+  <article class="idea">
+    <h3>F. 패딩 입은 노로</h3>
+    <dl>
+      <dt>컨셉</dt><dd>"식중독은 여름 얘기 아니야?" 하는 사람 앞에 패딩 입은 노로바이러스가 나타난다. "난 겨울이 대목이야."</dd>
+      <dt>왜 통하나</dt><dd>발표와 활용 시기가 겨울이다. 겨울 환자가 두 배 넘게 늘었다는 사실이 "여름만 조심" 통념을 깬다.</dd>
+      <dt>위험</dt><dd>"입자 10개로 감염" 같은 수치는 오래된 기사에 기댄다. 수칙이 일부에만 걸리고 캐릭터 구현이 필요하다.</dd>
+    </dl>
+  </article>
+  <p>A를 고른 이유는 셋이다. 다섯 수칙을 모두 이야기 안에서 보여 주는 안은 A뿐이다. AI가 금지돼도 스마트폰과 지인 출연만으로 찍을 수 있다. 마지막 10초는 그대로 잘라 홍보물로 쓸 수 있는 수칙 영상이 되니 활용도 점수도 챙긴다.</p>
+</section>
+
+<section>
+  <h2>대본 설계: 55초, 대사 150~200자, 이야기 단위 5~6개</h2>
+  <ul>
+    <li><strong>대사량</strong>: 또박또박 초당 5음절로 잡으면 55초 상한은 공백 제외 210~250자다. 상황극은 웃음이 터질 쉼이 필요하니 150~200자가 적당하다.</li>
+    <li><strong>자막</strong>: 대사를 전부 자막으로 깐다. 한 줄 12~14자, 최대 2줄, 한 덩어리 1.5~3초. 위 약 120px, 아래 300~400px은 화면 UI가 가리니 피한다. 수상작이 서울역 화면에서도 틀어졌으니 소리 없이 봐도 이해되게 만든다.</li>
+    <li><strong>장면</strong>: 컷은 20~30개로 빠르게 넘기되, 이야기 단위는 훅 → 상황 → 단서 셋 → 반전 → 콜백 → 엔딩으로 묶는다.</li>
+    <li><strong>엔딩</strong>: 수칙 카드를 2~4초 둔다. 타이틀 카드는 따로 만들지 않고 제목을 첫 장면에 자막으로 얹는다.</li>
+    <li><strong>길이</strong>: 상한 59초보다 3~5초 짧게 끝내고, 렌더링한 파일의 실제 길이를 확인한다.</li>
+  </ul>
+
+  <h3>A안 초 단위 대본 초안</h3>
+  <p>작품명 후보는 「식중독 탐정: 3시간 전으로」와 「범인은 이 안에 있다, 소풍 도시락 사건」이다. 탐정(T)과 가족이 대사를 맡고 내레이션은 두지 않는다.</p>
+  <div class="tbl script"><table>
+    <thead><tr><th>시간</th><th>화면</th><th>대사</th><th>자막·카드</th><th>소리</th></tr></thead>
+    <tbody>
+      <tr><td>0:00–0:03</td><td>공원 화장실 앞에서 소풍 차림 가족 넷이 발을 동동. 탐정이 돋보기를 들고 들어옴</td><td>T: "피해자 넷. 범인은… 점심 도시락?"</td><td>제목 「식중독 탐정」</td><td>긴장 효과음</td></tr>
+      <tr><td>0:03–0:06</td><td>탐정이 손가락을 튕기자 화면이 되감김(VHS 노이즈)</td><td>T: "3시간 전으로 돌려 보죠."</td><td>「3시간 전」</td><td>되감기</td></tr>
+      <tr><td>0:06–0:14</td><td>공과 휴대폰을 만진 아이 손이 김밥을 집음. "멈춰!" 하면 정지, 손에 귀여운 세균 점</td><td>T: "단서 하나. 공 만진 손으로 김밥을."</td><td><strong>손</strong> 「비누로 30초 이상」</td><td>정지음</td></tr>
+      <tr><td>0:14–0:24</td><td>햇볕 아래 도시락, 시계가 빨리 돎. 아빠가 트렁크의 아이스박스를 떠올리고 이마를 침</td><td>T: "단서 둘. 아이스박스는… 차에 두고 왔다."</td><td><strong>보</strong> 「냉장 5℃ 이하」</td><td>째깍</td></tr>
+      <tr><td>0:24–0:27</td><td>탐정이 수첩을 넘김</td><td>T: "더 돌려 보죠. 오늘 아침."</td><td>「오늘 아침」</td><td>되감기</td></tr>
+      <tr><td>0:27–0:36</td><td>생고기 썬 도마에 오이를 그대로 썲. 겉만 익은 달걀말이가 김밥 속으로</td><td>T: "단서 셋. 고기 썬 도마에 오이를 그대로."</td><td><strong>구</strong> 「도마·칼 따로」 <strong>가</strong> 「중심 75℃ 1분 이상」</td><td>칼질이 뚝 멈춤</td></tr>
+      <tr><td>0:36–0:40</td><td>탐정이 카메라를 정면으로 봄</td><td>T: "범인은 김밥이 아니라… 습관입니다."</td><td>「범인 = 습관」</td><td>반전음</td></tr>
+      <tr><td>0:40–0:50</td><td>같은 아침과 소풍을 바르게 빨리감기. 손 씻기, 도마 두 개, 달걀 익히기, 기구 세척, 아이스박스</td><td>가족: "손! 보! 구! 가! 세!"</td><td>다섯 글자가 차례로 쌓임</td><td>경쾌한 박자 ×5</td></tr>
+      <tr><td>0:50–0:52</td><td>화장실 줄이 사라지고 웃는 가족. 탐정이 수첩을 덮음</td><td>T: "사건 종결."</td><td>—</td><td>탁</td></tr>
+      <tr><td>0:52–0:55</td><td>엔딩 카드</td><td>—</td><td>「식중독 예방 5대 수칙 손보구가세」</td><td>끝음</td></tr>
+    </tbody>
+  </table></div>
+  <p>대사는 공백 제외 약 140자로, 쉼과 효과음을 넣어도 55초에 넉넉하다. 단서를 셋까지 쌓고 반전으로 터뜨린 뒤, 마지막 리플레이로 첫 장면을 되받는 구조다. 달걀말이를 넣은 것은 2025년 환자의 24%가 달걀류였기 때문이다. '세균 스코어' 같은 외국 수치는 빼도 시계와 햇볕만으로 장면이 읽힌다. 엔딩에 식약처 로고나 슬로건을 넣을지는 공고문을 보고 정한다.</p>
+</section>
+
+<section>
+  <h2>훅은 필요하다, 첫 3초에 주제를 밝히는 장면으로</h2>
+  <p>공모작은 알고리즘이 아니라 사람이 끝까지 본다는 반론이 있다. 실제로 PLS·HACCP AI 공모는 전문가 심사만 했다. 그래도 훅이 필요한 이유는 세 단계에서 나온다.</p>
+  <ul>
+    <li><strong>심사</strong>: 2023 HACCP는 1차에서 2배수만 남겼고, 2026 HACCP AI는 176편을 걸렀다. 예선 심사위원은 수십~수백 편을 잇달아 본다. 첫 화면에서 식중독 이야기라는 것이 드러나면 그 자체가 주제 적합성 점수다. 심사위원이 첫 몇 초에 판단한다는 공식 인터뷰는 찾지 못해 이 부분은 추론이다.</li>
+    <li><strong>반응 점수</strong>: 2023 HACCP는 SNS 좋아요·댓글·공유를, 2025 식품안전나라는 대국민 투표를 점수에 넣었다. 이 구간은 일반 피드 경쟁과 같다. 틱톡 자료로는 광고 효과의 50%가 첫 2초에 난다.</li>
+    <li><strong>재활용</strong>: 식약처는 수상작을 유튜브·SNS·서울역 맞이방 화면에 다시 건다. 활용도를 매기는 심사위원은 "우리 채널에서 넘기지 않고 볼까"를 따진다.</li>
+  </ul>
+  <p class="verdict">기준은 <strong>"첫 3초만 보고도 무슨 이야기인지 맞힐 수 있는가"</strong>다. A안의 첫 장면(소풍 가족의 화장실 줄 + "범인은 점심 도시락?")은 인물·장소·문제·주제를 한 번에 보여 준다. 기관 로고나 타이틀 카드로 시작하면 가장 비싼 2초를 버린다. "이거 먹으면 큰일 납니다?!" 같은 낚시성 도입은 '왜곡 없이 전달'에 부딪히니 쓰지 않는다. 작품명도 훅으로 다루고, 정확한 수칙 문구로 끝내야 활용도 점수가 남는다.</p>
+</section>
+
+<section>
+  <h2>응모 전 체크리스트</h2>
+  <div class="tbl check"><table>
+    <thead><tr><th>확인할 것</th><th>지금 아는 것</th><th>왜 중요한가</th></tr></thead>
+    <tbody>
+      <tr><td>심사 기준·배점·단계</td><td><span class="miss">미확인</span>. 비슷한 공모는 주제 적합성·창의성·완성도</td><td>훅·정보량·편집에 들일 힘이 달라진다</td></tr>
+      <tr><td>SNS 업로드·해시태그·투표 반영</td><td><span class="miss">미확인</span>. 포스터에는 메일 제출만 있음</td><td>반영되면 업로드 시점과 첫 2초가 실제 점수가 된다</td></tr>
+      <tr><td>생성형 AI 허용·표기</td><td><span class="miss">미확인</span>. 2023 HACCP는 금지, 2025~2026 다른 공모는 허용·필수</td><td>금지인데 쓰면 심사 제외·수상 취소</td></tr>
+      <tr><td>음원·효과음·폰트 저작권</td><td><span class="miss">미확인</span>. 침해 시 수상 취소는 공통</td><td>영리 금지(NC)·변경 금지(ND) 음원은 피하고 출처를 기록한다</td></tr>
+      <tr><td>출연자 초상권·미성년자 동의</td><td><span class="miss">미확인</span></td><td>가족·아이가 나오는 상황극이면 동의서가 필요할 수 있다</td></tr>
+      <tr><td>식약처 로고·슬로건·'손보구가세' 사용</td><td><span class="miss">미확인</span></td><td>엔딩 카드 구성이 달라진다</td></tr>
+      <tr><td>1인 응모 편수·팀 인원</td><td><span class="miss">미확인</span></td><td>A와 C를 둘 다 낼 수 있는지 정한다</td></tr>
+      <tr><td>미발표작 조건·중복 응모</td><td><span class="miss">미확인</span></td><td>SNS에 먼저 올린 영상이 기발표작이 되는지</td></tr>
+      <tr><td>저작권 귀속·2차 활용 범위</td><td><span class="miss">미확인</span>. 서울시 숏폼은 5년간 공익 홍보에 씀</td><td>수상 뒤 내 채널에 올릴 수 있는지가 갈린다</td></tr>
+      <tr><td>길이·규격</td><td>20~59초, 1080×1920, MP4·AVI, 500MB 이하</td><td>상한보다 3~5초 짧게 끝내고 렌더링 뒤 확인</td></tr>
+      <tr><td>제출 서류·마감</td><td>영상·신청서·동의서를 메일로, 11/23 23:59</td><td>서류가 하나라도 빠지면 신청이 제한된 전례가 있다</td></tr>
+      <tr><td>수칙·수치 사실 확인</td><td>손보구가세 원문, 2025 확정치 9,780명</td><td>숫자는 식약처 표기를 그대로 쓴다</td></tr>
+      <tr><td>발표일·문의처</td><td><span class="miss">미확인</span>. 운영사무국 070-7700-6804</td><td>애매한 조항은 사무국에 직접 묻는다</td></tr>
+    </tbody>
+  </table></div>
+  <p>순서는 이렇게 권한다. 지금은 실사로 찍을 수 있는 A안의 촬영 준비(출연자·소품·동의서)를 먼저 한다. 공고문이 나오면 그래픽·AI·음원을 결정한다. 2023 HACCP 하이라이트 영상(<a href="https://www.youtube.com/watch?v=WxhZ4h6Cds0">YouTube</a>)은 직접 보고 수상작 수준을 가늠해 두면 좋다.</p>
+</section>
+</main>

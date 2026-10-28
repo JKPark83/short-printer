@@ -1,0 +1,75 @@
+# 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
+name = "알쓸몸잡"
+description = "알쓸몸잡: 알고 보면 쓸데있는 몸에 대한 잡학지식. 하품은 왜 옮을까? 관절은 왜 소리가 날까? 누구나 매일 겪지만 그냥 넘어갔던 몸의 순간, 그때 몸 안에서 무슨 일이 일어나는지 3D 단면으로 2분 안에 보여 드려요. 병원 교과서와 논문을 근거로 쓰고, 영상에 쓴 자료는 설명란에 적어 둡니다. 진단·치료·약·음식 효능은 말하지 않습니다. 몸이 왜 그렇게 움직이는지 원리만 설명합니다. 영상은 AI로 만든 3D 애니메이션입니다."
+concept = "누구나 매일 겪는 몸 현상이 왜 일어나는지, 몸속 원리로 풀어 주는 인체 상식"
+language = "ko"
+daily_goal = 1
+sensitive_gate = true
+llm = "claude"
+
+[script]
+scenes = 11
+sentence = [56, 63]   # 크리스·eleven_v4 기준 초당 약 7.7자: 한 장면이 7.3~8.2초, 11장면이 약 80~90초
+unit = "chars"
+duration = "80~90초"
+llm = "claude-code"   # 대본만 Claude 구독으로(.env CLAUDE_CODE_MODEL·EFFORT)
+
+[tts]
+provider = "elevenlabs"
+default = "PDoCXqBQFGsvfO0hNkEs"
+sample = "안녕하세요. 오늘은 매일 겪는 몸 현상, 그때 몸 안에서 무슨 일이 일어나는지 보여 드릴게요."
+
+[tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID
+PDoCXqBQFGsvfO0hNkEs = "크리스"
+LKOcTG4J4tYTPR9DnLeM = "미스터킴"
+QPFsEL6IBxlT15xfiD6C = "이하나"
+iWLjl1zCuqXRkW6494ve = "지수"
+pJtMZEFAxLgFoi6crgwM = "민성"
+aiUUgjHa4mpHf6UenZuf = "미나"
+ZYyPb36rFIFpnxQWM6MO = "민우"
+8QclKarwLctvzN2plke3 = "은광"
+elevenlabs = "미스터최"
+
+[video]
+provider = "flow-auto"
+season = "halloween"   # 시즌 연출: "halloween"·"christmas"(seasons/*.md). Dot 옷·배경 분위기가 바뀐다. 비우면 평소
+style = "Clean stylized 3D animated explainer with bold toy-like silhouettes. Smooth matte vinyl and satin silicone materials without fine micro-texture, one clear hero subject large in frame, crisp studio rim lighting against a clean minimal studio backdrop, limited palette of deep teal, cream, coral and mustard yellow, signs and screens plain and blank, no blood, no gore, no realistic wounds."
+
+[style]
+accent = "#FFE500"
+background = ["#0f172a", "#14532d"]
+sfx_lufs = -23   # 효과음이 커서 기본 -21에서 약 20% 줄였다
+layout = "clean"   # 영상은 띠 없이 9:16 전체 + 자막, 제목은 처음 1초만. 썸네일은 위아래 띠 + 제목
+
+[thumbnail]
+max_line = 12
+max_total = 22
+
+[publish]
+provider = "youtube"
+also = ["instagram"]   # 더 올리는 곳. Instagram은 바로 공개라 작업 화면에서 눌러야 올라간다
+category = "27"
+footer = "※ 의학적 진단·치료 조언이 아닌 일반 정보입니다. 영상은 AI로 만든 이미지입니다."
+sources_heading = "출처"
+
+[research]
+domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "kdca.go.kr", "mfds.go.kr",
+           "pubmed.ncbi.nlm.nih.gov", "nih.gov", "medlineplus.gov", "my.clevelandclinic.org", "health.harvard.edu",
+           "nhs.uk", "who.int", "korean.go.kr",
+           "nature.com", "science.org", "cell.com", "nejm.org", "thelancet.com", "bmj.com", "jamanetwork.com",
+           "pnas.org", "physiology.org", "elifesciences.org", "cochranelibrary.com",
+           "arxiv.org", "aps.org", "phys.org", "sciencedaily.com", "news.byu.edu", "uwaterloo.ca"]
+news = ["news.kbs.co.kr", "news.sbs.co.kr", "ytn.co.kr", "chosun.com", "joongang.co.kr", "donga.com",
+        "khan.co.kr", "hankyung.com", "newsis.com", "korea.kr", "health.chosun.com",
+        "bbc.com", "nationalgeographic.com", "sciencetimes.co.kr", "livescience.com", "britannica.com"]
+open = true
+languages = ["ko", "en"]
+queries_per_topic = 7
+max_pages = 10
+
+[trends]
+production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 25초(80~90초), 11장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(몸속 단면·장기·세포를 보여 주는 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제와 치료·약·식품 효능을 말해야 답이 되는 주제는 못 만든다."
+weights = { trend = 20, curious = 25, fit = 30, fresh = 10, safe = 15 }
+keywords = ["인체", "우리몸", "몸의비밀", "인체의신비", "인체상식", "건강상식"]
+# 해외에서 조회수가 터진 인체 해설 쇼츠. anatomy는 드라마 Grey's Anatomy가 섞여 뺐다
+abroad = ["humanbody", "insideyourbody", "medicalanimation", "3danatomy", "bodyfacts", "physiology"]

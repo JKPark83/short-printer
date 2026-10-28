@@ -1,0 +1,42 @@
+{# 스케줄 목록·고치기 화면이 같이 쓰는 조각 #}
+
+{% macro controls(s, edit=true) %}
+<div class="sc-actions">
+  <button class="switch" type="button" role="switch" aria-checked="{{ 'true' if s.enabled else 'false' }}" data-toggle="{{ s.id }}"
+          aria-label="{{ s.name }} 자동 실행"><span class="sw-track" aria-hidden="true"><span class="sw-thumb"></span></span><span class="sw-text">{{ '켜짐' if s.enabled else '꺼짐' }}</span></button>
+  <button class="btn btn-secondary" type="button" data-run="{{ s.id }}" aria-label="{{ s.name }} 지금 실행">{{ icon('play', 14) }}<span>지금 실행</span></button>
+  {% if edit %}<a class="btn btn-secondary" href="/schedules/{{ s.id }}" aria-label="{{ s.name }} 고치기">{{ icon('pencil', 14) }}<span>고치기</span></a>{% endif %}
+  <button class="btn btn-ghost-bad" type="button" data-sdel="{{ s.id }}" aria-label="{{ s.name }} 지우기">{{ icon('x', 14) }}<span>지우기</span></button>
+</div>
+{% endmacro %}
+
+{% macro source_text(s) %}
+{%- if s.source == 'trend' -%}
+추천 · {{ ('“' ~ s.keyword|truncate(30) ~ '”') if s.keyword else '기본 기준' }}
+{%- else -%}
+목록 · 남은 주제 {{ s.topics|length }}개{% if s.topics %} · 다음 “{{ s.topics[0] }}”{% endif %}
+{%- endif -%}
+{% endmacro %}
+
+{% macro run_line(r) %}
+<span class="badge {{ r.cls }}">{{ r.label }}</span>
+<span class="rl-text">
+  {%- if r.href %}<a href="{{ r.href }}">{{ r.topic or ('주제 찾기' if r.trend else '작업') }}</a>{% elif r.topic %}{{ r.topic }}{% endif -%}
+  {%- if r.note %}<span class="muted">{{ ' · ' if r.href or r.topic }}{{ r.note }}</span>{% endif -%}
+</span>
+{% endmacro %}
+
+{% macro notify_card(notifiers) %}
+{% set on = notifiers|selectattr(1)|list %}
+<section class="card" aria-labelledby="h-notify">
+  <h2 id="h-notify" class="h-icon">{{ icon('bell', 16) }}알림</h2>
+  <p class="lead">스케줄로 만든 영상이 올라가거나 실패하면, 또 민감 분야라 확인이 필요하면 바로 보내요.</p>
+  <ul class="checks">
+    {% for label, ok, hint in notifiers %}
+    <li class="c-{{ 'ok' if ok else 'warn' }}">{{ icon('check' if ok else 'alert') }}<div><span>{{ label }} · {{ '연결됨' if ok else '설정 안 됨' }}</span>{% if not ok %}<small>{{ hint }}</small>{% endif %}</div></li>
+    {% endfor %}
+  </ul>
+  <button class="btn btn-secondary notify-test" type="button" data-notify-test{% if not on %} disabled aria-describedby="notify-off"{% endif %}>{{ icon('send', 16) }}<span>테스트 알림 보내기</span></button>
+  {% if not on %}<p id="notify-off" class="help-under">하나 이상 설정하고 서버를 다시 켜면 보낼 수 있어요. 알림이 없어도 스케줄은 돌아요.</p>{% endif %}
+</section>
+{% endmacro %}

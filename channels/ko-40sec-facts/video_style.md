@@ -1,0 +1,40 @@
+# 장면 영상 규칙
+
+- 첫 장면(훅)의 첫 컷은 첫 프레임부터 대본 첫 문장의 그 순간을 보여 준다. 레이아웃상 제목이 1초만 떠서 그림만으로 물음이 읽혀야 한다. Dot(또는 공통 규칙의 어른 캐릭터)이 그 순간을 직접 겪는 모습을 medium close-up으로 화면 가운데 크게 잡고(예: Dot's eyelids droop heavily right after finishing a meal, his head nodding), 반응이 커지는 쪽으로 빠른 push-in 하나만 쓴다. 몸 모형·단면도·장기·글자 라벨은 훅에 넣지 않는다. 몸 접촉 동작은 아래 Dot 규칙을 따른다.
+- 화풍은 실사가 아니라 과학 해설 채널 같은 깔끔하고 윤곽이 또렷한 토이·모션그래픽 3D 애니메이션이다. 화풍은 앱이 머리말로 붙이므로 prompt에는 쓰지 않는다.
+- 주인공 물체는 미세한 표면 질감(잔주름·섬유·알갱이)을 길게 늘어놓지 않고, 빠른 움직임에서도 뭉개지지 않게 굵직한 외곽선(bold silhouette)·색 대비·매끈한 무광/반광 표면(smooth matte, satin sheen)으로 선명하게 그린다. 보이는 핵심 부위 2~3개의 모양과 움직이는 자리를 또렷하게 적고, 단어는 배경 소품이 아니라 컷마다 주인공의 형태와 동작 묘사에 쓴다. 배경은 깔끔한 단색·스튜디오 톤으로 비우고 소품은 꼭 필요한 하나둘만 둔다.
+- 컷마다 주인공이 화면을 크게 채우는 medium close-up이나 close-up을 기본으로 한다. Dot이 나오는 컷은 얼굴과 상반신이 화면 절반 넘게 차게 잡는다(다리까지 보이는 전신은 작아진다). 작은 물체가 여럿 보이는 wide shot은 뭉개지므로 마지막 장면의 마지막 컷 pull-back에만 쓴다.
+- 빛은 광원 방향을 짧게 붙여(예: crisp rim light from the upper left, warm key light from the right) 주인공의 윤곽과 움직이는 부위가 배경에서 또렷하게 분리되게 한다.
+- 동작은 무엇이 어떻게 움직이고 맞닿는지 컷마다 '원인 동작 → 즉각적인 반응·변화'가 그 컷 안(3컷은 2~3초, 원리 장면 2컷은 4초)에 끝나게 생동감 있게 쓴다(예: food pieces tumble in and rapidly break apart as the folds churn rhythmically). 대본이 생활 비유(초인종, 경보기, 안전 잠금 등)로 원리를 설명하면, 모형만 두지 않고 그 비유 물체를 깔끔한 3D 소품으로 나란히 배치해 원리가 한눈에 보이게 연출한다.
+- 사람이 필요하면 아래 마스코트 문장을 글자 그대로 넣는다. 영상마다 새 주인공을 만들지 않는다. 다른 사람은 얼굴을 단순화한 어른 3D 캐릭터로, 머리 모양과 옷 색 하나만 정해 짧게 쓴다. 대머리로 그려지지 않게 머리카락을 꼭 적고 남녀를 섞는다(a man with short black hair, a woman with shoulder-length brown hair, a woman with a low ponytail). 아이·아기·학생은 쓰지 않고, 아기를 떠올리게 하는 물건(기저귀, 기저귀 갈이대, 아기 침대, 젖병)도 쓰지 않는다(필터가 아동 장면을 막는다).
+  - Dot, the channel's guide character: a tall slender adult 3D figure with grown-up proportions, a simple stylized face with dot eyes and short neat dark-brown hair, a mustard-yellow knit sweater and teal trousers.
+  - Dot을 small·little·tiny·cute로 꾸미지 않는다. 동그란 머리 인형 같은 생김새가 아이로 읽혀 Flow가 미성년자 정책으로 막는다.
+  - Dot이 자기 몸을 문지르거나 누르거나 쓰다듬는 직접 접촉 장면만 쓰지 않는다(rub, press, massage, stroke, caress). 아이로 읽힌 인물 + 몸 접촉이면 거절된다. 그런 접촉 동작만 떠 있는 교육용 몸 모형과 모형 손으로 보여 준다(a large matte plastic model hand rubs slow circles over a floating life-size classroom anatomy model of a lower leg). 접촉이 없는 일상·공감·반전 장면에서는 모형만 반복하지 말고 Dot이 직접 깜짝 놀라거나, 고개를 갸우뚱하거나, 코를 킁킁거리거나, 안도하는 등 생생하고 재치 있는 표정·몸짓 리액션을 연기하게 한다.
+- 눈에 안 보이는 원리나 수치는 숫자 대신 단면도(cutaway)와 빠르게 흐르는 glowing coral 선·화살표, 확연한 크기·길이·높이 차이로 보여 준다. 선과 화살표는 glowing coral 하나로 쓴다(흐름·원인). 두 조건이나 전후를 비교하는 장면은 같은 물건 두 개를 나란히 놓고(side-by-side) 크기·빛 차이로 1초 만에 대비되게 보여 준다.
+- 한 영상에서 핵심이 되는 서너 장면에는 한국어 라벨 하나를 적극 붙여 정보 전달력을 높인다. 기본은 글자 없는 화면이고, 붙이는 때는 둘이다.
+  - 그 장면 문장이 처음 꺼내는 전문 용어·부위·물질 이름이라, 보기만 해선 화면의 어디가 그것인지 모를 때(힘줄, 기름샘, 기포).
+  - 화면의 두 가지 가운데 내레이션이 말하는 쪽을 짚어 주지 않으면 설명이 안 될 때(비교 장면에서 "꺾는 쪽").
+  - 붙이지 않는 것: 보면 아는 것(머리, 코, 손, 계수기), 감정·추상어(근거, 기대, 믿음), 비교·정도 말(더 자주, 그만큼, 두 배), 숫자·영어·기호. 장면 문장의 핵심 낱말이라는 이유만으로는 붙이지 않는다.
+  - 라벨은 한 장면에 하나, 그 낱말을 말하는 컷에만 붙인다. glowing coral 핀 하나(a coral pin labeled "힘줄" on the cord along the back of the hand)로, 문장에서 내레이션이 말하는 낱말 그대로 2~4자 한국어를 따옴표로 적고 가리키는 자리를 적는다. 말과 화면이 같은 낱말로 만나야 설명이 된다. 라벨은 눈으로만 보는 글자다. 영상 속 누구도 라벨을 읽거나 말하지 않고(prompt에 "the label is silent"를 적는다), 내레이션 문장에 "라벨"이라는 말을 넣지 않는다.
+  - 라벨이 없는 장면에는 핀·치수 괄호·테두리 빛을 넣지 않는다. 화살표는 흐름·원인을 보여 줘야 할 때만 쓴다. 설명은 장면 자체(움직임, 크기 차이, 빛)로 한다.
+- 몸속은 이렇게 그린다. 필터는 프롬프트와 만들어진 영상 둘 다 보므로, 디테일은 교육용 모형 수준까지만 올린다.
+  - 해부 컷은 그 토막이 말하는 부위 하나만 보여 준다. 부위를 영어 해부 이름 + 위치 + 생김새로 쓴다(예: the extensor digitorum, a muscle along the back of the forearm whose four tendons fan out across the back of the hand). 화면에 보일 구조를 모두 적고, 그 부위에 실제로 있는 것만 쓴다(손·팔·다리는 뼈·근육·힘줄·인대·신경·혈관뿐). 적지 않은 구조는 영상 생성기가 아무 장기로 채우므로 빠짐없이 적는다.
+  - 부위 모형은 몸 밖에 떠 있는 교육용 모형으로 쓴다(a floating life-size classroom anatomy model of a hand). 팔다리·머리 모형은 속이 꽉 찬 모형으로 쓰고(a solid model, its surface showing only the muscles, tendons and bones of the hand) 잘라 열지 않는다. cutaway·cross-section·opened·hollow는 위·심장·폐처럼 그 장기 자체가 주인공일 때만 그 장기에 쓴다. 사람 몸을 열거나 자르는 장면은 쓰지 않는다.
+  - 다른 부위의 장기 이름(intestines, brain, stomach 등)은 그 장기를 말하는 장면에만 쓴다. "~없이(no intestines)"처럼 빼라는 말로도 쓰지 않는다. 이름이 나오면 그려진다.
+  - 몸속은 사람을 투시하지 않고 떠 있는 실물 크기 교실용 해부 모형으로만 보여 준다(a floating life-size classroom anatomy model of the abdomen made of matte plastic, only the stomach glowing softly inside). Dot을 반투명(semi-transparent, see-through, x-ray, frosted glass)하게 그리지 않는다. 인물 몸속 투시는 Flow가 미성년자 정책으로 막는다. 팔·손 이야기면 팔 모형 안의 근육·힘줄만 적는다.
+  - 모형은 adult, mannequin, smooth cream surface로 꾸미지 않는다. "어른 몸 + 매끈한 마네킹 표면"이 쌓이면 성적 콘텐츠 필터에 걸린다. 크기는 life-size, 재질은 matte plastic으로만 적는다.
+  - 몸 모형이 나오는 장면에는 Dot도 다른 사람도 넣지 않는다(다른 컷에도). 사람과 몸 모형이 한 프롬프트에 있으면 성적 콘텐츠로 거절된다. Dot의 리액션은 모형이 없는 장면에서 보여 준다.
+  - 몸속 내용물(음식·찌꺼기·똥·오줌·공기)의 움직임은 중립적인 말로만 쓴다: moves along, is carried forward, a ripple of contraction passes along the tube, a glowing coral arrow shows the direction. squeeze, grip, thrust, pump, throb, slide down, slip out, push out, press into, stream out, lower end, outlet, opening, tight, relieved는 쓰지 않는다. 내용물은 brown pellets처럼 짧게 쓰고 smooth·rounded·firm 같은 꾸밈말을 쌓지 않는다.
+  - 장기·뼈·근육·신경은 매트한 단색 블록으로 깔끔하게 나누고, 미세한 결 대신 굵직한 모양 특징 하나만 붙인다(each tissue in its own smooth flat color): 위 soft rounded folds, 뇌 smooth rounded grooves, 근육 clean parallel bands, 힘줄 a smooth ivory cord, 뼈 a clean ivory cylinder with a simple sponge-like core, 혈관 a smooth translucent tube. folds·grooves·coils는 위·뇌·장 장면 말고는 쓰지 않는다.
+  - 세포·분자는 크게 키운 매끈하고 둥근 입자로 쓰고, 알아보기 쉬운 모양 특징 하나만 붙인다(예: a red blood cell as a smooth glossy dimpled disc).
+  - 디테일 한도: 굵직한 모양·색 대비·매끈한 광택(satin sheen, soft glow)까지만 쓰고, 실감 나는 살·체액이나 자잘한 표면 질감은 쓰지 않는다. wet, raw, slimy, moist, bloody, flesh, meat, gore, veins on skin, pores는 쓰지 않는다.
+  - 맨몸 낱말 skin, bare, naked, nude, torso, chest, belly는 쓰지 않는다. 몸은 옷 입은 Dot이나 떠 있는 모형으로만 보여 준다.
+  - 면역·질병 장면에 attack, kill, destroy, burst, explode, stab, invade 같은 폭력 동사를 쓰지 않는다. surround, gently push away, dissolve into sparkles처럼 부드러운 동사로 쓴다.
+  - 신경 신호·혈류는 glowing coral 선 하나로 보여 준다.
+  - 피는 red flowing particles inside a translucent vessel 로만 쓴다.
+- 피, 상처, 수술, 칼, 바늘, 주사, 알약, 병원, 의사는 그리지 않는다. 체액은 도식으로만 보여 준다.
+- 사람 무리·물건 개수로 비율을 보여 주지 않는다. "열 명 중 두세 명"은 많은 무리 가운데 몇몇만 빛나는 장면으로 쓰고, 몇 명인지 적지 않는다.
+- 표시 라벨 말고 글자가 들어갈 물건(시계, 달력, 그래프, 간판, 화면, 물음표·X 아이콘)은 쓰지 않는다. 시간 흐름은 해의 위치나 그림자 길이로, 계산·데이터는 빛나는 작은 정육면체 흐름으로 보여 준다.
+- 카메라는 컷마다 이 다섯 중 하나를 컷 호흡에 맞춰 속도감 있게 쓰고, 한 장면 안의 컷끼리 겹치지 않게 한다: push-in(원리·반전 포착은 빠르게, 세밀한 관찰은 slow push-in), sideways truck(비교·흐름 이동), top-down crane, slow pull-back, static(손 동작 클로즈업). 4·8번째 장면의 첫 컷은 pull-back이나 reveal로 화면 구도가 확 바뀌게 한다.
+- prompt 끝 두 줄 중 둘째 줄은 라벨이 있는 장면만 이렇게 쓴다: Only the Korean label "힘줄" as text; no other text, no numbers, no logos. 라벨이 없는 장면은 공통 규칙대로 No on-screen text, no numbers, no logos.
+- 한국 생활 물건이 나오면 이름 뒤에 생김새를 붙여 쓴다(예: 온돌: a cutaway of a Korean ondol floor, warm air flowing through channels under flat stone slabs).
