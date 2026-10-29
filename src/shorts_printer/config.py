@@ -47,6 +47,12 @@ CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
 CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL") or "claude-opus-5-5"
 CLAUDE_CODE_EFFORT = os.environ.get("CLAUDE_CODE_EFFORT") or "high"
 
+# Antigravity(구독): channel.toml llm·[script] llm·[research] provider = "antigravity"일 때 모델(agy models)과
+# 생각 깊이(low·medium·high·xhigh·max). 모델 이름에 깊이가 붙어 있어 깊이는 비우면 넘기지 않는다.
+# 기본은 flash: gemini-4-argon-high는 긴 구조화 답(대본)에서 스트림이 멈춰 45분이 지나도 끝나지 않았다
+ANTIGRAVITY_MODEL = os.environ.get("ANTIGRAVITY_MODEL") or "gemini-3.8-flash-high"
+ANTIGRAVITY_EFFORT = os.environ.get("ANTIGRAVITY_EFFORT") or None
+
 # ElevenLabs(유료): 키가 있어야 읽는다. VOICE_ID는 channel.toml 목소리 키 "elevenlabs"가 가리키는 목소리
 ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID") or None
 ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL") or "eleven_v4"

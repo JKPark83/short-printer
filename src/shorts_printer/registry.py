@@ -4,6 +4,7 @@ import logging
 from functools import cache
 
 from . import config
+from .adapters.antigravity import Antigravity, AntigravityResearch
 from .adapters.claude import Claude
 from .adapters.claude_code import ClaudeCode
 from .adapters.claude_research import ClaudeResearch
@@ -34,8 +35,8 @@ from .ports.splitter import Splitter
 from .ports.tts import TTS
 from .ports.video import VideoProvider
 
-LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode()}
-RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch()}
+LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode(), "antigravity": Antigravity()}
+RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch(), "antigravity": AntigravityResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast(), "fish": FishAudio()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto(),
                                     "flow-16x9": Flow("16:9", "360p"), "flow-auto-16x9": FlowAuto("16:9", "360p")}
