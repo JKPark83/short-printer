@@ -50,3 +50,23 @@ def test_ask_errors_in_korean(monkeypatch, result, msg):
 def test_script_llm_follows_channel_script_llm():
     sv = registry.services("ko-40sec-facts")
     assert sv.script_llm is registry.LLMS[sv.channel.script.llm or sv.channel.llm]
+
+
+def test_ask_turns_on_only_web_search_and_names_allowed_sites(monkeypatch):
+    seen, ok = {}, {"is_error": False, "structured_output": {"answer": "짜다"}}
+    fake_run(monkeypatch, ok, seen)
+    ClaudeCode().ask("짧게", "t", Out, refusal="거절", what="답")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "" and "--allowedTools" not in cmd   # 검색이 없으면 도구도 없다
+    ClaudeCode().ask("짧게", "t", Out, refusal="거절", what="답", web=["kdca.go.kr", "who.int"])
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch" and cmd[cmd.index("--allowedTools") + 1] == "WebSearch"
+    system = cmd[cmd.index("--system-prompt") + 1]
+    assert system.startswith("짧게") and "5번까지" in system and "allowed_domains에 kdca.go.kr, who.int" in system
+    with pytest.raises(RuntimeError, match="그림을 못 받아요"):
+        ClaudeCode().ask("s", "t", Out, refusal="거절", what="답", images=[b"png"])
+
+
+def test_trends_llm_follows_channel_trends_llm():
+    sv = registry.services("ko-40sec-facts")
+    assert sv.trends_llm is registry.LLMS[sv.channel.trends.llm or sv.channel.llm]

@@ -342,8 +342,9 @@ def step_series(t: Trend, sv: Services) -> str:
             f"추가 요청: {t.data['keyword'] or '없음'}\n\n점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n"
             f"이미 만든 작업 주제:\n{_bullets(_made(ch.id))}")
     t.log(f"{_where(web)} '{src['topic']}'을 시리즈 편으로 나누는 중")
-    out, usage = sv.llm.ask(system_series(ch), text, SeriesOut, what="시리즈 편", web=web,
-                            refusal=f"{sv.llm.label}가 이 주제를 시리즈로 나누지 않았어요. 추가 요청을 바꿔 보세요.")
+    llm = sv.trends_llm or sv.llm
+    out, usage = llm.ask(system_series(ch), text, SeriesOut, what="시리즈 편", web=web,
+                         refusal=f"{llm.label}가 이 주제를 시리즈로 나누지 않았어요. 추가 요청을 바꿔 보세요.")
     t.update(usage=add_usage(t.data["usage"], usage))
     if len(out.picks) < SERIES[0]:
         raise RuntimeError(f"편을 {len(out.picks)}개만 받았어요. 시리즈로 나눌 국면이 모자란 주제예요.")
@@ -384,11 +385,11 @@ def step_pick(t: Trend, sv: Services) -> str:
             head += (f"\n\n해외에서 크게 뜬 {kind}(지난 {ABROAD_DAYS}일, 누적 조회수 순):\n"
                      + _popular_text(far, len(home) + 1))
     t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
-    kept, seen = [], made + avoid
+    kept, seen, llm = [], made + avoid, sv.trends_llm or sv.llm
     for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다
         text = head + ("\n\n앞서 추천한 주제:\n" + _bullets(avoid) if avoid else "")
-        out, usage = sv.llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,
-                                refusal=f"{sv.llm.label}가 이번에는 주제를 고르지 않았어요. 추가 요청을 바꿔 보세요.")
+        out, usage = llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,
+                             refusal=f"{llm.label}가 이번에는 주제를 고르지 않았어요. 추가 요청을 바꿔 보세요.")
         t.update(usage=add_usage(t.data["usage"], usage))
         t.log(f"{usage['model']} 답: 주제 {len(out.picks)}개 → 점수 매기는 중")
         new = [p for p in out.picks if not _repeat(p.topic, seen)]

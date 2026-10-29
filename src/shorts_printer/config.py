@@ -43,7 +43,8 @@ def secret(name: str) -> str | None:
 CLAUDE_CREDIT_USD = os.environ.get("CLAUDE_CREDIT_USD") or None
 CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
 
-# Claude Code(구독): channel.toml [script] llm = "claude-code"일 때 대본 모델·생각 깊이(low·medium·high·xhigh·max)
+# Claude Code(구독): channel.toml [script]·[trends] llm = "claude-code"일 때 대본·주제 찾기 모델과
+# 생각 깊이(low·medium·high·xhigh·max)
 CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL") or "claude-opus-5-5"
 CLAUDE_CODE_EFFORT = os.environ.get("CLAUDE_CODE_EFFORT") or "high"
 

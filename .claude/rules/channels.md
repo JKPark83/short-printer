@@ -59,6 +59,7 @@
 | `[trends]` `weights` | `trend`(화제성)·`curious`(호기심)·`fit`(제작 적합도)·`fresh`(차별화)·`safe`(안전성) 다섯 개, 합 100 |
 | `[trends]` `keywords` | 주제 찾기 [인기 쇼츠 참고]에서 쓸 YouTube 검색어 목록(OR로 묶는다). 낱말마다 띄어쓰기 없이(`우리몸`), 띄어 쓰면 검색이 거의 안 잡힌다. 비면 인기 쇼츠 참고를 못 쓴다 |
 | `[trends]` `abroad` | 인기 쇼츠 참고를 켰을 때 함께 볼 해외(영어) 검색어. 지난 1년 쇼츠를 누적 조회수 순으로 10개 모아 주제 2~3개를 그 소재에서 고른다(할당량 102 더). 낱말 규칙은 `keywords`와 같다. 비면 해외는 안 본다 |
+| `[trends]` `llm` | 주제 찾기(추천·시리즈 편)만 다른 LLM으로(registry `LLMS` 이름). `claude-code`는 Claude 구독으로 돌고 WebSearch 도구로 검색한다(허용 사이트는 지시문으로 `allowed_domains`에 넣게 한다, 5번까지). 비우면 `llm` |
 | `[research]` `provider` | registry `RESEARCHERS` 이름(`claude` · `antigravity`. antigravity는 서버 인용·페이지 읽기 도구가 없어 검색 요약의 사실과 모델이 적은 URL을 쓴다. 페이지 본문과 대조하지 않고 quote도 없다. 허용 사이트 밖 출처는 코드가 버린다) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |

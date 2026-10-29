@@ -20,4 +20,5 @@ class Services:
     splitter: Splitter
     research: Researcher
     script_llm: LLM | None = None   # 대본 쓰기·고치기·검수·번역(script.llm). 없으면 llm
+    trends_llm: LLM | None = None   # 주제 찾기(trends.llm). 없으면 llm
     also: dict[str, Publisher] = field(default_factory=dict)   # 더 올리는 곳(publish.also). 사람이 눌러 올린다

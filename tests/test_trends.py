@@ -23,8 +23,8 @@ class FakeLLM:
         return self.answer(system, text, list(images))
 
 
-def sv(llm=None, ch=None):
-    return SimpleNamespace(channel=ch or channel.load(CH), llm=llm or FakeLLM())
+def sv(llm=None, ch=None, trends_llm=None):
+    return SimpleNamespace(channel=ch or channel.load(CH), llm=llm or FakeLLM(), trends_llm=trends_llm)
 
 
 def new(keyword=""):
@@ -366,3 +366,11 @@ def test_series_needs_two_episodes():
     t = trends.Trend.create(CH, series={"topic": "x", "brief": "b"})
     with pytest.raises(RuntimeError, match="1개만"):
         trends.step_pick(t, sv(FakeLLM(lambda *a: (out, USAGE))))
+
+
+def test_pick_asks_trends_llm_over_channel_llm():
+    """[trends] llm(예 claude-code)이 있으면 주제 찾기는 그걸로 묻고 채널 llm은 부르지 않는다."""
+    picks = [idea("손톱은 왜 발톱보다 빨리 자랄까?"), idea("눈썹은 왜 머리카락만큼 안 자랄까?")]
+    main, pick = FakeLLM(), FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=picks), USAGE))
+    trends.step_pick(new(), sv(main, trends_llm=pick))
+    assert len(pick.calls) == 1 and pick.calls[0]["web"] and not main.calls

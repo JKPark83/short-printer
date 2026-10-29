@@ -1,4 +1,5 @@
-"""LLM 구현: Claude Code CLI(`claude -p`). API 키 대신 Claude 구독 사용량으로 돈다. 대본(script.llm)에 쓴다."""
+"""LLM 구현: Claude Code CLI(`claude -p`). API 키 대신 Claude 구독 사용량으로 돈다.
+대본(script.llm)·주제 찾기(trends.llm)에 쓴다."""
 import json
 import os
 import shutil
@@ -14,9 +15,10 @@ from ..infra.store import redact
 
 CLI = shutil.which("claude") or str(Path.home() / ".claude/local/claude")   # 셸 alias는 서버에서 안 보인다
 TIMEOUT = 1200   # 대본은 생각이 길어 몇 분씩 걸린다
-# 프로젝트·사용자 설정(CLAUDE.md·훅·MCP·스킬)을 읽지 않고 도구 없이 답만 받는다
-FLAGS = ["--output-format", "json", "--tools", "", "--setting-sources", "", "--strict-mcp-config",
+# 프로젝트·사용자 설정(CLAUDE.md·훅·MCP·스킬)을 읽지 않고 답만 받는다. 도구는 웹 검색 때 WebSearch만 켠다
+FLAGS = ["--output-format", "json", "--setting-sources", "", "--strict-mcp-config",
          "--disable-slash-commands", "--no-session-persistence"]
+WEB = "필요하면 답하기 전에 WebSearch로 찾는다. 검색은 5번까지만 한다."   # Claude WEB_SEARCH max_uses와 같게
 
 
 class ClaudeCode:
@@ -40,10 +42,17 @@ class ClaudeCode:
 
     def ask(self, system: str, text: str, schema, *, refusal: str, what: str, images: Sequence[bytes | str] = (),
             web: bool | Sequence[str] = False):
-        # ponytail: 그림·웹 검색은 안 넘긴다(대본은 안 쓴다). 썸네일·주제 찾기에 쓰려면 --tools WebSearch 등으로 넓힌다
-        if images or web:
-            raise RuntimeError("Claude Code 공급자는 그림·웹 검색을 못 해요. 채널 llm은 claude로 두세요")
-        cmd = [CLI, "-p", *FLAGS, "--model", self.model, "--effort", config.CLAUDE_CODE_EFFORT,
+        # ponytail: 그림은 안 넘긴다(대본·주제 찾기는 안 쓴다). 썸네일에 쓰려면 stream-json 입력으로 넓힌다
+        if images:
+            raise RuntimeError("Claude Code 공급자는 그림을 못 받아요. 채널 llm은 claude로 두세요")
+        tools = ["--tools", ""]
+        if web:   # -p에는 묻는 사람이 없어 allowedTools로 미리 허락해야 검색한다
+            tools = ["--tools", "WebSearch", "--allowedTools", "WebSearch"]
+            system += "\n\n" + WEB
+            if not isinstance(web, bool):   # 사이트 제한은 CLI 옵션이 없어 도구 인자를 지시문으로 건다
+                system += (f" WebSearch의 allowed_domains에 {', '.join(web)}를 넣어 "
+                           "그 사이트(하위 도메인 포함) 안에서만 찾는다.")
+        cmd = [CLI, "-p", *FLAGS, *tools, "--model", self.model, "--effort", config.CLAUDE_CODE_EFFORT,
                "--system-prompt", system, "--json-schema", json.dumps(schema.model_json_schema())]
         # API 키가 환경에 있으면 CLI가 구독 대신 API로 과금한다(.env를 os.environ에 읽어 둔다)
         env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
