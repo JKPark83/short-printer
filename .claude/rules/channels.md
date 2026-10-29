@@ -33,10 +33,10 @@
 | `format` | `short`(기본, 9:16 쇼츠) · `long`(16:9 지도 역사 롱폼, 단계는 `docs/plan/longform.md`) |
 | `daily_goal` | 대시보드 하루 목표 편수 |
 | `sensitive_gate` | true면 건강·법률·금융·정치 대본은 사람이 확인해야 장면을 만든다. 롱폼은 쓰지 않는다(대본 승인을 늘 받는다) |
-| `llm` | registry `LLMS` 이름(`claude`) |
+| `llm` | registry `LLMS` 이름(`claude` · `antigravity`는 로컬 Antigravity CLI(agy, Google 로그인)로 돈다. 모델은 `.env`의 `ANTIGRAVITY_MODEL`·`ANTIGRAVITY_EFFORT`, 기본 gemini-4-argon-medium(깊이는 모델 이름 끝 -low·-medium·-high), argon-high는 대본에서 멈춘다. 그림은 못 받는다. 웹 검색은 5번까지, 사이트 제한은 지시문으로만 건다) |
 | `[script]` `scenes` | 장면(=문장) 수 |
 | `[script]` `sentence` / `unit` | 문장 하나 길이 [최소, 최대]와 단위(`chars` 글자 · `words` 낱말) |
-| `[script]` `llm` | 대본 쓰기·고치기·검수·번역만 다른 LLM으로(registry `LLMS` 이름, 예 `claude-code`는 Claude 구독으로 돈다. 모델·생각 깊이는 `.env`의 `CLAUDE_CODE_MODEL`·`CLAUDE_CODE_EFFORT`, 기본 opus 5.5·high). 비우면 `llm` |
+| `[script]` `llm` | 대본 쓰기·고치기·검수·번역만 다른 LLM으로(registry `LLMS` 이름, 예 `claude-code`는 Claude 구독으로 돈다. 모델·생각 깊이는 `.env`의 `CLAUDE_CODE_MODEL`·`CLAUDE_CODE_EFFORT`, 기본 opus 5.5·high. `antigravity`도 된다). 비우면 `llm` |
 | `[script]` `duration` | 목표 길이 문구(지시문에 들어간다. 예: `"40~50초"`) |
 | `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs` · `typecast`) |
 | `[tts]` `default` / `sample` | 기본 목소리 키(없으면 voices 맨 앞) / 미리 듣기 문장(채널 언어) |
@@ -59,7 +59,7 @@
 | `[trends]` `weights` | `trend`(화제성)·`curious`(호기심)·`fit`(제작 적합도)·`fresh`(차별화)·`safe`(안전성) 다섯 개, 합 100 |
 | `[trends]` `keywords` | 주제 찾기 [인기 쇼츠 참고]에서 쓸 YouTube 검색어 목록(OR로 묶는다). 낱말마다 띄어쓰기 없이(`우리몸`), 띄어 쓰면 검색이 거의 안 잡힌다. 비면 인기 쇼츠 참고를 못 쓴다 |
 | `[trends]` `abroad` | 인기 쇼츠 참고를 켰을 때 함께 볼 해외(영어) 검색어. 지난 1년 쇼츠를 누적 조회수 순으로 10개 모아 주제 2~3개를 그 소재에서 고른다(할당량 102 더). 낱말 규칙은 `keywords`와 같다. 비면 해외는 안 본다 |
-| `[research]` `provider` | registry `RESEARCHERS` 이름(`claude`) |
+| `[research]` `provider` | registry `RESEARCHERS` 이름(`claude` · `antigravity`. antigravity는 서버 인용·페이지 읽기 도구가 없어 검색 요약의 사실과 모델이 적은 URL을 쓴다. 페이지 본문과 대조하지 않고 quote도 없다. 허용 사이트 밖 출처는 코드가 버린다) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |
 | `[research]` `open` | true면 사이트 제한 없이 블로그·일반 웹까지 검색한다. `domains`·`news`는 먼저 볼 곳이 되고, 그 밖에서 온 사실은 "웹"으로 구별한다. 기본 false |
