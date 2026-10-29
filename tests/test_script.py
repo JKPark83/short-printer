@@ -31,7 +31,7 @@ class FakeLLM:
 
 @pytest.fixture
 def ko():
-    return channel.load("ko-40sec-facts")
+    return channel.load("momjob")
 
 
 def make_channel(tmp_path, **kw) -> channel.Channel:

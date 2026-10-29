@@ -21,7 +21,7 @@ class FakeLLM:
 
 
 def _ch(clips=1, style="STYLE."):
-    ch = channel.load("ko-40sec-facts")
+    ch = channel.load("momjob")
     return ch.model_copy(update={"format": "long", "long": channel.LongCfg(max_clips=clips),
                                  "video": ch.video.model_copy(update={"style": style})})
 

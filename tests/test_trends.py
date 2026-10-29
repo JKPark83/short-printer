@@ -7,7 +7,7 @@ import pytest
 from shorts_printer.core import channel, pipeline, trends
 from shorts_printer.ports.llm import add_usage
 
-CH = "ko-40sec-facts"
+CH = "momjob"
 USAGE = {"model": "m", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.01}
 
 

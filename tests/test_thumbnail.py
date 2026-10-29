@@ -8,7 +8,7 @@ from shorts_printer.web import app as web
 
 SCRIPT = {"title": "라면 물 양의 비밀", "sentences": ["물은 550ml", "면은 나중에"]}
 USAGE = {"model": "claude-opus-5-5", "input_tokens": 10, "output_tokens": 5, "cost_usd": 0.01}
-CH = channel.load("ko-40sec-facts")
+CH = channel.load("momjob")
 
 
 class LLM:

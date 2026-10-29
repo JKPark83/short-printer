@@ -7,7 +7,7 @@ description: 새 YouTube 채널(쇼츠 또는 16:9 지도 역사 롱폼)을 기�
 
 shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬은 인터뷰로 채널을 정하고 그 폴더만 만든다. **코드(`src/`)는 절대 고치지 않는다.** 값이 모자라면 만들지 말고 사용자에게 말한다.
 
-시작 전에 읽는다: `.claude/rules/channels.md`(키 설명), `channels/ko-40sec-facts/`의 다섯 파일(본보기), `channels/`(이미 있는 id).
+시작 전에 읽는다: `.claude/rules/channels.md`(키 설명), `channels/momjob/`의 다섯 파일(본보기), `channels/`(이미 있는 id).
 
 ## 1. 인터뷰
 
@@ -54,7 +54,7 @@ shorts-printer는 `channels/<id>/` 폴더 하나가 채널 하나다. 이 스킬
 
 ## 3. 폴더 만들기
 
-고른 뒤 `channels/<id>/`에 다섯 파일을 쓴다. `channels/ko-40sec-facts/`와 같은 모양·같은 키 순서로, 글 파일은 같은 길이감(짧은 목록)으로.
+고른 뒤 `channels/<id>/`에 다섯 파일을 쓴다. `channels/momjob/`와 같은 모양·같은 키 순서로, 글 파일은 같은 길이감(짧은 목록)으로.
 
 - `channel.toml`: 맨 위 주석 한 줄 그대로(`# 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md`).
   - `concept`·`language`·`daily_goal`·`sensitive_gate`·`llm = "claude"`

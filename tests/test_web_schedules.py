@@ -13,7 +13,7 @@ from shorts_printer.infra.store import upload_state
 from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")
-CH = "ko-40sec-facts"
+CH = "momjob"
 VOICE = "LKOcTG4J4tYTPR9DnLeM"
 FORM = {"channel": CH, "name": "아침 상식", "source": "list", "voice": VOICE, "keyword": "",
         "topics": "커피\n\n우유 ", "kind": "times", "times": ["18:00", "09:00", ""], "every": "6", "start": "09:00",
@@ -65,7 +65,7 @@ def test_empty_state_and_forms():
     assert "아직 스케줄이 없어요" in html and "첫 스케줄 만들기" in html
     html = client.get("/schedules/new").text
     assert 'action="/schedules"' in html and 'id="src-trend" name="source" value="trend" checked' in html
-    assert 'name="channel" value="ko-40sec-facts"' in html
+    assert 'name="channel" value="momjob"' in html
     assert html.count('class="mono"') == 5   # 서버가 그린 첫 미리 보기 다섯 번
     assert 'name="period"' not in html and "YOUTUBE_API_KEY" not in html
     assert '<textarea' in html and 'name="keyword"' in html and f'maxlength="{trends.MAX_REQUEST}"' in html
@@ -207,7 +207,7 @@ def test_list_filters_by_channel(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CHANNELS_DIR", root)
     make(name="한국 채널")
     make(name="영어 채널", channel="en-space-facts")
-    ko = client.get("/schedules?channel=ko-40sec-facts").text
+    ko = client.get("/schedules?channel=momjob").text
     assert "한국 채널" in ko and "영어 채널" not in ko
     every = client.get("/schedules?channel=all").text
     assert "한국 채널" in every and "영어 채널" in every and 'class="badge b-ch"' in every

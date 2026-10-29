@@ -10,7 +10,7 @@ from shorts_printer.core.trends import Trend
 from shorts_printer.infra.store import upload_state
 from shorts_printer.infra.worker import LocalQueue
 
-CH = "ko-40sec-facts"
+CH = "momjob"
 NAME = channel.load(CH).name   # 채널 이름이 바뀌어도 알림 문구 테스트가 돈다
 KST = timezone(timedelta(hours=9))
 FRI = date(2026, 10, 16)   # 금요일

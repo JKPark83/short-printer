@@ -9,7 +9,7 @@ from shorts_printer.adapters.claude_research import ClaudeResearch
 from shorts_printer.core import channel, research
 from shorts_printer.core.channel import ResearchCfg
 
-CH = "ko-40sec-facts"
+CH = "momjob"
 
 
 def _usage(inp, out, searches):

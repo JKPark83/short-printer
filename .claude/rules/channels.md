@@ -5,7 +5,7 @@
 ## 만드는 법
 
 - 기본은 `channel-create` 스킬(`.claude/skills/channel-create/`): 인터뷰 → 이름·설명·스타일 제안 → 폴더 생성.
-- 손으로 할 때는 `channels/ko-40sec-facts/`를 통째로 복사해 고친다.
+- 손으로 할 때는 `channels/momjob/`를 통째로 복사해 고친다.
 - id는 언어 접두어가 붙은 소문자 케밥(`en-space-facts`). 정규식 `[a-z0-9][a-z0-9-]{0,63}`. 기존 작업의 `channel` 필드에 남으므로 만든 뒤 바꾸지 않는다.
 - 확인: `uv run python -c "from shorts_printer.core import channel; print(channel.load('<id>'))"`. 틀리면 pydantic 오류로 어느 키인지 알려 준다.
 

@@ -15,7 +15,7 @@ from shorts_printer.core.services import Services
 from shorts_printer.infra import store
 from shorts_printer.infra.worker import LocalQueue
 
-CH = "ko-40sec-facts"
+CH = "momjob"
 
 
 class Publisher:

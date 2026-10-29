@@ -12,7 +12,7 @@ from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")
 VOICE = "LKOcTG4J4tYTPR9DnLeM"
-CH = "ko-40sec-facts"
+CH = "momjob"
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +24,7 @@ def offline(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def ko_only(tmp_path, monkeypatch):
-    """실제 channels/에 채널이 늘어도 첫 채널(쿠키 없을 때 기본)이 ko-40sec-facts가 되게 한다."""
+    """실제 channels/에 채널이 늘어도 첫 채널(쿠키 없을 때 기본)이 momjob가 되게 한다."""
     root = tmp_path / "ko"
     shutil.copytree(config.CHANNELS_DIR / CH, root / CH)
     monkeypatch.setattr(config, "CHANNELS_DIR", root)
@@ -193,11 +193,11 @@ def test_trends_follow_selected_channel():
     done_trend("겨울")
     Trend.create("en-space-facts", "우주 이야기")   # 다른 채널 기록(채널 폴더는 없어도 목록 거르기는 된다)
     html = client.get("/trends").text
-    assert 'name="channel" value="ko-40sec-facts"' in html and "겨울" in html and "우주 이야기" not in html
+    assert 'name="channel" value="momjob"' in html and "겨울" in html and "우주 이야기" not in html
     html = client.get("/trends?channel=all").text
     assert "우주 이야기" in html and f'b-ch">{channel.load(CH).name}' in html
     assert "채널을 하나 고른 뒤" in html and 'action="/trends"' in html
-    assert "정전기 0" in client.get("/?channel=ko-40sec-facts").text
+    assert "정전기 0" in client.get("/?channel=momjob").text
 
 
 def test_recover_interrupts_running_trend():

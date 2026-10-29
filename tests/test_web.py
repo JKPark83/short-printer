@@ -16,7 +16,7 @@ from shorts_printer.infra.store import atomic_write_json, upload_state
 from shorts_printer.web import app as web
 
 client = TestClient(web.app, base_url="http://127.0.0.1")   # with 블록 없이 써서 lifespan(작업 스레드)을 띄우지 않는다
-CH = "ko-40sec-facts"
+CH = "momjob"
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ def offline(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def ko_only(tmp_path, monkeypatch):
-    """실제 channels/에 채널이 늘어도 첫 채널(쿠키 없을 때 기본)이 ko-40sec-facts가 되게 한다."""
+    """실제 channels/에 채널이 늘어도 첫 채널(쿠키 없을 때 기본)이 momjob가 되게 한다."""
     root = tmp_path / "ko"
     shutil.copytree(config.CHANNELS_DIR / CH, root / CH)
     monkeypatch.setattr(config, "CHANNELS_DIR", root)
@@ -36,7 +36,7 @@ def ko_only(tmp_path, monkeypatch):
 
 @pytest.fixture
 def two_channels(tmp_path, monkeypatch):
-    """ko-40sec-facts + 목소리가 다른 en-space-facts."""
+    """momjob + 목소리가 다른 en-space-facts."""
     root = tmp_path / "channels"
     shutil.copytree(config.CHANNELS_DIR / CH, root / CH)
     en = root / "en-space-facts"
@@ -464,7 +464,7 @@ def test_edit_subtitle_line_breaks_redoes_voice_and_keeps_them():
 
 def test_edit_checks_only_changed_sentences_against_channel_length():
     job = scene_job("done", STEPS)
-    cap = channel.load("ko-40sec-facts").script.sentence[1] * 2   # ko 채널 문장 한도의 두 배
+    cap = channel.load("momjob").script.sentence[1] * 2   # ko 채널 문장 한도의 두 배
     long = "가" * (cap + 10)   # 한도를 넘는 예전 문장
     job.put("script.json", job.doc("script.json") | {"sentences": ["하나", long]})
     url, form = f"/api/jobs/{job.id}/edit", {"title": "t", "description": "d", "tags": ""}

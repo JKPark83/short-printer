@@ -23,7 +23,7 @@ KO = Korean()
 
 @pytest.fixture
 def ch():   # 배치·효과음 크기는 기본으로 고정한다(채널 설정이 바뀌어도 테스트가 그대로 돌게)
-    c = channel.load("ko-40sec-facts")
+    c = channel.load("momjob")
     return c.model_copy(update={"style": c.style.model_copy(update={"layout": "band", "sfx_lufs": -21})})
 
 
@@ -124,7 +124,7 @@ def test_sample_cached_per_channel(tmp_path, ch, monkeypatch):
     monkeypatch.setattr(config, "ROOT", tmp_path)
     fake = Fake(lambda text, out: (out.write_bytes(text.encode()), (out, None))[1])
     path = voice.sample(fake, ch, "elevenlabs")
-    assert path.parent == tmp_path / ".cache" / "voices" / "ko-40sec-facts" and path.name.startswith("elevenlabs-")
+    assert path.parent == tmp_path / ".cache" / "voices" / "momjob" and path.name.startswith("elevenlabs-")
     assert path.read_text() == ch.tts.sample and voice.sample(fake, ch, "elevenlabs") == path and len(fake.calls) == 1
     # 미리 듣기 문장을 고치면 새로 읽는다
     new = ch.model_copy(update={"tts": ch.tts.model_copy(update={"sample": "다른 문장"})})

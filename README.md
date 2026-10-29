@@ -23,7 +23,7 @@ cp .env.example .env             # ANTHROPIC_API_KEY를 채웁니다
 | ElevenLabs (`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`) | 필수 | 유료, Starter 월 $6에 3만 글자(한 편 약 350자) | 음성 단계에서 멈춥니다. `ELEVENLABS_VOICE_ID`는 목소리 '미스터최'에만 씁니다 |
 | YouTube Data API (`YOUTUBE_CLIENT_SECRET`) | 선택 | 무료, 하루 업로드 100편 | 업로드 버튼이 안 나옵니다. 직접 올립니다 |
 
-채널은 `channels/<id>/` 폴더 하나입니다(첫 채널 `ko-40sec-facts`). 대본과 추천 주제는 `channel.toml`의 `concept`("사람들에게 실제로 도움이 되는 상식") 안에서 돕니다. 새 채널은 Claude Code의 `channel-create` 스킬로 만들고, 키 설명은 `.claude/rules/channels.md`에 있습니다. 쇼츠·틱톡은 채널에 반응해 온 시청자에게 새 영상을 먼저 보여 주므로 분야가 좁을수록 유리합니다.
+채널은 `channels/<id>/` 폴더 하나입니다(첫 채널 `momjob`). 대본과 추천 주제는 `channel.toml`의 `concept`("사람들에게 실제로 도움이 되는 상식") 안에서 돕니다. 새 채널은 Claude Code의 `channel-create` 스킬로 만들고, 키 설명은 `.claude/rules/channels.md`에 있습니다. 쇼츠·틱톡은 채널에 반응해 온 시청자에게 새 영상을 먼저 보여 주므로 분야가 좁을수록 유리합니다.
 
 Claude 모델은 `claude-opus-5-5`로 고정입니다(`config.CLAUDE_MODEL`).
 
@@ -32,7 +32,7 @@ Claude 모델은 `claude-opus-5-5`로 고정입니다(`config.CLAUDE_MODEL`).
 - **영상**은 채널 `channel.toml`의 `[video] provider` 하나로 고릅니다. `flow`(기본)는 사람이 장면 클립을 올리고, `flow-auto`는 전용 Chrome이 Flow를 대신 눌러 만듭니다. 고른 공급자를 쓸 수 없으면(Chrome 없음) Flow로 돌아갑니다.
   - 작업에 고정하지 않고 영상 소스 단계가 돌 때마다 읽습니다. 이 값을 바꾸고 서버를 다시 켜면 클립을 기다리던 작업도 [다시 시도]로 새 공급자로 이어 갑니다.
   - 스톡도 못 찾은 장면은 그라데이션으로 넘어가지 않고 "클립 대기"로 멈춥니다. 그 장면만 직접 올리면 됩니다.
-- **음성(TTS)**은 채널 `channel.toml`의 `[tts.voices]`(ko-40sec-facts는 미스터킴·이하나·지수·미스터최) 가운데 고릅니다. 기본은 `[tts] default`입니다. 대체 공급자는 없어서 실패하면 음성 단계에서 멈춥니다.
+- **음성(TTS)**은 채널 `channel.toml`의 `[tts.voices]`(momjob는 미스터킴·이하나·지수·미스터최) 가운데 고릅니다. 기본은 `[tts] default`입니다. 대체 공급자는 없어서 실패하면 음성 단계에서 멈춥니다.
 - 대시보드 환경 점검에 공급자마다 한 줄씩 나옵니다. 지금 쓰는 영상 공급자에는 "(기본)"이 붙습니다.
 
 **공급자를 더하는 법** (예: Seedance, Veo. 지금은 구현하지 않았습니다)
@@ -98,7 +98,7 @@ Flow에는 API가 없어서 사람이 장면을 만들어 올립니다. 휴대�
 
 ## 썸네일과 화면 구성
 
-- 썸네일 규칙은 채널 폴더의 `thumbnail.md`(예: `channels/ko-40sec-facts/thumbnail.md`)에 있습니다. 썸네일 단계가 이 파일 본문을 공통 지시문 `prompts/thumbnail.md`에 끼워 Claude에 보내므로, 채널 규칙은 채널 파일만, 모든 채널 규칙은 `prompts/thumbnail.md`만 고치면 됩니다.
+- 썸네일 규칙은 채널 폴더의 `thumbnail.md`(예: `channels/momjob/thumbnail.md`)에 있습니다. 썸네일 단계가 이 파일 본문을 공통 지시문 `prompts/thumbnail.md`에 끼워 Claude에 보내므로, 채널 규칙은 채널 파일만, 모든 채널 규칙은 `prompts/thumbnail.md`만 고치면 됩니다.
 - Claude에 보내는 지시문은 전부 md 파일입니다. 공통은 `prompts/`(대본·대본 고치기·썸네일·주제 고르기), 채널마다 다른 건 `channels/<id>/`. 고치면 서버를 다시 켜지 않아도 다음 작업부터 반영됩니다.
 - Claude가 문구(1~2줄, 강조 낱말 하나는 노랑)를 정합니다. 배경은 첫 장면 클립의 0.5초 화면이고, 클립이 없으면 단색입니다.
 - 영상은 위아래가 검은 띠이고 가운데(560~1440px, 1080×880 칸)에 영상이 들어갑니다. 16:9 같은 가로 클립은 칸을 채우도록 키운 뒤 가운데를 잘라 양옆이 잘립니다. 위 띠에는 썸네일 문구가 영상 내내 뜨고, 자막은 영상 칸 바로 아래(아래 띠 맨 위, 1465px부터 한 줄)에 들어갑니다. 아래 띠의 아래쪽은 쇼츠·틱톡의 채널명·제목에 가리므로 비워 둡니다.

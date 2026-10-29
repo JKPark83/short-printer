@@ -48,7 +48,7 @@ def test_ask_errors_in_korean(monkeypatch, result, msg):
 
 
 def test_script_llm_follows_channel_script_llm():
-    sv = registry.services("ko-40sec-facts")
+    sv = registry.services("momjob")
     assert sv.script_llm is registry.LLMS[sv.channel.script.llm or sv.channel.llm]
 
 
@@ -75,5 +75,5 @@ def test_ask_turns_on_only_web_search_and_names_allowed_sites(monkeypatch):
 
 
 def test_trends_llm_follows_channel_trends_llm():
-    sv = registry.services("ko-40sec-facts")
+    sv = registry.services("momjob")
     assert sv.trends_llm is registry.LLMS[sv.channel.trends.llm or sv.channel.llm]

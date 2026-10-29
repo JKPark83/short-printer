@@ -15,7 +15,7 @@ def test_render_strips_front_matter_and_fills_values(tmp_path, monkeypatch):
 
 def test_every_prompt_file_renders_for_a_real_channel():
     from shorts_printer.core import channel, research, script, thumbnail, trends
-    ch = channel.load("ko-40sec-facts")
+    ch = channel.load("momjob")
     opened = ch.model_copy(update={"research": ch.research.model_copy(update={"open": True})})
     for s in (script.system(ch), prompts.render("script_revise"), prompts.render("script_revise_draft"),
               prompts.render("script_proofread", lang=ch.lang_name, limit=10),
@@ -28,7 +28,7 @@ def test_every_prompt_file_renders_for_a_real_channel():
 
 def test_every_long_prompt_renders_for_a_real_channel():
     from shorts_printer.core import channel, longscript, research, trends
-    ch = channel.load("ko-40sec-facts").model_copy(update={"format": "long"})
+    ch = channel.load("momjob").model_copy(update={"format": "long"})
     v = longscript.values(ch)
     for s in (prompts.render("long_outline", **v), prompts.render("long_scenes", **v), trends.system_series(ch),
               prompts.render("long_proofread", **v), prompts.render("long_revise"), research.system(ch),
