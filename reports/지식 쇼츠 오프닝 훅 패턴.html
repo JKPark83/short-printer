@@ -1,0 +1,224 @@
+<title>지식 쇼츠 오프닝 훅 패턴</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;800&family=Noto+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* layout: one reading column, a ranked "scene board" of 10 candidates as the centrepiece, numbered timeline strip for the first 5 seconds */
+:root{
+  --bg:#f7f5ef; --surface:#ffffff; --fg:#1f2320; --muted:#6b706a; --line:#e1ddd1;
+  --accent:#0f6e6a; --accent-ink:#ffffff; --hi:#fbe9a8; --warn:#b4432f;
+  --display:"Noto Serif KR",serif; --body:"Noto Sans KR",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#171a18;--surface:#1f2321;--fg:#ebe8df;--muted:#a0a59c;--line:#343a36;--accent:#5fc3bd;--accent-ink:#0e1a19;--hi:#5a4a14;--warn:#ef8a72;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#171a18;--surface:#1f2321;--fg:#ebe8df;--muted:#a0a59c;--line:#343a36;--accent:#5fc3bd;--accent-ink:#0e1a19;--hi:#5a4a14;--warn:#ef8a72;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);line-height:1.75;font-size:16px}
+.wrap{max-width:860px;margin:0 auto;padding-inline:20px;padding-block:40px 80px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.3}
+h1{font-size:2rem;font-weight:800;margin:0 0 .5rem}
+h2{font-size:1.4rem;font-weight:800;margin:3rem 0 1rem;padding-top:1.2rem;border-top:2px solid var(--line)}
+h3{font-size:1.05rem;font-weight:600;margin:1.6rem 0 .5rem}
+p{margin:0 0 1rem;max-width:68ch}
+.eyebrow{font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-family:var(--mono)}
+.lede{font-size:1.1rem;max-width:62ch}
+.verdict{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin:1.5rem 0 2rem}
+.verdict div{background:var(--surface);border:1px solid var(--line);padding:14px 16px}
+.verdict b{display:block;font-family:var(--display);font-size:1.05rem;margin-bottom:4px}
+.verdict span{color:var(--muted);font-size:.9rem}
+.now{background:var(--surface);border-left:4px solid var(--warn);padding:14px 18px;margin:1.5rem 0}
+.now q{font-family:var(--display);font-weight:600;font-size:1.05rem;quotes:"「" "」"}
+.now small{display:block;color:var(--muted);margin-top:6px}
+ul{padding-left:1.2rem;max-width:68ch}
+li{margin-bottom:.4rem}
+.beats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:1.2rem 0 1.5rem}
+.beats div{border:1px solid var(--line);background:var(--surface);padding:12px 14px}
+.beats .t{font-family:var(--mono);color:var(--accent);font-size:.85rem}
+.beats b{display:block;margin:4px 0}
+.beats span{font-size:.9rem;color:var(--muted)}
+.tbl{overflow-x:auto;margin:1rem 0 1.5rem}
+table{border-collapse:collapse;width:100%;font-size:.92rem;min-width:620px}
+th,td{text-align:left;vertical-align:top;padding:9px 10px;border-bottom:1px solid var(--line)}
+th{font-weight:700;color:var(--muted);font-size:.8rem;letter-spacing:.04em}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cands{display:grid;gap:12px;margin:1.2rem 0 1rem}
+.cand{background:var(--surface);border:1px solid var(--line);padding:16px 18px;display:grid;grid-template-columns:52px 1fr;gap:12px}
+.cand.top{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
+.rank{font-family:var(--display);font-weight:800;font-size:1.6rem;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.rank small{display:block;font-family:var(--mono);font-size:.68rem;color:var(--muted);margin-top:6px;font-weight:500}
+.cand .kind{font-size:.8rem;color:var(--muted);font-family:var(--mono)}
+.cand .line{font-family:var(--display);font-weight:600;font-size:1.08rem;line-height:1.55;margin:4px 0 8px}
+.cand .line mark{background:var(--hi);color:inherit;padding:0 2px}
+.cand .meta{font-size:.88rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 16px}
+.cand .why{font-size:.92rem;margin-top:8px}
+.cand .why b{color:var(--warn)}
+.rule{background:var(--surface);border:1px solid var(--line);padding:16px 20px;margin:1rem 0 1.5rem}
+.rule ol{padding-left:1.2rem;margin:0}
+.rule li{margin-bottom:.6rem}
+.rule .ex{font-family:var(--display);font-weight:600;border-left:3px solid var(--accent);padding-left:10px;margin:.4rem 0;font-size:.95rem}
+.note{font-size:.88rem;color:var(--muted);border-top:1px dashed var(--line);padding-top:10px;margin-top:1.2rem;max-width:68ch}
+a{color:var(--accent)}
+.src{font-size:.85rem;color:var(--muted)}
+.src li{margin-bottom:.25rem}
+@media (max-width:480px){.cand{grid-template-columns:40px 1fr}h1{font-size:1.6rem}}
+</style>
+
+<div class="wrap">
+<div class="eyebrow">알쓸몸잡 · 첫 장면 연구 · 2026-10-29</div>
+<h1>"~하죠?" 대신 첫 화면의 모순으로 연다</h1>
+<p class="lede">지식 쇼츠의 초반 이탈은 첫 2초를 "동의 확인"에 쓰기 때문에 생긴다. 상위 쇼츠는 질문 대신 지금 보이는 장면, 이미 일어난 일, 두 참말의 모순으로 열고, 둘째 문장에서 뻔한 답 하나를 지운다. 안압 대본 첫 장면 후보 10개를 좋은 순으로 냈다.</p>
+
+<div class="verdict">
+  <div><b>빈칸이 없다</b><span>"움찔하죠?"는 모르는 것을 짚지 않고 겪어 봤는지만 묻는다. "응" 하면 더 볼 이유가 끝난다.</span></div>
+  <div><b>평서 제목 클릭 1.97배</b><span>같은 기사에 제목만 바꾼 통제 실험(Molina, CHI 2021). Upworthy 22,743건에서도 질문 신호는 클릭을 줄였다.</span></div>
+  <div><b>상위 57편 중 공감 질문 2편</b><span>한국 지식 쇼츠 상위권에서 "~한 적 있죠?" 꼴은 4%뿐이고 둘 다 채널 평균 수준(11~12만)이었다.</span></div>
+  <div><b>물음표 자체는 죄가 아니다</b><span>구체적 모순이 담긴 질문은 통한다. 문제는 주장 없이 동의만 묻는 질문이다.</span></div>
+</div>
+
+<div class="now">
+  <div class="eyebrow">지금 첫 장면 (20261029-194605-c264)</div>
+  <q>눈에 바람이 훅, 움찔하죠? 그 짧은 바람 딱 한 번에, 기계는 벌써 내 눈의 숫자 하나를 뽑아냈습니다.</q>
+  <small>"눈에 바람이"까지는 화면과 맞아서 좋다. 그다음 "움찔하죠?"가 남은 음절을 동의 확인에 쓰고, 둘째 문장에는 뒤집는 것이 없다. 안과 기계가 뭔가 잰다는 건 시청자도 이미 안다. 이 꼴은 channels/ko-40sec-facts/script.md 5행이 강제하고 있다.</small>
+</div>
+
+<h2>1. 왜 단순 질문은 시청자를 못 잡나</h2>
+<p>쇼츠에는 썸네일을 보고 고르는 단계가 없다. 재생된 뒤 처음 몇 초가 썸네일과 제목 노릇을 하고, YouTube는 이 구간을 <b>Stayed to watch</b>(처음 몇 초를 넘긴 비율)로 따로 잰다. 2025년 3월 31일부터 쇼츠 조회수는 재생될 때마다 올라가므로, 오프닝 성과는 조회수가 아니라 Engaged views ÷ 조회수로 봐야 한다.</p>
+<ul>
+  <li><b>넘기기는 앞에서 난다.</b> 시청 실험에서 넘기기의 29%가 영상 앞 20% 안에서 일어났다(Dashlet, NSDI 2023). 추천 연구는 대부분이 첫 5초 안이라고 본다(AAAI 2025). Jenny Hoyos는 "쇼츠는 1초 안에 붙잡아야 한다"고 했다.</li>
+  <li><b>호기심은 빈틈에서 생긴다.</b> Loewenstein의 정보 격차 이론. 빈틈은 시청자가 반쯤 알고 곧 메울 수 있어 보여야 한다. 공감 질문은 빈틈을 만들지 않는다.</li>
+  <li><b>질문 꼴은 클릭과 신뢰를 함께 깎는다.</b> Upworthy A/B 22,743건: 물음표·"어떻게" 신호와 시청자를 직접 부르는 제목은 역효과, 앞을 가리키는 말("이")·숫자·구체성은 클릭 증가(Banerjee &amp; Urminsky). KQED 과학 뉴스 실험: 질문 제목은 클릭 차이 없이 "덜 믿을 만하다"는 평가만 받았다.</li>
+  <li><b>반대 근거.</b> TikTok·IG 14,424편 분석에서 질문 훅은 평균 조회 배수가 높았지만 "평소 2배 넘긴 비율"은 평서와 같았다(30.4% 대 29.9%). 질문은 천장만 올리고 바닥은 못 올린다. 크게 이긴 질문은 모두 구체적 필요를 겨눈 것이었다.</li>
+</ul>
+<p>정리하면 물음표가 문제가 아니라 <b>구체적인 주장 없이 동의만 묻는 질문</b>이 문제다. 공감은 "기대기" 단계일 뿐이고, 바로 뒤에 반전이 붙어야 훅이 된다(Kallaway).</p>
+
+<h2>2. 인기 지식 쇼츠의 오프닝 패턴</h2>
+<p>한국어 상위 지식 쇼츠 57편의 첫 문장을 분류하면 가장 흔한 꼴은 제목 질문 다시 읽기(26%)다. 그러나 이 꼴만 쓰는 사물궁이 쇼츠는 상위 다섯 편이 모두 12~16만 회에 머문다. 300만 회를 넘긴 영상은 다른 꼴로 연다.</p>
+<div class="tbl"><table>
+<tr><th>꼴</th><th>한국어 사례</th><th>영어 사례</th><th>이 채널에 맞나</th></tr>
+<tr><td>장면 한가운데</td><td>과학쿠키 "물줄기가 시간이 정지된 것처럼 멈춰 있습니다 … 사실 멈춰 있는 건 아니고" 431만</td><td>Zack D. Films "As it bites the whale…" 5,600만</td><td><b>가장 잘 맞는다.</b> 3D 화면이 곧 훅</td></tr>
+<tr><td>"이"로 가리키며 결론 먼저</td><td>리뷰엉이 목성 323만</td><td>"This tiny hole in an airplane window is there to protect you."</td><td>잘 맞는다. 제목 물음을 일찍 답하는 위험</td></tr>
+<tr><td>대비 쌍</td><td>없음</td><td>Mark Rober "This is a slinky, and this is…" 6.4억</td><td>맞는다. 두 대상 나란히 그리기 쉬움</td></tr>
+<tr><td>통념 뒤집기</td><td>지식해적단 "서울이죠. 근데…" 84만</td><td>MinuteEarth 강아지 나이 250만</td><td>통념이 정말 흔할 때만</td></tr>
+<tr><td>뻔한 답 걷어내기</td><td>없음</td><td>chemteacherphil "…and I'm not talking about the fact that it's really flammable" 8,000만</td><td>맞는다</td></tr>
+<tr><td>일상 속 숨은 일</td><td>없음</td><td>Kurzgesagt "Something in your kitchen emits antimatter every hour." 1,400만</td><td>맞는다. "당신" 꼴은 근거 엇갈림</td></tr>
+<tr><td>숫자 단언</td><td>리뷰엉이 "초속 110km" 304만</td><td>MinuteEarth 핵무기 5km 2,300만</td><td>단위와 뜻이 한 번에 들릴 때만</td></tr>
+<tr><td>위험 명령</td><td>지식인사이드 다이어트 약 97만</td><td>Doctor Mike "Never do this" 6,600만</td><td><b>쓰지 않는다.</b> 의사 권위와 권고</td></tr>
+</table></div>
+<p>표에서 두 가지가 읽힌다. 첫째, 첫 문장은 <b>첫 화면의 자막</b>이다. Hoyos는 "듣지 않고도 이해돼야 한다"며 화면부터 정하고, 100만 회 넘은 쇼츠 훅의 "this/that" 시작 비율은 롱폼의 세 배다(Overseer). 둘째, <b>두 박자</b>다. 11낱말 안팎의 훅 다음 3~5초 안에 반전이나 확대가 온다("…but this is 30,000 pounds").</p>
+<div class="beats">
+  <div><div class="t">0~1초</div><b>대상 하나 + 의외의 단정</b><span>첫 화면에 보이는 것을 맨 앞 두세 음절에</span></div>
+  <div><div class="t">1~3초</div><b>"그런데" 한 줄</b><span>뻔한 답 하나를 지우거나 걸린 것을 더한다</span></div>
+  <div><div class="t">3~5초</div><b>답이 온다는 약속</b><span>답은 아직 주지 않는다</span></div>
+  <div><div class="t">15~20초</div><b>부분 보상</b><span>원리 이름을 대거나 오답을 지우며 다음 고리</span></div>
+</div>
+<p>몸 주제에서 조심할 것 하나. 영어권 의사 채널의 "Never do this"는 흰 가운의 권위에 기댄다. 사람이 안 나오는 채널이 같은 말을 하면 공포 조장으로 읽히고, 2026년 7월 AI 가짜 의사 쇼츠 보도 이후 더 그렇다. 채널 규칙(진단·권고·권위 금지)은 그대로 맞는 방어선이다.</p>
+
+<h2>3. 둘째 문장의 일: 답이 아니라 뻔한 답 하나를 지우기</h2>
+<p>Kallaway의 3단 훅은 기대기 → "but" 한 줄 → 반전이다. "but" 줄은 보상을 예고하되 보상을 담지 않는다. 틀리게 짐작했을 때 호기심이 기억을 키운다는 fMRI 결과(Kang 2009), 오개념을 먼저 말한 영상이 학습을 두 배로 올렸다는 Muller 연구, 그리고 구체성이 지나치면 클릭이 최대 9.9% 준다는 Upworthy 재분석이 같은 쪽을 가리킨다. 시험법은 간단하다. 둘째 문장이 첫 문장을 다시 말할 뿐이면 채움 문장이고, 후보 하나를 지우거나 판돈을 올리면 제 몫을 한 것이다.</p>
+<p>안압 대본의 큰 고리는 둘이다. 바람이 겉을 눌러 어떻게 속을 재는가(첫 장면이 연다), 같은 압력도 각막에 따라 다르게 나오는가(8장면이 연다). 지금 구조와 맞는다.</p>
+
+<h2>4. 안압 대본 첫 장면 후보 10개</h2>
+<p>조사된 사실 안에서만 썼다. 첫 문장 12~18자(2초), 첫 장면 58~63자. "~하죠?", "~라는 거 아세요?", "정답은 의외로 아니요"는 쓰지 않았다. 순위 기준은 다섯이다. 음소거로도 아는가, 첫 두세 음절에 대상이 있는가, 둘째 문장이 빈칸을 좁히는가, 제목의 물음을 다 쓰지 않는가, 사실이 정확한가.</p>
+
+<div class="cands">
+<div class="cand top"><div class="rank">1<small>16·62자</small></div><div>
+  <div class="kind">장면 한가운데 · Zack D. Films, 과학쿠키, Hoyos "화면이 곧 훅"</div>
+  <div class="line"><mark>바람이 각막을 납작 누릅니다.</mark> 그런데 기계가 기다린 건 바람이 아니라, 각막이 평평해지는 바로 그 한순간이에요.</div>
+  <div class="meta"><span>첫 화면: 공기 줄기가 각막에 닿아 가운데가 평평해지는 클로즈업</span></div>
+  <div class="why">채널의 강점인 3D가 그대로 훅이 된다. "바람이 핵심"이라는 뻔한 생각을 지우고 "왜 하필 그 순간인가"를 연다. <b>손볼 것:</b> 2장면이 같은 내용이라 "그 순간에 무엇이 읽히나"로 다시 써야 한다.</div>
+</div></div>
+<div class="cand top"><div class="rank">2<small>15·60자</small></div><div>
+  <div class="kind">두 참말의 모순 · Heath "Unexpected", Kallaway 반전</div>
+  <div class="line"><mark>닿지도 않고 눈을 누릅니다.</mark> 그런데 기계가 노리는 건 눌린 겉면이 아니라, 그 뒤 눈 속에서 미는 힘이에요.</div>
+  <div class="meta"><span>첫 화면: 노즐과 각막 사이 빈 틈, 공기만 지나간다</span></div>
+  <div class="why">인지적으로 가장 날카롭다. 두 참말이 부딪쳐 듣는 순간 모순이 생긴다. 정체의 절반을 주고 "어떻게"를 남긴다. <b>손볼 것:</b> 주어가 없어 첫 화면이 노즐과 빈 틈을 분명히 보여 줘야 한다.</div>
+</div></div>
+<div class="cand"><div class="rank">3<small>18·61자</small></div><div>
+  <div class="kind">"이"+결론 먼저 · Overseer, Upworthy "앞을 가리키는 말"</div>
+  <div class="line"><mark>이 바람, 눈 속 압력을 잽니다.</mark> 그런데 바람은 각막 한가운데 한 점만 누를 뿐, 눈 속은 건드리지도 않아요.</div>
+  <div class="meta"><span>첫 화면: 바람 → 눈 단면으로 당겨 보기</span></div>
+  <div class="why">근거가 가장 단단한 꼴. <b>손볼 것:</b> 제목 「…그 정체는?」에 바로 답해 버리므로 제목을 "어떻게" 쪽으로 바꿔야 한다(예: 「바람 한 번으로 눈 속을 재는 법」).</div>
+</div></div>
+<div class="cand"><div class="rank">4<small>13·59자</small></div><div>
+  <div class="kind">대비 쌍 · Mark Rober "This is X, this is Y"</div>
+  <div class="line"><mark>단단한 눈, 말랑한 눈.</mark> 그런데 기계는 각막이 납작해지는 데 드는 힘으로, 바람 한 번에 둘을 가려냅니다.</div>
+  <div class="meta"><span>첫 화면: 눈알 두 개를 나란히</span></div>
+  <div class="why">화면 두 개만으로 성립한다. 5장면의 사실을 앞으로 당겨 쓴다.</div>
+</div></div>
+<div class="cand"><div class="rank">5<small>15·61자</small></div><div>
+  <div class="kind">결말 예고 · Hoyos 훅+복선, 판돈 올리기</div>
+  <div class="line"><mark>같은 눈 압력, 다른 숫자.</mark> 그런데 그 차이는 눈 속이 아니라, 바람이 누르는 각막 두께에서 나올 수 있어요.</div>
+  <div class="meta"><span>첫 화면: 두께가 다른 각막 두 개, 계기판 숫자만 다름</span></div>
+  <div class="why">가장 큰 반전(각막 두께)을 미리 건다. <b>손볼 것:</b> 8장면이 확인이 되어 버리므로 "왜 두께가 숫자를 바꾸나"로 옮겨야 한다.</div>
+</div></div>
+<div class="cand"><div class="rank">6<small>14·62자</small></div><div>
+  <div class="kind">뻔한 답 걷어내기 · chemteacherphil "…and I'm not talking about…"</div>
+  <div class="line"><mark>놀래려는 바람이 아닙니다.</mark> 그런데 점점 세지던 바람은 각막이 평평해지는 순간 끊기고, 기계는 그 순간만 봅니다.</div>
+  <div class="meta"><span>첫 화면: 움찔하는 눈꺼풀 → 각막으로 들어가기</span></div>
+  <div class="why"><b>약점:</b> "놀래려는 바람"이란 통념이 흔한지 확인되지 않았고 1위와 내용이 겹친다.</div>
+</div></div>
+<div class="cand"><div class="rank">7<small>17·63자</small></div><div>
+  <div class="kind">지금 내 몸 속 숨은 일 · Kurzgesagt "Something in your kitchen…"</div>
+  <div class="line"><mark>눈 속엔 지금도 액체가 흘러요.</mark> 그런데 그 액체가 안에서 미는 힘을, 기계는 바람 한 번으로 밖에서 읽어 냅니다.</div>
+  <div class="meta"><span>첫 화면: 눈 속 액체 흐름 → 바깥 노즐</span></div>
+  <div class="why"><b>약점:</b> 시청자를 직접 부르는 꼴은 근거가 엇갈리고, 첫 화면이 제목이 약속한 "바람"이 아니다.</div>
+</div></div>
+<div class="cand"><div class="rank">8<small>12·58자</small></div><div>
+  <div class="kind">통념 뒤집기 · MinuteEarth, Muller "오개념 먼저"</div>
+  <div class="line"><mark>시력 검사가 아닙니다.</mark> 그런데 바람은 눈 맨 앞 각막만 건드리는데, 기계는 거기서 눈 속 숫자를 꺼내요.</div>
+  <div class="meta"><span>첫 화면: 시력표에 X → 바람 맞는 각막</span></div>
+  <div class="why"><b>약점:</b> 시청자가 이 검사를 시력 검사로 안다는 전제가 확인되지 않았다.</div>
+</div></div>
+<div class="cand"><div class="rank">9<small>16·62자</small></div><div>
+  <div class="kind">두 가지를 숨긴 숫자 · "이유는 둘, 둘째가 더 이상하다"</div>
+  <div class="line"><mark>이 숫자엔 두 가지가 섞여요.</mark> 그런데 눈 속 압력은 그중 하나뿐이고, 나머지 하나는 바람이 누르는 쪽에 있어요.</div>
+  <div class="meta"><span>첫 화면: 계기판 숫자 하나가 두 갈래로 갈라짐</span></div>
+  <div class="why"><b>약점:</b> "이 숫자"가 화면에 없으면 대명사만 남는 막연한 훅이 된다.</div>
+</div></div>
+<div class="cand"><div class="rank">10<small>17·61자</small></div><div>
+  <div class="kind">숫자 단언 · Upworthy "숫자", 리뷰엉이 초속 110km</div>
+  <div class="line"><mark>보통 눈 압력은 10에서 21.</mark> 그런데 기계는 눈에 닿지도 않고, 각막에 바람 한 번 불어 이 숫자를 잽니다.</div>
+  <div class="meta"><span>첫 화면: 계기판 숫자 → 바람</span></div>
+  <div class="why"><b>약점:</b> 단위 없는 "10에서 21"은 1초 안에 뜻을 주지 못하고, 정상 범위를 앞세우면 시청자가 자기 수치와 견주게 되어 진단 금지 규칙에 가깝다.</div>
+</div></div>
+</div>
+<p class="note">모든 후보의 둘째 문장이 "그런데"로 시작한다. 4장면 고정 멘트와 8장면까지 합치면 세 번이므로, 거슬리면 둘째 문장은 "정작"이나 "근데"로 바꿔도 역할은 같다.</p>
+
+<h2>5. 모든 대본에 걸 첫 장면 규칙(제안)</h2>
+<p>channels/ko-40sec-facts/script.md 5~13행(첫 문장 규칙과 "~죠?" 예시 네 개)을 바꿀 문안이다. 공통 지시문의 "질문이나 의외의 사실 하나만 던진다. 둘째 문장은 이 영상이 무엇에 답하는지 약속한다"와도 맞는다.</p>
+<div class="rule"><ol>
+  <li>첫 장면은 짧은 문장 둘. 첫 문장(15자 안팎, 2초)은 첫 화면에 보이는 몸 부위·물체 하나를 맨 앞 두세 음절에 두고, 참이면서 의외인 말 하나를 단정형으로 한다. 꼴은 장면 한가운데·두 참말의 모순·대비 쌍·"이 ○○"+결론 중에서 고르고, 최근 다섯 편과 같은 꼴을 잇달아 쓰지 않는다.</li>
+  <li>"여러분·혹시·다들", 인사, 동의나 경험을 묻는 질문("~죠?", "~아세요?", "~한 적 있죠?"), 제목 물음 다시 읽기로 열지 않는다. 질문은 사실을 먼저 말한 뒤에만 쓴다.</li>
+  <li>둘째 문장은 "그런데"(또는 "정작")로 시작해 뻔한 답 하나를 지우거나 걸린 것을 하나 더한다. 제목의 물음에 다 답하지 않고, "숫자 하나", "이것"처럼 대명사로만 감추지도 않는다.</li>
+  <li>첫 문장, 첫 화면, 화면 위 제목 글자는 같은 대상을 가리킨다. 음소거로 봐도 무엇에 관한 영상인지 알아야 한다.</li>
+  <li>사실 시트 밖의 사실·숫자를 쓰지 않는다. 숫자는 단위와 뜻이 한 번에 들릴 때만. "소름", "99%", 공포, "~하세요" 권고, 진단, 의사·전문가 권위를 쓰지 않는다.</li>
+</ol>
+<div class="ex">바람이 각막을 납작 누릅니다. 그런데 기계가 기다린 건 바람이 아니라, 각막이 평평해지는 바로 그 한순간이에요.</div>
+<div class="ex">닿지도 않고 눈을 누릅니다. 그런데 기계가 노리는 건 눌린 겉면이 아니라, 그 뒤 눈 속에서 미는 힘이에요.</div>
+<div class="ex">단단한 눈, 말랑한 눈. 그런데 기계는 각막이 납작해지는 데 드는 힘으로, 바람 한 번에 둘을 가려냅니다.</div>
+</div>
+<p>검수 지시문(prompts/script_proofread_ko.md)에는 한 항목만 더한다. "첫 문장이 동의·경험을 묻는 질문인가, 둘째 문장이 뻔한 답 하나를 지우는가."</p>
+
+<h3>효과는 이 채널에서 직접 잰다</h3>
+<p>오프닝 꼴을 번갈아 쓰면서 영상마다 Stayed to watch(Engaged views ÷ 조회수)를 채널 중앙값과 견준다. 평균 시청 비율도 같이 본다. 오프닝이 낚시면 Stayed to watch는 오르고 평균 시청 비율은 떨어진다. 후보 1·2·4위 꼴을 다음 몇 편에 돌려 쓰면 몇 주 안에 이 채널의 답이 데이터로 나온다.</p>
+
+<h2>한계와 검증 안 된 수치</h2>
+<ul>
+  <li>숏폼 영상에서 질문 오프닝과 평서 오프닝만 바꿔 비교한 공개 A/B 자료는 없다. 한국어 "~하죠?" 꼴만 떼어 본 자료도 없다. 결론은 제목 실험, 성공작 관찰, 호기심 이론이 같은 방향을 가리킨다는 데 기댄다.</li>
+  <li>성공작 표는 인과를 보여 주지 않는다. Overseer 연구도 쇼츠 훅 차이 상당수가 채널·시기 차이였다고 적는다.</li>
+  <li>흔히 인용되는 목표치는 쓰지 않는다. "Viewed vs swiped away 75~80%", "3초 유지 중앙값 50~58%", "2초 훅이면 19% 더 남는다", "미완결 시각 훅 2.4배(VidMob)", "스크롤 결정 1.3초(Meta)"는 방법론이 없거나 원문을 못 찾은 <b>검증 안 된 수치</b>다. Galloway의 "VVSA 70~90%가 좋다"는 그의 스레드 사본에만 있다.</li>
+  <li>한국 건강 쇼츠 약 20편은 자막 차단으로 첫 문장을 못 받았다.</li>
+</ul>
+
+<h3>주요 출처</h3>
+<ul class="src">
+  <li><a href="https://support.google.com/youtube/answer/12220281">YouTube Help · Shorts analytics(Stayed to watch)</a></li>
+  <li><a href="https://home.uchicago.edu/ourminsky/Banerjee_Urminsky_Headlines.pdf">Banerjee &amp; Urminsky · Upworthy 22,743 headline tests</a></li>
+  <li><a href="https://pike.psu.edu/publications/chi21.pdf">Molina et al., CHI 2021 · 질문 제목 vs 평서 제목</a></li>
+  <li><a href="https://www.kqed.org/about/13722/experimenting-with-science-news-headline-format-to-maximize-engagement">KQED · 과학 뉴스 제목 실험</a></li>
+  <li><a href="https://www.overseeros.com/blog/youtube-shorts-hooks-study">Overseer · 100만 회 쇼츠 훅 1,178편 연구</a></li>
+  <li><a href="https://thecontentlabs.app/blog/question-hooks-data-study">The Content Labs · 질문 훅 14,424편</a></li>
+  <li><a href="https://creatorscience.com/podcast/jenny-hoyos/">Creator Science · Jenny Hoyos</a></li>
+  <li><a href="https://sozai.app/transcript/create-irresistible-hooks-blow-content/">Kallaway · 3단 훅</a></li>
+  <li><a href="https://pubmed.ncbi.nlm.nih.gov/19619181/">Kang et al. 2009 · 호기심 fMRI</a></li>
+  <li><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC11704130/">Aubin Le Quéré &amp; Matias 2025 · 구체성의 역U</a></li>
+  <li><a href="https://arxiv.org/pdf/2204.12954">Dashlet, NSDI 2023 · 넘기기 시점</a></li>
+</ul>
+<p class="note">전문 보고서: reports/지식 쇼츠 오프닝 훅 패턴.md · 조사 노트: research_notes/지식 쇼츠 오프닝 훅 패턴/</p>
+</div>
