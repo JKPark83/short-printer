@@ -81,6 +81,10 @@ def _wait(page, until, timeout: int):
 
 def _generate(page, prompt: str, path: Path) -> None:
     """프롬프트 하나 → 새 타일이 끝나면 720p 업스케일로 받아 path에. 실패하면 던진다(장면만 건너뜀)."""
+    # 받다가 타일이 눌려 편집 화면(/edit/)에 남으면 다음 프롬프트가 모두 그 영상 고치기로 들어간다
+    if "/edit/" in page.url:
+        page.goto(page.url.split("/edit/")[0])
+        _wait(page, lambda now: now, 30)
     tiles = page.evaluate(SNAPSHOT)
     before, pos = len(tiles), sum(not t["error"] for t in tiles)
     box = page.locator('[contenteditable="true"]').first

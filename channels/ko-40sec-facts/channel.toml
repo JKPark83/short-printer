@@ -12,7 +12,7 @@ scenes = 11
 sentence = [56, 63]   # 크리스·eleven_v4 기준 초당 약 7.7자: 한 장면이 7.3~8.2초, 11장면이 약 80~90초
 unit = "chars"
 duration = "80~90초"
-llm = "claude-code"   # 대본만 Claude 구독으로(.env CLAUDE_CODE_MODEL·EFFORT)
+llm = "claude-code"   # 대본은 Claude 구독으로(.env CLAUDE_CODE_MODEL·EFFORT)
 
 [tts]
 provider = "elevenlabs"
@@ -68,6 +68,7 @@ queries_per_topic = 7
 max_pages = 10
 
 [trends]
+llm = "claude-code"   # 주제 찾기도 Claude 구독으로(웹 검색 포함)
 production = "Claude가 공식 자료로 만든 사실 시트로 한국어 대본을 쓰고, TTS가 읽고 번인 자막이 뜬다. 약 1분 25초(80~90초), 11장면. 배경은 장면마다 AI로 만든 3D 해설 애니메이션 클립(몸속 단면·장기·세포를 보여 주는 해설 채널 느낌)이고, 같은 마스코트가 나온다. 직접 촬영, 실존 인물·방송·게임 화면, 특정 브랜드는 못 쓴다. 공식·학술 자료로 핵심 사실을 확인할 수 없는 주제와 치료·약·식품 효능을 말해야 답이 되는 주제는 못 만든다."
 weights = { trend = 20, curious = 25, fit = 30, fresh = 10, safe = 15 }
 keywords = ["인체", "우리몸", "몸의비밀", "인체의신비", "인체상식", "건강상식"]

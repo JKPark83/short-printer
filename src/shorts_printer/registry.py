@@ -93,6 +93,7 @@ def services(channel_id: str) -> Services:
                     video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language),
                     research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"),
                     script_llm=_pick(LLMS, ch.script.llm or ch.llm, "LLM"),
+                    trends_llm=_pick(LLMS, ch.trends.llm or ch.llm, "LLM"),
                     also={n: publisher(ch, n) for n in ch.publish.also})
 
 

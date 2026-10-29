@@ -50,3 +50,30 @@ def test_ask_errors_in_korean(monkeypatch, result, msg):
 def test_script_llm_follows_channel_script_llm():
     sv = registry.services("ko-40sec-facts")
     assert sv.script_llm is registry.LLMS[sv.channel.script.llm or sv.channel.llm]
+
+
+def test_ask_turns_on_only_web_search_and_names_allowed_sites(monkeypatch):
+    seen, ok, run = {}, {"is_error": False, "structured_output": {"answer": "짜다"}}, subprocess.run
+    fake_run(monkeypatch, ok, seen)
+    ClaudeCode().ask("짧게", "t", Out, refusal="거절", what="답")
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "" and "--allowedTools" not in cmd   # 검색이 없으면 도구도 없다
+    ClaudeCode().ask("짧게", "t", Out, refusal="거절", what="답", web=["kdca.go.kr", "who.int"])
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch" and cmd[cmd.index("--allowedTools") + 1] == "WebSearch"
+    system = cmd[cmd.index("--system-prompt") + 1]
+    assert system.startswith("짧게") and "5번까지" in system and "kdca.go.kr, who.int" in system
+    # 모델이 다른 사이트를 넣어도 훅이 허용 사이트로 덮어쓴다
+    hook = json.loads(cmd[cmd.index("--settings") + 1])["hooks"]["PreToolUse"][0]
+    call = {"tool_input": {"query": "독감", "allowed_domains": ["wikipedia.org"], "blocked_domains": ["x.com"]}}
+    r = run(hook["hooks"][0]["command"], shell=True, input=json.dumps(call), capture_output=True, text=True)
+    out = json.loads(r.stdout)["hookSpecificOutput"]
+    assert hook["matcher"] == "WebSearch" and out["permissionDecision"] == "allow"
+    assert out["updatedInput"] == {"query": "독감", "allowed_domains": ["kdca.go.kr", "who.int"]}
+    with pytest.raises(RuntimeError, match="그림을 못 받아요"):
+        ClaudeCode().ask("s", "t", Out, refusal="거절", what="답", images=[b"png"])
+
+
+def test_trends_llm_follows_channel_trends_llm():
+    sv = registry.services("ko-40sec-facts")
+    assert sv.trends_llm is registry.LLMS[sv.channel.trends.llm or sv.channel.llm]
