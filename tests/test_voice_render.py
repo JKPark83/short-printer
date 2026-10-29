@@ -48,8 +48,9 @@ def test_voice_joins_sentences_with_gap(tmp_path, ch):
     fake = Fake(fake_speak)
     engine, t = voice.synth(fake, ch, ["하나", "둘"], "LKOcTG4J4tYTPR9DnLeM", tmp_path, lambda m: None)
     assert engine == "ElevenLabs" and fake.calls == ["LKOcTG4J4tYTPR9DnLeM"] * 2
-    assert t[0]["start"] == 0 and t[0]["end"] == pytest.approx(0.5, abs=0.06)
-    assert t[1]["start"] == pytest.approx(t[0]["end"] + voice.GAP, abs=0.01)
+    assert t[0]["start"] == 0 and t[0]["end"] == pytest.approx(0.5 / voice.SPEED, abs=0.06)   # 늘 SPEED배 빠르게
+    assert t[1]["start"] == pytest.approx(t[0]["end"] + voice.GAP / voice.SPEED, abs=0.01)
+    assert ffmpeg.duration(tmp_path / "voice.wav") == pytest.approx(1.4 / voice.SPEED, abs=0.05)
     assert (tmp_path / "voice.wav").exists()
 
 
@@ -57,7 +58,7 @@ def test_render_gradient_with_subtitles(tmp_path, ch):
     _, timing = voice.synth(Fake(fake_speak), ch, ["커피 한 잔"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)
     dur = render.render(tmp_path, [], timing[-1]["end"], ch, KO)
-    assert dur == pytest.approx(timing[-1]["end"] + render.TAIL)
+    assert dur == pytest.approx(timing[-1]["end"] + render.TAIL, abs=0.01)
     assert (tmp_path / "final.mp4").stat().st_size > 1000 and (tmp_path / "poster.jpg").exists()
     assert not (tmp_path / "final.tmp.mp4").exists()
     assert render.thumbnail(tmp_path, ["커피 {상식}", "모르면 손해"], "손해", "bottom", ch, KO) == "단색"
@@ -81,7 +82,7 @@ def test_elevenlabs_word_times_shift_by_sentence_start(tmp_path, ch):
 
     engine, t = voice.synth(Fake(speak_with_words), ch, ["하나", "둘"], "elevenlabs", tmp_path, print)
     assert engine == "ElevenLabs"
-    assert t[1]["words"] == [{"text": "둘", "start": pytest.approx(t[1]["start"] + 0.1, abs=0.002)}]
+    assert t[1]["words"] == [{"text": "둘", "start": pytest.approx(t[1]["start"] + 0.1 / voice.SPEED, abs=0.002)}]
 
 
 def test_elevenlabs_asks_number_normalization_and_keeps_original_alignment(tmp_path, monkeypatch):
@@ -274,3 +275,10 @@ def test_scenes_cross_fade_centered_on_sentence_starts(tmp_path, ch, monkeypatch
     assert "concat=n=3:v=1" not in fc
     # 클립 소리가 없어도 전환 가운데(1.992·3.992초)마다 휙이 목소리에 섞인다
     assert "exp(-((t-1.992)/0.07)^2)+exp(-((t-3.992)/0.07)^2)" in fc and "[wh]anull[fx]" in fc and "amix" in fc
+
+
+def test_voice_speeds_up_past_max(tmp_path, ch, monkeypatch):
+    monkeypatch.setattr(voice, "MAX_SEC", 1.5)   # 0.5초 두 문장 + 쉼 = 1.2초 → 끝 한도 0.8초(SPEED보다 빠르게)
+    _, t = voice.synth(Fake(fake_speak), ch, ["하나", "둘"], "elevenlabs", tmp_path, lambda m: None)
+    assert t[-1]["end"] == pytest.approx(1.5 - render.TAIL - 0.1, abs=0.02)
+    assert ffmpeg.duration(tmp_path / "voice.wav") == pytest.approx(1.4 * 0.8 / 1.2, abs=0.05)

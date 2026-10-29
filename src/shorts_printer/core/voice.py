@@ -1,5 +1,6 @@
 """3단계 음성: 채널의 TTS로 문장마다 읽어 잇는다. 문장 시각이 곧 자막 시각이다."""
 import hashlib
+import os
 import wave
 from pathlib import Path
 
@@ -7,9 +8,12 @@ from .. import config
 from ..infra import ffmpeg
 from ..ports.tts import TTS
 from .channel import Channel
+from .render import TAIL
 
 RATE = 24000
 GAP = 0.2   # 문장 사이 쉼(초)
+SPEED = 1.1   # 쇼츠 목소리는 늘 이만큼 빠르게(대본 길이는 그대로 두고 영상을 줄인다)
+MAX_SEC = 89   # 쇼츠 최대 길이(1분 29초). SPEED로도 넘치면 더 빠르게 맞춘다
 
 
 def _read_all(sentences: list[str], job_dir: Path, log, speak) -> list[dict]:
@@ -37,6 +41,22 @@ def _read_all(sentences: list[str], job_dir: Path, log, speak) -> list[dict]:
     return timing
 
 
+def _fit(timing: list[dict], job_dir: Path, log) -> list[dict]:
+    """voice.wav를 atempo로 SPEED배(목소리 끝 + 렌더 여유 TAIL이 MAX_SEC를 넘으면 그보다 더) 빠르게 하고
+    시각을 같은 비로 줄인다."""
+    end = timing[-1]["end"]
+    k = max(SPEED, end / (MAX_SEC - TAIL - 0.1))
+    wav, tmp = job_dir / "voice.wav", job_dir / "voice.tmp.wav"
+    ffmpeg.run(["-i", wav, "-af", f"atempo={k:.4f}", "-ar", RATE, "-ac", 1, "-c:a", "pcm_s16le", tmp])
+    os.replace(tmp, wav)
+    log(f"음성 {end:.1f}s → {end / k:.1f}s({k:.2f}배 빠르게)")
+
+    def at(x: float) -> float:
+        return round(x / k, 3)
+    return [t | {"start": at(t["start"]), "end": at(t["end"])}
+            | ({"words": [w | {"start": at(w["start"])} for w in t["words"]]} if "words" in t else {}) for t in timing]
+
+
 def _check(tts: TTS) -> None:
     if not tts.ready():
         raise RuntimeError(f"{tts.label}을(를) 쓸 수 없어요({tts.hint}). 설정을 고치고 서버를 다시 켜세요")
@@ -58,5 +78,6 @@ def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path
     if voice not in ch.tts.voices:   # 예전 작업의 edge-tts·macOS say 목소리, 다른 채널 목소리
         raise RuntimeError(f"더는 쓰지 않는 목소리({voice})예요. 작업 화면에서 다른 목소리를 골라 주세요")
     _check(tts)
-    return tts.label, _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))
+    timing = _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))
+    return tts.label, _fit(timing, job_dir, log)
 
