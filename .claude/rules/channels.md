@@ -33,7 +33,7 @@
 | `format` | `short`(기본, 9:16 쇼츠) · `long`(16:9 지도 역사 롱폼, 단계는 `docs/plan/longform.md`) |
 | `daily_goal` | 대시보드 하루 목표 편수 |
 | `sensitive_gate` | true면 건강·법률·금융·정치 대본은 사람이 확인해야 장면을 만든다. 롱폼은 쓰지 않는다(대본 승인을 늘 받는다) |
-| `llm` | registry `LLMS` 이름(`claude` · `antigravity`는 로컬 Antigravity CLI(agy, Google 로그인)로 돈다. 모델은 `.env`의 `ANTIGRAVITY_MODEL`·`ANTIGRAVITY_EFFORT`, 기본 gemini-3.8-flash-high, argon-high는 대본에서 멈춘다. 그림은 못 받는다. 웹 검색은 5번까지, 사이트 제한은 지시문으로만 건다) |
+| `llm` | registry `LLMS` 이름(`claude` · `antigravity`는 로컬 Antigravity CLI(agy, Google 로그인)로 돈다. 모델은 `.env`의 `ANTIGRAVITY_MODEL`·`ANTIGRAVITY_EFFORT`, 기본 gemini-4-argon-medium(깊이는 모델 이름 끝 -low·-medium·-high), argon-high는 대본에서 멈춘다. 그림은 못 받는다. 웹 검색은 5번까지, 사이트 제한은 지시문으로만 건다) |
 | `[script]` `scenes` | 장면(=문장) 수 |
 | `[script]` `sentence` / `unit` | 문장 하나 길이 [최소, 최대]와 단위(`chars` 글자 · `words` 낱말) |
 | `[script]` `llm` | 대본 쓰기·고치기·검수·번역만 다른 LLM으로(registry `LLMS` 이름, 예 `claude-code`는 Claude 구독으로 돈다. 모델·생각 깊이는 `.env`의 `CLAUDE_CODE_MODEL`·`CLAUDE_CODE_EFFORT`, 기본 opus 5.5·high. `antigravity`도 된다). 비우면 `llm` |
