@@ -152,3 +152,41 @@ def test_aspect_defaults_to_shorts_and_long_form_picks_16_9():
     assert page.clicked == ["동영상", "소재", "16:9", "360p", "8초", "x1"]
     with pytest.raises(RuntimeError, match="Flow 설정을 맞추지 못했어요"):   # 화면비가 안 바뀌면 멈춘다
         flow_auto._settings(Page("동영상 crop_9_16 360p 8초 x1"), "16:9")
+
+
+def test_generate_leaves_edit_view_before_prompt(tmp_path, monkeypatch):
+    """편집 화면에 남았으면 프로젝트로 돌아가 넣는다. 그대로 넣으면 그 영상 고치기가 된다."""
+    ok = {"done": True, "error": None}
+
+    class P:
+        url = "https://flow.google.com/project/p1/edit/e1"
+        keyboard = first = property(lambda self: self)
+
+        def __init__(self):
+            self.log = []
+
+        def goto(self, url):
+            self.url = url
+            self.log.append(("goto", url))
+
+        def evaluate(self, js):
+            return [ok]
+
+        def locator(self, *a, **k):
+            return self
+
+        def click(self):
+            self.log.append(("click", self.url))
+
+        def press(self, key):
+            pass
+
+        def insert_text(self, text):
+            pass
+
+    monkeypatch.setattr(flow_auto, "_wait", lambda page, until, timeout: until([ok, ok]))
+    monkeypatch.setattr(flow_auto, "_download", lambda page, path: None)
+    page = P()
+    flow_auto._generate(page, "기차", tmp_path / "clip0.mp4")
+    assert page.log[0] == ("goto", "https://flow.google.com/project/p1")
+    assert all(u == "https://flow.google.com/project/p1" for k, u in page.log if k == "click")
