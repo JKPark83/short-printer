@@ -2,8 +2,10 @@
 대본(script.llm)·주제 찾기(trends.llm)에 쓴다."""
 import json
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Sequence
 from pathlib import Path
@@ -19,6 +21,17 @@ TIMEOUT = 1200   # 대본은 생각이 길어 몇 분씩 걸린다
 FLAGS = ["--output-format", "json", "--setting-sources", "", "--strict-mcp-config",
          "--disable-slash-commands", "--no-session-persistence"]
 WEB = "필요하면 답하기 전에 WebSearch로 찾는다. 검색은 5번까지만 한다."   # Claude WEB_SEARCH max_uses와 같게
+# PreToolUse 훅: 모델이 WebSearch에 무엇을 넣든 allowed_domains를 허용 사이트로 덮어쓴다(API처럼 강제)
+HOOK = ("import json,sys; i=json.load(sys.stdin)['tool_input']; i.pop('blocked_domains', None); "
+        "print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'allow', "
+        "'updatedInput': i | {'allowed_domains': %s}}}))")
+
+
+def _only(domains: Sequence[str]) -> str:
+    """--settings 값: WebSearch마다 HOOK을 돌린다."""
+    cmd = f"{shlex.quote(sys.executable)} -c {shlex.quote(HOOK % json.dumps(list(domains)))}"
+    hook = {"matcher": "WebSearch", "hooks": [{"type": "command", "command": cmd}]}
+    return json.dumps({"hooks": {"PreToolUse": [hook]}})
 
 
 class ClaudeCode:
@@ -49,9 +62,9 @@ class ClaudeCode:
         if web:   # -p에는 묻는 사람이 없어 allowedTools로 미리 허락해야 검색한다
             tools = ["--tools", "WebSearch", "--allowedTools", "WebSearch"]
             system += "\n\n" + WEB
-            if not isinstance(web, bool):   # 사이트 제한은 CLI 옵션이 없어 도구 인자를 지시문으로 건다
-                system += (f" WebSearch의 allowed_domains에 {', '.join(web)}를 넣어 "
-                           "그 사이트(하위 도메인 포함) 안에서만 찾는다.")
+            if not isinstance(web, bool):   # 사이트 제한 CLI 옵션이 없어 훅으로 건다(--setting-sources ""여도 돈다)
+                tools += ["--settings", _only(web)]
+                system += f" 검색 결과는 다음 사이트(하위 도메인 포함)에서만 나온다: {', '.join(web)}."
         cmd = [CLI, "-p", *FLAGS, *tools, "--model", self.model, "--effort", config.CLAUDE_CODE_EFFORT,
                "--system-prompt", system, "--json-schema", json.dumps(schema.model_json_schema())]
         # API 키가 환경에 있으면 CLI가 구독 대신 API로 과금한다(.env를 os.environ에 읽어 둔다)
