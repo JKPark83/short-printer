@@ -98,8 +98,11 @@ class LocalQueue:
         kind, _, target = kind.partition(":")   # "upload:instagram" → 더 올리는 곳
         target = target or None
         if kind == "run":
-            with self.lock:   # 대기 중에 취소됐거나 같은 작업이 두 번 들어왔으면 건너뛴다
-                job = pipeline.Job.load(job_id)
+            with self.lock:   # 대기 중에 취소·삭제됐거나 같은 작업이 두 번 들어왔으면 건너뛴다
+                try:
+                    job = pipeline.Job.load(job_id)
+                except FileNotFoundError:   # 큐에 남은 몫이 작업 스레드를 죽이지 않게
+                    return
                 if job.data["status"] != "queued":
                     return
                 job.update(status="running", cancel=None)

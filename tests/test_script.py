@@ -59,7 +59,7 @@ def test_ko_system_keeps_every_old_rule(ko):
     sys = script.system(ko)
     for rule in ["80~90초", "정확히 11개", "56~63자", "63자를 넘지", "이모지·해시태그·괄호", "120~160단어",
                  "[00:06-00:08]", "[00:04-00:08]", "photoreal", "주인공·장소·시대·옷차림", "앞 5초",
-                 "No on-screen text, no numbers, no logos.",
+                 "No on-screen text, no letters, no signs, no numbers, no logos.",
                  "실존 인물의 얼굴", "No dialogue, no voices, no music.",
                  "훅", "존댓말", "사실 시트", "fact_ids", "prompt_ko",
                  "그런데 몸 안을 들여다보면 이야기가 달라집니다.", "내 몸이 더 궁금하다면 구독, 좋아요 눌러 주세요!",
