@@ -196,6 +196,7 @@ def test_render_clean_layout_intro_title_band_thumbnail(tmp_path, ch):
     render.render(tmp_path, clips, timing[-1]["end"], clean, KO, (["커피 상식"], "상식"), [t["start"] for t in timing])
     # 제목은 full 자리에 처음 1초 보이고 0.5초 동안 사라진다
     title = (tmp_path / "title.ass").read_text()
+    assert ",8,90,90,1150," in (tmp_path / "subs.ass").read_text()   # 자막은 아래 UI를 피해 가운데보다 조금 아래
     assert ",8,80,80,280," in title and "0:00:00.00,0:00:01.50,Cap,,0,0,0,,{\\fad(0,500)}" in title
     render.thumbnail(tmp_path, ["커피"], "", "top", clean, KO, "clip0.mp4")
     assert ",2,80,80,1390," in (tmp_path / "thumb.ass").read_text()   # 썸네일은 band 제목 자리

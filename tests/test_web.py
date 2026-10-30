@@ -105,6 +105,7 @@ def test_cancel_takes_queued_job_out_and_asks_running_job_to_stop():
     assert 'data-retry="cancel"' in client.get(f"/jobs/{job.id}").text
     assert client.post(f"/api/jobs/{job.id}/cancel").json() == {"ok": True}
     web.q.run_one(job.id)   # 큐에 남은 몫은 건너뛴다
+    web.q.run_one("20000101-000000-gone")   # 취소 뒤 지운 작업도 작업 스레드를 죽이지 않는다
     d = job.data
     assert d["status"] == "interrupted" and d["cancel"]
     assert client.get(f"/api/jobs/{job.id}").json()["sig"].endswith(":취소")

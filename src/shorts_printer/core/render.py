@@ -37,9 +37,9 @@ class Layout(NamedTuple):
 # 화면 배치(channel.toml style.layout). full은 9:16 전체에 텔롭: 위아래 약 250px은 쇼츠 UI가 덮으므로
 # 제목은 위 UI 바로 아래에 위 정렬(가운데보다 위), 자막은 아래 제목·채널 이름 칸 위(1385~ 한 줄)
 # clean은 full에서 제목을 처음에만 띄우는 것: 피드 첫 화면에 훅을 보이고 곧 사라져 영상을 가리지 않는다.
-# 자막은 band(1465)보다 조금 아래. 더 내리면 쇼츠 아래 제목·채널 이름과 겹친다
+# 자막은 가운데보다 조금 아래(1150): 화면 아래 20%는 기기·앱마다 채널 이름·설명이 덮고, 위쪽은 인물 얼굴을 가린다
 LAYOUTS = {"band": Layout(BOX_Y, BOX_H, TITLE_POS, 1465), "full": Layout(0, 1920, (8, 280), 1385),
-           "clean": Layout(0, 1920, (8, 280), 1510, True)}
+           "clean": Layout(0, 1920, (8, 280), 1150, True)}
 THUMB_LAYOUT = {"clean": "band"}   # 썸네일 배치가 영상과 다른 것
 GRADIENT = "gradients=s=1080x1920:r=30:c0=0x{}:c1=0x{}:speed=0.01:d={dur}"
 # 목소리·장면 클립 소리(Flow가 만든 효과음) 크기는 채널 style.voice_lufs·sfx_lufs
