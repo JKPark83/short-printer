@@ -13,8 +13,8 @@ import pydantic
 
 from .. import config
 
-# 백만 토큰당 달러(입력, 출력). 모르는 모델이면 비용을 비워 둔다.
-PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-4-5": (1, 5)}
+# 백만 토큰당 달러(입력, 출력, 캐시 읽기). 캐시 쓰기는 입력의 1.25배(5분). 모르는 모델이면 비용을 비워 둔다.
+PRICES = {"claude-opus-5-5": (4, 20, 0.2), "claude-sonnet-5-5": (2, 10, 0.2), "claude-haiku-4-5": (1, 5, 0.1)}
 SEARCH_USD = 0.01   # 웹 검색 한 번
 WEB_SEARCH = {"type": "web_search_20260209", "name": "web_search", "max_uses": 5}
 NO_KEY = "Claude API 키가 없어요. .env에 ANTHROPIC_API_KEY를 넣고 서버를 다시 켜세요."
@@ -22,9 +22,12 @@ COST_REPORT = "https://api.anthropic.com/v1/organizations/cost_report"   # Admin
 BLOCKED = re.compile(r"not accessible to our user agent: \[([^\]]*)\]")
 
 
-def cost(model: str, inp: int, out: int) -> float | None:
+def cost(model: str, inp: int, out: int, written: int = 0, read: int = 0) -> float | None:
+    """inp는 캐시 밖 입력만. written·read는 캐시에 쓴·캐시에서 읽은 입력 토큰."""
     price = next((p for k, p in PRICES.items() if model.startswith(k)), None)
-    return round((inp * price[0] + out * price[1]) / 1e6, 4) if price else None
+    if not price:
+        return None
+    return round((inp * price[0] + written * price[0] * 1.25 + read * price[2] + out * price[1]) / 1e6, 4)
 
 
 # 안전 분류기가 거절하면 서버가 대체 모델로 다시 돌린다
@@ -130,20 +133,24 @@ class Claude:
         # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
         tools = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}] if web else None
         messages = [{"role": "user", "content": content}]
-        inp = out = searches = 0
+        inp = out = written = read = searches = 0
         with errors():
             for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
                 resp, tools = with_sites(lambda t: stream(
                     model=model,
                     # 생각 토큰도 여기서 빠진다. 대본은 생각만 1만 토큰을 넘기도 한다
                     max_tokens=128000,   # Opus 5.5 상한
-                    system=system,
+                    # 지시문(system)만 캐시한다: 다시 검수·고쳐 쓰기는 같은 지시문에 user만 바뀐다.
+                    # 전체를 캐시하면 한 번 쓰는 호출까지 입력 전부를 1.25배로 쓴다
+                    system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
                     messages=messages,
                     output_format=schema,
                     **(extra | {"tools": t} if t else extra),
                 ), tools)
                 u = resp.usage
                 inp, out = inp + u.input_tokens, out + u.output_tokens
+                written += getattr(u, "cache_creation_input_tokens", 0) or 0
+                read += getattr(u, "cache_read_input_tokens", 0) or 0
                 searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
                 if resp.stop_reason != "pause_turn":
                     break
@@ -154,6 +161,6 @@ class Claude:
             raise RuntimeError(f"{what}을 받지 못했어요(stop_reason={resp.stop_reason}).")
         # ponytail: 대체 모델이 돌았으면 응답 모델 값으로 한 번에 계산한다.
         # 정확한 단계별 비용은 usage.iterations를 보면 된다.
-        usd = cost(resp.model, inp, out)
-        return resp.parsed_output, {"model": resp.model, "input_tokens": inp, "output_tokens": out,
+        usd = cost(resp.model, inp, out, written, read)
+        return resp.parsed_output, {"model": resp.model, "input_tokens": inp + written + read, "output_tokens": out,
                                     "cost_usd": None if usd is None else round(usd + searches * SEARCH_USD, 4)}
