@@ -50,6 +50,7 @@
 | `[style]` `voice_lufs` / `sfx_lufs` | 목소리를 맞출 크기(0이면 원본 그대로) / 장면 클립 효과음을 맞출 크기(그 뒤 70%). LUFS, 기본 0 / -21 |
 | `[style]` `layout` | `band`(기본, 위아래 검은 띠 + 가운데 영상) · `full`(띠 없이 9:16 전체, 제목·자막은 위아래 UI 250px을 피한다) · `clean`(띠 없이 9:16 전체, 제목은 처음 1초만 보이고 사라진다, 썸네일은 band) |
 | `[thumbnail]` `max_line` / `max_total` | 썸네일 문구 한 줄 / 전체 길이 한도 |
+| `[insights]` `llm` | 성과 화면 AI 분석·다음 편 제안 LLM(registry `LLMS` 이름, 예 `claude` = Claude API). 비우면 `llm` |
 | `[publish]` `provider` / `category` | `youtube` / YouTube 카테고리 번호(22 = People & Blogs, 27 = Education) |
 | `[publish]` `also` | 더 올리는 곳 목록(registry `PUBLISHERS` 이름, 예 `["instagram"]`). 작업 화면에서 버튼을 눌러야만 올라가고 스케줄은 `provider`만 올린다. Instagram은 바로 공개, 캡션 끝에 해시태그(태그 30개까지), `footer`는 자르지 않는다. 연결은 `uv run sp instagram-login --channel <id>` |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |

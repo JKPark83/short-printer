@@ -1,0 +1,77 @@
+{# 성과 화면 부품. 불러올 때 with context(icon을 쓴다). 숫자가 아니면(받지 못함) — 로 보이고 0으로 꾸미지 않는다 #}
+{% macro n(v) %}{{ '—' if v is not number else '{:,}'.format(v|round|int) }}{% endmacro %}
+{% macro pct(v) %}{{ '—' if v is not number else '%.1f'|format(v) ~ '%' }}{% endmacro %}
+{% macro md(day) %}{{ day[5:]|replace('-', '/') if day else '' }}{% endmacro %}
+
+{% macro delta(v, before=none, unit='%') %}
+{%- if v is not number and before == 0 %}<span class="in-pill">앞 기간 0</span>
+{%- elif v is not number %}<span class="in-pill">앞 기간 없음</span>
+{%- elif v > 0 %}<span class="in-pill up"><span aria-hidden="true">▲</span> {{ v }}{{ unit }}</span>
+{%- elif v < 0 %}<span class="in-pill down"><span aria-hidden="true">▼</span> {{ -v }}{{ unit }}</span>
+{%- else %}<span class="in-pill">그대로</span>{% endif -%}
+{% endmacro %}
+
+{% macro head(ch, tab, tabs, days, extra='', show_days=true) %}
+<div class="in-head">
+  <div>
+    <p class="in-kicker">{{ icon('chart', 14) }}채널 성과</p>
+    <h1>{{ ch.name if ch else '성과' }}</h1>
+  </div>
+  {% if show_days %}<nav class="in-days" aria-label="기간">{% for d in (7, 28, 90) %}<a href="/insights?tab={{ tab }}&days={{ d }}{{ extra }}"{% if d == days %} aria-current="true"{% endif %}>{{ d }}일</a>{% endfor %}</nav>{% endif %}
+</div>
+<nav class="in-tabs" aria-label="성과 보기">{% for k, label in tabs.items() %}<a href="/insights?tab={{ k }}&days={{ days }}"{% if k == tab %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+{% endmacro %}
+
+{% macro problem(ch, error) %}
+{% if not ch %}<div class="in-empty"><strong>채널을 골라 주세요</strong><p>위 채널 고르기에서 성과를 볼 채널을 고르면 돼요.</p></div>
+{% else %}<div class="banner banner-warn">{{ icon('alert', 18) }}<div><strong>성과를 불러오지 못했어요</strong><p>{{ error }}</p></div></div>{% endif %}
+{% endmacro %}
+
+{% macro spark(points) %}{% if points %}<svg class="in-spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true" focusable="false"><polyline points="{{ points }}"/></svg>{% endif %}{% endmacro %}
+
+{% macro trend_chart(tr, title, unit='회', prev=true) %}
+<figure class="in-trend">
+  <figcaption>
+    <strong>{{ title }}</strong>
+    <span class="in-legend"><span class="key now" aria-hidden="true"></span>이번 기간{% if prev and tr.prev %}<span class="key before" aria-hidden="true"></span>앞 기간{% endif %}</span>
+  </figcaption>
+  <div class="in-plot">
+    <svg viewBox="0 0 {{ tr.w }} {{ tr.h }}" preserveAspectRatio="none" role="img"
+         aria-label="{{ title }}: {{ md(tr.first) }}부터 {{ md(tr.last) }}까지{% if tr.peak %}, 가장 많은 날 {{ md(tr.peak.day) }} {{ n(tr.peak.value) }}{{ unit }}{% else %}, 모두 0{{ unit }}{% endif %}" focusable="false">
+      <line class="base" x1="0" x2="{{ tr.w }}" y1="{{ tr.h - 10 }}" y2="{{ tr.h - 10 }}"/>
+      {% if prev and tr.prev %}<polyline class="before" points="{{ tr.prev }}"/>{% endif %}
+      <path class="area" d="{{ tr.area }}"/>
+      <polyline class="now" points="{{ tr.line }}"/>
+    </svg>
+    {% if tr.peak %}<span class="in-peak" style="left: {{ tr.peak.left }}%; top: {{ tr.peak.top }}%" aria-hidden="true"></span>
+    <span class="in-sticker{{ ' right' if tr.peak.left > 60 else ' left' if tr.peak.left < 25 }}" style="left: {{ tr.peak.left }}%; top: {{ tr.peak.top }}%">최고 {{ n(tr.peak.value) }}{{ unit }} · {{ md(tr.peak.day) }}</span>{% endif %}
+  </div>
+  <div class="in-axis" aria-hidden="true"><span>{{ md(tr.first) }}</span><span>{{ md(tr.last) }}</span></div>
+</figure>
+{% endmacro %}
+
+{% macro donut(pie, center, label) %}
+{% if pie.parts %}
+<div class="in-donut-wrap">
+  <div class="in-donut" style="background: {{ pie.bg }}" role="img" aria-label="{{ label }}: {% for p in pie.parts %}{{ p.label }} {{ p.share }}%{{ ', ' if not loop.last }}{% endfor %}">
+    <span>{{ center }}</span>
+  </div>
+  <ul class="in-legend-list">{% for p in pie.parts %}<li><span class="dot" style="background: {{ p.color }}" aria-hidden="true"></span><span class="name">{{ p.label }}</span><b>{{ p.share }}%</b></li>{% endfor %}</ul>
+</div>
+{% else %}<p class="in-soft">아직 나눌 만큼 조회가 없어요(0이라는 뜻은 아니에요).</p>{% endif %}
+{% endmacro %}
+
+{% macro barlist(rows, shown=5, unit='회') %}
+{% if rows %}
+<ol class="in-barlist">
+  {% for r in rows[:shown] %}<li><span class="name">{{ r.label }}</span><span class="track" aria-hidden="true"><span style="width: {{ [r.share or 0, 3]|max }}%"></span></span><b>{{ pct(r.share) }}</b><small>{{ n(r.views) }}{{ unit }}</small></li>{% endfor %}
+</ol>
+{% if rows|length > shown %}
+<details class="in-more"><summary>{{ rows|length - shown }}개 더 보기</summary>
+  <ol class="in-barlist" start="{{ shown + 1 }}">{% for r in rows[shown:] %}<li><span class="name">{{ r.label }}</span><span class="track" aria-hidden="true"><span style="width: {{ [r.share or 0, 3]|max }}%"></span></span><b>{{ pct(r.share) }}</b><small>{{ n(r.views) }}{{ unit }}</small></li>{% endfor %}</ol>
+</details>
+{% endif %}
+{% else %}<p class="in-soft">아직 나눌 만큼 조회가 없어요(0이라는 뜻은 아니에요).</p>{% endif %}
+{% endmacro %}
+
+{% macro notes(items) %}{% if items %}<details class="in-notes"><summary>{{ icon('info', 14) }}숫자 읽는 법</summary><ul>{% for m in items %}<li>{{ m }}</li>{% endfor %}</ul></details>{% endif %}{% endmacro %}

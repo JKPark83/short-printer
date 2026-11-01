@@ -1,0 +1,57 @@
+{% extends "_base.html" %}
+{% from "_insight_ui.html" import n, pct, md, head, problem, trend_chart, donut, notes with context %}
+{% block title %}영상 성과 · Shorts Studio{% endblock %}
+{% block main %}
+<main id="page" tabindex="-1" class="wrap wrap-dash in-page">
+  <a class="back" href="/insights?tab=videos&days={{ days }}">← 영상 목록</a>
+  {% if error or not data %}{{ problem(ch, error) }}
+  {% else %}
+  {% set v, t = data.video, data.totals or {} %}
+  <section class="card in-card in-hero" aria-labelledby="h-v">
+    {% if v.thumbnail %}<img src="{{ v.thumbnail }}" alt="" loading="lazy">{% endif %}
+    <div>
+      <h1 id="h-v">{{ v.title }}</h1>
+      <p class="muted">{{ md(v.published[:10]) }}{% if v.seconds %} · {{ v.seconds|mmss }}{% endif %} · 누적 {{ n(v.views) }}회 · 좋아요 {{ n(v.likes) }}</p>
+      <p class="in-links"><a class="chip" href="https://youtu.be/{{ v.id }}" target="_blank" rel="noopener noreferrer">YouTube에서 보기</a>{% if job %}<a class="chip" href="/jobs/{{ job }}">작업 화면</a>{% endif %}</p>
+    </div>
+    <nav class="in-days" aria-label="기간">{% for d in (7, 28, 90) %}<a href="/insights/videos/{{ v.id }}?days={{ d }}"{% if d == days %} aria-current="true"{% endif %}>{{ d }}일</a>{% endfor %}</nav>
+  </section>
+  <p class="in-range">{{ md(data.range.startDate) }} ~ {{ md(data.range.endDate) }}</p>
+
+  {% if data.status == 'no_data' %}
+  <div class="in-empty"><strong>이 기간 성과가 아직 없어요</strong><p>{{ data.notes[-1] }}</p></div>
+  {% else %}
+  <section class="tiles in-kpis" aria-label="이 영상 기간 합계">
+    <div class="tile"><span class="t-label">{{ icon('play', 14) }}조회수</span><span class="t-num">{{ n(t.views) }}</span></div>
+    <div class="tile"><span class="t-label">{{ icon('clock', 14) }}평균 시청 시간</span><span class="t-num">{{ '—' if t.averageViewDuration is not number else t.averageViewDuration|mmss }}</span>{% if v.seconds %}<span class="in-pill">영상 {{ v.seconds|mmss }}</span>{% endif %}</div>
+    <div class="tile"><span class="t-label">{{ icon('film', 14) }}평균 시청 비율</span><span class="t-num">{{ '—' if t.averageViewPercentage is not number else '%.1f'|format(t.averageViewPercentage) }}<small>%</small></span>
+      {% if t.averageViewPercentage is number and data.channel_watch is number %}{% set gap = (t.averageViewPercentage - data.channel_watch)|round(1) %}<span class="in-pill {{ 'up' if gap > 0 else 'down' if gap < 0 }}">채널 평균보다 {{ '%+.1f'|format(gap) }}%p</span>{% endif %}</div>
+    <div class="tile"><span class="t-label">{{ icon('sparkles', 14) }}구독 순증</span><span class="t-num">{{ '%+d'|format((t.subscribersGained or 0) - (t.subscribersLost or 0)) }}</span><span class="in-pill">좋아요 {{ n(t.likes) }} · 공유 {{ n(t.shares) }}</span></div>
+  </section>
+  <section class="card in-card" aria-labelledby="h-tr">
+    <h2 id="h-tr" class="sr-only">조회수 흐름</h2>
+    {% if trend %}{{ trend_chart(trend, '조회수 흐름', prev=false) }}{% else %}<p class="in-soft">흐름을 그릴 만큼 받은 날이 없어요.</p>{% endif %}
+  </section>
+  {% endif %}
+
+  <div class="in-duo">
+    <section class="card in-card" aria-labelledby="h-ret">
+      <h2 id="h-ret">구간 유지율</h2>
+      {% if curve %}
+      <figure class="in-trend">
+        <div class="in-plot"><svg class="in-curve" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="영상 처음부터 끝까지 시청 비율 곡선" focusable="false">
+          <line x1="0" x2="300" y1="40" y2="40" class="ref"/><polyline points="{{ curve }}"/></svg></div>
+        <div class="in-axis" aria-hidden="true"><span>처음</span><span>끝</span></div>
+        <figcaption class="in-soft">점선은 시청 비율 100%예요. 반복 시청이 많으면 100%를 넘어요.</figcaption>
+      </figure>
+      {% else %}<p class="in-soft">{{ (data.retention.warnings or ['유지율은 조회가 어느 정도 쌓여야 YouTube가 줘요.'])[0] }}</p>{% endif %}
+    </section>
+    <section class="card in-card" aria-labelledby="h-src">
+      <h2 id="h-src">어디서 보러 왔나</h2>
+      {{ donut(pie, n(data.traffic.total) ~ '회', '이 영상 유입 경로') }}
+    </section>
+  </div>
+  {{ notes(data.notes) }}
+  {% endif %}
+</main>
+{% endblock %}

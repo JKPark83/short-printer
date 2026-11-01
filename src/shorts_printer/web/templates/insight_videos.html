@@ -1,0 +1,46 @@
+{% extends "_base.html" %}
+{% from "_insight_ui.html" import n, pct, md, head, problem, notes with context %}
+{% block title %}영상 성과 · Shorts Studio{% endblock %}
+{% block main %}
+<main id="page" tabindex="-1" class="wrap wrap-dash in-page">
+  {{ head(ch, tab, tabs, days, '&sort=' ~ (data.sort if data else 'new')) }}
+  {% if error or not ch %}{{ problem(ch, error) }}
+  {% else %}
+  {% set sm = data.summary %}
+  <p class="in-range">{{ md(data.range.startDate) }} ~ {{ md(data.range.endDate) }} <span class="muted">· 영상마다 이 기간 성과</span></p>
+  <section class="tiles in-kpis" aria-label="이 쪽 영상 요약">
+    <div class="tile"><span class="t-label">{{ icon('film', 14) }}영상</span><span class="t-num">{{ sm.count }}<small>개</small></span><span class="in-pill">누적 {{ n(sm.lifetime) }}회</span></div>
+    <div class="tile"><span class="t-label">{{ icon('play', 14) }}기간 조회수</span><span class="t-num">{{ n(sm.views) }}</span></div>
+    <div class="tile"><span class="t-label">{{ icon('clock', 14) }}평균 시청 비율</span><span class="t-num">{{ '—' if sm.watch is not number else sm.watch }}<small>%</small></span><span class="in-pill">조회 가중</span></div>
+    <div class="tile"><span class="t-label">{{ icon('sparkles', 14) }}이번 기간 1등</span><span class="t-num in-best">{% if sm.best %}<a href="/insights/videos/{{ sm.best.id }}?days={{ days }}">{{ sm.best.title|truncate(18, true, '…') }}</a>{% else %}—{% endif %}</span></div>
+  </section>
+
+  <section class="card in-card" aria-labelledby="h-list">
+    <div class="in-cardhead">
+      <h2 id="h-list">영상별 성과</h2>
+      <nav class="in-sort" aria-label="늘어놓기">{% for k, label in sorts.items() %}<a href="/insights?tab=videos&days={{ days }}&sort={{ k }}{{ '&page=' ~ page|urlencode if page }}"{% if k == data.sort %} aria-current="true"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+    </div>
+    {% if data['items'] %}
+    <ul class="in-vcards">{% for v in data['items'] %}{% set p = v.period %}
+      <li class="in-vcard">
+        <a class="in-vlink" href="/insights/videos/{{ v.id }}?days={{ days }}">
+          {% if v.thumbnail %}<img src="{{ v.thumbnail }}" alt="" loading="lazy">{% endif %}
+          <span class="in-title">{{ v.title }}<small class="muted">{{ md(v.published[:10]) }}{% if v.seconds %} · {{ v.seconds|mmss }}{% endif %} · 누적 {{ n(v.views) }}회{% if v.privacy and v.privacy != 'public' %} · {{ {'private': '비공개', 'unlisted': '일부 공개'}.get(v.privacy, v.privacy) }}{% endif %}</small></span>
+        </a>
+        {% if p %}
+        <dl class="in-stats">
+          <div><dt>기간 조회수</dt><dd>{{ n(p.views) }}</dd></div>
+          <div><dt>시청 비율</dt><dd>{{ pct(p.averageViewPercentage) }}<span class="track" aria-hidden="true"><span style="width: {{ [[p.averageViewPercentage or 0, 100]|min, 3]|max }}%"></span></span></dd></div>
+          <div><dt>좋아요 · 구독</dt><dd>{{ n(p.likes) }} · {{ '%+d'|format((p.subscribersGained or 0) - (p.subscribersLost or 0)) }}</dd></div>
+        </dl>
+        {% else %}<p class="in-wait">{{ icon('clock', 14) }}<span>이 기간 성과가 아직 없어요 <span class="muted">(기간 뒤에 올렸거나 조회 전 · YouTube 집계는 이틀쯤 늦어요)</span></span></p>{% endif %}
+        {% if jobs.get(v.id) %}<a class="chip in-job" href="/jobs/{{ jobs[v.id] }}">작업 화면</a>{% endif %}
+      </li>
+    {% endfor %}</ul>
+    {% if data.next %}<a class="btn btn-secondary" href="/insights?tab=videos&days={{ days }}&sort={{ data.sort }}&page={{ data.next|urlencode }}">다음 쪽</a>{% endif %}
+    {% else %}<div class="in-empty"><strong>올린 영상이 없어요</strong><p>첫 편을 올리면 여기서 성과를 볼 수 있어요.</p></div>{% endif %}
+  </section>
+  {{ notes(data.notes + ['누적 조회수는 공개 통계, 기간 성과는 YouTube Analytics라 서로 기준이 달라요. 늘어놓기는 이 쪽(최대 20편) 안에서만 바뀌어요.']) }}
+  {% endif %}
+</main>
+{% endblock %}

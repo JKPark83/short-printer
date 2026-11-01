@@ -65,6 +65,10 @@ class ThumbCfg(BaseModel):
     max_total: int = Field(16, ge=1)
 
 
+class InsightsCfg(BaseModel):
+    llm: str = ""   # 성과 화면 AI 분석·다음 편 제안 LLM(registry LLMS 이름, 예 claude = Claude API). 비우면 채널 llm
+
+
 class PublishCfg(BaseModel):
     provider: str = "youtube"
     category: str = "22"
@@ -141,6 +145,7 @@ class Channel(BaseModel):
     trends: TrendsCfg
     research: ResearchCfg = ResearchCfg()
     long: LongCfg = LongCfg()
+    insights: InsightsCfg = InsightsCfg()
 
     @property
     def lang_name(self) -> str:

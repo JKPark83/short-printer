@@ -1,0 +1,28 @@
+{% extends "_base.html" %}
+{% from "_insight_ui.html" import n, md, head, problem, donut, barlist, notes with context %}
+{% block title %}시청자 · Shorts Studio{% endblock %}
+{% block main %}
+<main id="page" tabindex="-1" class="wrap wrap-dash in-page">
+  {{ head(ch, tab, tabs, days) }}
+  {% if error or not ch %}{{ problem(ch, error) }}
+  {% else %}
+  <p class="in-range">{{ md(data.range.startDate) }} ~ {{ md(data.range.endDate) }} <span class="muted">· 조회수 기준 비율</span></p>
+  {% set hue = {'traffic': 'h-rose', 'format': 'h-sun', 'subscribed': 'h-mint', 'device': 'h-sky', 'country': 'h-mint', 'search': 'h-sun'} %}
+  {% set tip = {'traffic': '어디서 보러 왔는지', 'format': 'Shorts와 일반 영상', 'subscribed': '볼 때 구독 중이었는지', 'device': '어떤 기기로 봤는지', 'country': '어느 나라에서 봤는지', 'search': 'YouTube 검색어'} %}
+  <div class="in-grid">
+    {% for c in data.cards %}
+    <section class="card in-card {{ hue[c.dim] }}" aria-labelledby="h-{{ c.dim }}">
+      <h2 id="h-{{ c.dim }}">{{ c.name }}<small>{{ tip[c.dim] }}</small></h2>
+      {% if c.status == 'unavailable' %}<p class="in-soft">{{ icon('alert', 14) }}지금은 YouTube가 이 기준을 주지 않아요. 잠시 뒤 다시 열어 보세요.</p>
+      {% elif c.dim in pies %}{{ donut(pies[c.dim], n(c.total) ~ '회', c.name) }}
+      {% elif c.dim == 'search' %}
+        {% if c.rows %}<ol class="in-chips">{% for r in c.rows[:8] %}<li><span>{{ r.label }}</span><b>{{ n(r.views) }}</b></li>{% endfor %}</ol>
+        {% else %}<p class="in-soft">아직 검색으로 들어온 조회가 없어요.</p>{% endif %}
+      {% else %}{{ barlist(c.rows) }}{% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {{ notes(data.notes + ['조회가 적으면 YouTube가 나눠 주지 않아 빈 카드가 생겨요. 0이라는 뜻은 아니에요.']) }}
+  {% endif %}
+</main>
+{% endblock %}
