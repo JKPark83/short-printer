@@ -235,7 +235,8 @@ def test_claude_returns_result_and_cost(monkeypatch):
     assert usage == {"model": "claude-opus-5-5", "input_tokens": 1000, "output_tokens": 2000, "cost_usd": 0.044}
     assert calls[0]["output_format"] is script.Script and calls[0]["fallbacks"] == "default"
     assert calls[0]["max_tokens"] == 128000
-    assert calls[0]["messages"][0]["content"] == "글" and calls[0]["system"] == "sys" and "tools" not in calls[0]
+    assert calls[0]["messages"][0]["content"] == "글" and "tools" not in calls[0]
+    assert calls[0]["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]
 
 
 def test_claude_web_search_resumes_pause_and_adds_search_cost(monkeypatch):
