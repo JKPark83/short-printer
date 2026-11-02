@@ -1,0 +1,191 @@
+<title>알쓸몸잡 11월 주제 인사이트</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* 한 단 보고서: 결론 → 표 → 근거. 숫자는 고정폭, 공유형·유지형은 색 칩으로 가른다 */
+:root {
+  --bg: #f6f7f6; --surface: #ffffff; --fg: #1b2422; --muted: #4f5d59; --line: #d9e0dd;
+  --accent: #0e6b5c; --share: #9a3412; --keep: #1e40af; --bad: #9f1239;
+  --chip-share: #fde8dc; --chip-keep: #dde6fb; --chip-bad: #fbe0e6;
+  --display: "Black Han Sans", "Apple SD Gothic Neo", sans-serif;
+  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121816; --surface: #1a2220; --fg: #e4ece9; --muted: #95a6a1; --line: #2c3834;
+  --accent: #4fd1b5; --share: #fb923c; --keep: #93b4ff; --bad: #fb7185;
+  --chip-share: #3a2416; --chip-keep: #1c2744; --chip-bad: #3b1822; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121816; --surface: #1a2220; --fg: #e4ece9; --muted: #95a6a1; --line: #2c3834;
+  --accent: #4fd1b5; --share: #fb923c; --keep: #93b4ff; --bad: #fb7185;
+  --chip-share: #3a2416; --chip-keep: #1c2744; --chip-bad: #3b1822; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font: 15px/1.7 var(--body); padding-inline: 16px; padding-block: 32px 64px }
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 40px }
+h1, h2 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0 }
+h1 { font-size: 2.1rem; line-height: 1.25 }
+h2 { font-size: 1.35rem; color: var(--accent) }
+section { display: grid; gap: 14px; min-width: 0 }
+p { margin: 0; max-width: 68ch }
+.eyebrow { font: 500 .78rem var(--mono); letter-spacing: .04em; color: var(--muted) }
+.lead { font-size: 1.12rem }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px }
+table { border-collapse: collapse; width: 100%; font-size: .9rem }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top }
+th { font-weight: 600; color: var(--muted); font-size: .8rem; white-space: nowrap }
+tr:last-child td { border-bottom: 0 }
+.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap }
+.chip { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: .75rem; font-weight: 600; white-space: nowrap }
+.share { background: var(--chip-share); color: var(--share) }
+.keep { background: var(--chip-keep); color: var(--keep) }
+.bad { background: var(--chip-bad); color: var(--bad) }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px }
+.fact { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px }
+.fact b { display: block; font: 500 1.25rem var(--mono); font-variant-numeric: tabular-nums }
+.fact span { color: var(--muted); font-size: .8rem }
+blockquote { margin: 0; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font-size: .92rem }
+ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; max-width: 70ch }
+pre { margin: 0; padding: 12px; font: .8rem/1.6 var(--mono); white-space: pre-wrap }
+.del { color: var(--bad) } .add { color: var(--accent) }
+a { color: var(--accent) }
+.muted { color: var(--muted); font-size: .85rem }
+</style>
+
+<main>
+<header style="display:grid;gap:10px">
+  <div class="eyebrow">TOPIC INSIGHTS · momjob · 2026-11-02</div>
+  <h1>전기장판은 공유가 아니라 알고리즘을 탔다</h1>
+  <p class="lead">링크로 받은 전기장판 릴스는 조회 38만(채널 중앙값의 198배)인데 공유율은 1.5%로 평범했다. 처음 보는 사람이 99.9%, 반박 댓글이 맨 위다. 유튜브에서도 계속 시청 59%(채널 중앙값 44%)로 붙잡는 힘이 셌다. 계절 습관을 상식과 반대로 짚은 첫 문장이 추천을 탄 경우다. 공유로 퍼지는 건 여전히 민망한 몸 이야기(찬바람 젖꼭지 인스타 공유 20.5%)인데, 이 영상은 유튜브 평균 시청 비율이 30%로 낮았다. 가중치는 trend 20→17, fresh 10→13으로 옮기고 trends.md 예시와 규칙 두 줄을 바꾸자고 제안한다.</p>
+</header>
+
+<section>
+  <h2>터진 영상과 바닥 영상</h2>
+  <p class="muted">인스타 최근 30일 62편. 조회 중앙값 1,914, 공유율 중앙값 0.79%. 유튜브는 Analytics 86편, 조회 중앙값 600, 계속 시청(engaged/views) 중앙값 44%.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>영상</th><th class="n">인스타 조회</th><th class="n">공유율</th><th class="n">중앙값 대비</th><th class="n">유튜브 조회</th><th class="n">계속 시청</th><th>갈래</th></tr></thead>
+    <tbody>
+      <tr><td>전기장판 켜고 푹 잔 것 같은데, 왜 더 찌뿌둥하죠?</td><td class="n">379,674</td><td class="n">1.5%</td><td class="n">조회 ×198</td><td class="n">1,100</td><td class="n">59%</td><td><span class="chip keep">훅·알고리즘</span></td></tr>
+      <tr><td>젖도 안 나오는데 남자는 왜 젖꼭지가 있지?</td><td class="n">52,738</td><td class="n">15.7%</td><td class="n">공유 ×20</td><td class="n">1,270</td><td class="n">51%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>10초 키스 한 번에, 세균 몇 마리 주고받는 거야?</td><td class="n">45,712</td><td class="n">5.7%</td><td class="n">공유 ×7</td><td class="n">1,084</td><td class="n">54%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>아기를 안으면 왜 자꾸 왼팔로 받칠까?</td><td class="n">42,451</td><td class="n">1.35%</td><td class="n">조회 ×22</td><td class="n">164</td><td class="n">63%</td><td><span class="chip keep">훅·유지</span></td></tr>
+      <tr><td>찬바람만 불면 젖꼭지는 왜 혼자 서?</td><td class="n">38,163</td><td class="n">20.5%</td><td class="n">공유 ×26</td><td class="n">678</td><td class="n">39%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>방귀인지 똥인지, 엉덩이는 어떻게 아는 거예요?</td><td class="n">37,573</td><td class="n">9.9%</td><td class="n">공유 ×13</td><td class="n">1,060</td><td class="n">44%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>다 털었는데 바지에 찔끔, 이거 왜 이래?</td><td class="n">25,676</td><td class="n">7.1%</td><td class="n">공유 ×9</td><td class="n">1,018</td><td class="n">52%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>젖꼭지 둘레 오돌토돌한 건 대체 뭐지?</td><td class="n">24,046</td><td class="n">4.8%</td><td class="n">공유 ×6</td><td class="n">964</td><td class="n">54%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>허리 꼿꼿이 펴고 앉는 게 진짜 정답이에요?</td><td class="n">14,083</td><td class="n">0.72%</td><td class="n">조회 ×7</td><td class="n">1,041</td><td class="n">46%</td><td><span class="chip keep">훅·알고리즘</span></td></tr>
+      <tr><td>오늘 먹은 밥, 똥으로 나오는 건 언제쯤?</td><td class="n">12,210</td><td class="n">3.5%</td><td class="n">공유 ×4</td><td class="n">196</td><td class="n">41%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>남자는 7초마다 야한 생각, 진짜예요?</td><td class="n">5,205</td><td class="n">6.2%</td><td class="n">공유 ×8</td><td class="n">128</td><td class="n">50%</td><td><span class="chip share">주제·공유</span></td></tr>
+      <tr><td>고환 높이가 짝짝이인 거, 나만 그래?</td><td class="n">1,561</td><td class="n">5.6%</td><td class="n">공유 ×7</td><td class="n">1,098</td><td class="n">53%</td><td><span class="chip share">주제·공유</span></td></tr>
+    </tbody>
+    <tbody>
+      <tr><th colspan="7">바닥 5편(모두 공유 0)</th></tr>
+      <tr><td>배불러 죽겠는데 케이크는 어떻게 또 들어가요?</td><td class="n">244</td><td class="n">0%</td><td class="n">조회 ×0.13</td><td class="n">984</td><td class="n">51%</td><td><span class="chip bad">신선도 5 과대</span></td></tr>
+      <tr><td>온몸에 털이 나는데 손바닥만 매끈한 까닭은?</td><td class="n">1,240</td><td class="n">0%</td><td class="n">조회 ×0.65</td><td class="n">1,048</td><td class="n">48%</td><td><span class="chip bad">신선도 5 과대</span></td></tr>
+      <tr><td>음주측정기는 입김으로 대체 뭘 재는 거예요?</td><td class="n">1,341</td><td class="n">0%</td><td class="n">조회 ×0.70</td><td class="n">281</td><td class="n">57%</td><td><span class="chip bad">호기심 4 과대</span></td></tr>
+      <tr><td>라식으로 시력 되찾으면, 노안은 비켜 갈까?</td><td class="n">1,395</td><td class="n">0%</td><td class="n">조회 ×0.73</td><td class="n">264</td><td class="n">43%</td><td><span class="chip bad">호기심 5 과대</span></td></tr>
+      <tr><td>갓난아기는 왜 밤낮이 거꾸로일까?</td><td class="n">1,414</td><td class="n">0%</td><td class="n">조회 ×0.74</td><td class="n">133</td><td class="n">33%</td><td><span class="chip bad">호기심 4 과대</span></td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>공유형</b>은 전부 남녀 몸·민망한 몸(젖꼭지 셋, 방귀·똥, 찔끔, 고환, 키스)이다. 공유율이 중앙값의 4~26배로, 지난달 규칙("친구에게 보내고 싶은 주제")이 그대로 맞았다.</li>
+    <li><b>훅·알고리즘형</b>(전기장판·왼팔·허리)은 공유율이 중앙값 근처인데 조회가 컸다. 셋 다 매일 하는 습관이나 자세를 "그게 정답이 아니다" 쪽으로 짚는다. 전기장판·왼팔은 유튜브 계속 시청도 59%·63%로 채널 상위 5편 안이다.</li>
+    <li><b>공유형의 약점</b>: 찬바람 젖꼭지는 인스타 공유율 1위인데 유튜브 평균 시청 비율 30%, 공유 0이다. 주제는 보내고 싶게 만들었지만 대본이 끝까지 붙잡지 못했다. 젖도 안 나오는 젖꼭지(평균 시청 74%)와 비교된다.</li>
+    <li><b>바닥</b>은 내 몸이 아닌 기기·시술·남의 시기(음주측정기, 라식, 신생아) 이야기다. 모델은 호기심 4~5점을 줬지만 아무도 보내지 않았다.</li>
+    <li><b>플랫폼 차이</b>: 유튜브는 86편 모두 1,800회 아래라 중앙값 3배를 넘은 영상이 하나도 없다. 유입은 Shorts 피드가 94~95%다. 인스타에서 터진 영상도 유튜브 피드는 더 넓혀 주지 않았다. 유튜브 조회 상위는 10월 중순의 생활 상식(칼날 홈, 피사의 사탑)이다.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>링크로 받은 릴스: 전기장판</h2>
+  <div class="facts">
+    <div class="fact"><b>379,674</b><span>조회 · 중앙값 ×198</span></div>
+    <div class="fact"><b>333,000</b><span>도달</span></div>
+    <div class="fact"><b>99.9%</b><span>팔로워 아닌 사람</span></div>
+    <div class="fact"><b>5,712</b><span>공유 · 1.5% (×1.9)</span></div>
+    <div class="fact"><b>985</b><span>저장 · 채널 최다</span></div>
+    <div class="fact"><b>1,239 / 30</b><span>좋아요 / 댓글</span></div>
+    <div class="fact"><b>59% · 66%</b><span>유튜브 계속 시청 · 평균 시청 비율</span></div>
+    <div class="fact"><b>10</b><span>유튜브 공유 · 채널 최다</span></div>
+  </div>
+  <ul>
+    <li><b>첫 화면</b>: 핼러윈 마녀 모자를 쓴 마스코트가 전기장판에 누워 있고, 큰 제목 "전기장판 켜고 자면 왜 더 찌뿌둥할까?". 길이 88.7초.</li>
+    <li><b>첫 문장</b>: "전기장판 위에서 깨면 찌뿌둥하죠? 밤새 등은 뜨끈했는데, 몸은 한숨도 못 잔 것처럼 무겁고 뻐근합니다." 겪어 본 사람이 바로 고개를 끄덕이는 장면 묘사로 연다.</li>
+    <li><b>대본</b>: "아랫목에 지져야 피로가 풀린다"는 믿음을 뒤집고, 심부 체온이 약 0.2℃ 오르면 잠이 약 5.5% 준다는 연구로 받친다.</li>
+    <li><b>시점</b>: 10월 29일 게시. 전기장판을 막 꺼내는 첫 추위와 겹쳤다.</li>
+    <li><b>추천 점수</b>: 다섯 축 모두 4점. 모델이 특별히 높게 본 주제는 아니었다.</li>
+  </ul>
+  <p>댓글 맨 위는 반박과 자기 경험이다.</p>
+  <div style="display:grid;gap:8px">
+    <blockquote>"잠자면서 땀뻘뻘흘리고 일어나면 개운하던데..." · 좋아요 95</blockquote>
+    <blockquote>"이거 구라아니냐…" · 43 / "전기장판에서자면 못일어나겠던뎅 겁나 꿀잠" · 22</blockquote>
+    <blockquote>친구 태그 "우리 이래서 깬거 같은데!!!", 질문 "왜 아랫목에서 자면 개운한 건가요?"</blockquote>
+  </div>
+  <p><b>판단</b>: 주제가 공유를 끈 영상이 아니다. 공유율은 평범하고 저장이 많다. 누구나 믿는 계절 습관을 반대로 짚어 반박 댓글이 붙었고, 처음 보는 사람에게 추천이 계속 넓혀졌다. 왼팔과 같은 훅·유지형이다. 유튜브 숫자가 이를 받친다. 조회는 1,100(Shorts 피드 95%)으로 평범하지만 계속 시청 59%, 평균 시청 비율 66%, 공유 10으로 채널 상위다. 첫 1% 구간 시청 비율이 117%로 다시 보기까지 붙었다.</p>
+</section>
+
+<section>
+  <h2>축별 상관과 가중치</h2>
+  <p class="muted">추천 점수 ↔ 성과 순위의 순위 상관. 7일 넘은 영상만. 유튜브 n=36, 인스타 n=34, 합친 것 n=36.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>축</th><th class="n">유튜브</th><th class="n">인스타</th><th class="n">합침</th><th class="n">지금</th><th class="n">제안</th><th>메모</th></tr></thead>
+    <tbody>
+      <tr><td>trend 화제성</td><td class="n">−0.161</td><td class="n">+0.148</td><td class="n">−0.142</td><td class="n">20</td><td class="n"><b>17</b></td><td>워터슬라이드·비 그친 날을 5점 줬는데 바닥</td></tr>
+      <tr><td>curious 호기심</td><td class="n">+0.122</td><td class="n">+0.119</td><td class="n">+0.159</td><td class="n">25</td><td class="n">25</td><td>약한 양의 신호. 바닥 셋을 4~5점으로 과대평가</td></tr>
+      <tr><td>fit 제작 적합도</td><td class="n">−0.162</td><td class="n">−0.328</td><td class="n">−0.301</td><td class="n">30</td><td class="n">30</td><td>조정 대상 아님. 높게 본 것이 오히려 덜 됐다</td></tr>
+      <tr><td>fresh 차별화</td><td class="n">+0.296</td><td class="n">+0.045</td><td class="n">+0.253</td><td class="n">10</td><td class="n"><b>13</b></td><td>유튜브에서 가장 강한 신호</td></tr>
+      <tr><td>safe 안전성</td><td class="n">−0.183</td><td class="n">−0.226</td><td class="n">−0.263</td><td class="n">15</td><td class="n">15</td><td>조정 대상 아님. 민망한 주제가 덜 안전해 보이는 탓으로 보인다</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>trend 20→17, fresh 10→13</b>: 합친 상관에서 fresh가 +0.253으로 0.2를 넘어 올리고, 음수인 trend에서 덜어 합 100을 맞췄다(축당 ±5 안). curious는 0.2 미만이라 두고, 대신 trends.md 예시로 점수 감각을 고친다. fit·safe의 음의 상관은 보고만 하고, 축 설명을 바꿀지는 다음 달 표본이 늘어난 뒤 다시 본다.</p>
+</section>
+
+<section>
+  <h2>바꿀 줄</h2>
+  <div class="scroll"><pre><span class="del">- …혼자 알고 끝나는 상식은 낮게 본다.</span>
+<span class="add">+ …혼자 알고 끝나는 상식과 내 몸이 아닌 기기·시술 이야기(음주측정기·라식)는 낮게 본다.</span>
+
+<span class="add">+ - 그 철에 누구나 하는 습관을 상식과 반대로 짚는 주제(전기장판에 지졌는데 더 찌뿌둥)를 먼저 본다.
++   공유는 적어도 반박 댓글과 함께 처음 보는 사람에게 멀리 퍼진다.</span>
+
+<span class="del">- ## 호기심 점수 예시(우리 채널 실적, 2026-10 인스타·유튜브. …)</span>
+<span class="add">+ ## 호기심 점수 예시(우리 채널 실적, 2026-11 인스타·유튜브. …)</span>
+
+<span class="del">- 5: 젖도 안 나오는데 남자는 왜 젖꼭지가 있지(15.6%), 바지에 찔끔(6.8%), 왼팔(계속 시청함 71%)</span>
+<span class="add">+ 5: 찬바람만 불면 젖꼭지는 왜 혼자 서(인스타 공유 20.5%), 방귀인지 똥인지 엉덩이는 어떻게 알까(공유 9.9%),
++    전기장판 켜고 푹 잔 것 같은데 왜 더 찌뿌둥할까(인스타 조회 38만·중앙값 198배, 유튜브 계속 시청함 59%)</span>
+
+<span class="del">- 1~2: 아침 빈속 달리기(0.2%), 누워 있으면 살(0.1%), 주말 푹 잤는데(0.4%)</span>
+<span class="add">+ 1~2: 음주측정기는 입김으로 뭘 재나(공유 0%, 호기심 4점), 라식으로 시력 되찾으면 노안은(0%, 5점),
++      갓난아기는 왜 밤낮이 거꾸로일까(0%, 4점)</span></pre></div>
+  <div class="scroll"><pre><span class="del">- weights = { trend = 20, curious = 25, fit = 30, fresh = 10, safe = 15 }</span>
+<span class="add">+ weights = { trend = 17, curious = 25, fit = 30, fresh = 13, safe = 15 }</span></pre></div>
+  <p class="muted">위는 trends.md, 아래는 channel.toml [trends].</p>
+</section>
+
+<section>
+  <h2>후속 주제</h2>
+  <p class="muted">만든 영상과 추천받은 주제 1,287개를 빼고 골랐다. 출처는 웹에서 한 번씩 확인했다.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>주제</th><th>옮긴 패턴</th><th>갈래</th><th>근거</th></tr></thead>
+    <tbody>
+      <tr><td>자기 전 뜨끈한 목욕, 언제 해야 잠이 잘 올까?</td><td>전기장판: 계절 습관 + 수면 상식 뒤집기. "아랫목은 왜 개운하냐"는 댓글 질문에 답한다</td><td><span class="chip keep">유지형</span></td><td>Haghayegh 외, <i>Sleep Med Rev</i> 2019 메타분석. 40~42.5℃ 물로 잠들기 1~2시간 전에 하면 잠드는 시간이 평균 약 10분 줄었다</td></tr>
+      <tr><td>추운 밤 양말 신고 자면, 정말 빨리 잠들까?</td><td>전기장판: 겨울 잠버릇을 체온 원리로 다시 보기</td><td><span class="chip keep">유지형</span></td><td>Ko·Lee, <i>J Physiol Anthropol</i> 2018. 23℃ 방에서 잠드는 시간 7.5분 단축(소규모 실험이라 대본에 표본 수를 밝힌다)</td></tr>
+      <tr><td>무거운 솜이불을 덮으면 정말 잠이 잘 올까?</td><td>전기장판: 겨울 침구 믿음 검증</td><td><span class="chip keep">유지형</span></td><td>Ekholm 외, <i>J Clin Sleep Med</i> 2020 무작위 시험. 8kg 담요군 59% 반응, 대조군 5.4%(정신과 환자 대상이라 일반화를 조심한다)</td></tr>
+      <tr><td>같이 자는 커플, 잠을 더 잘 잘까 더 설칠까?</td><td>10초 키스: 애인에게 보내는 주제</td><td><span class="chip share">공유형</span></td><td>Drews 외, <i>Front Psychiatry</i> 2020. 같이 잘 때 렘수면 약 10% 늘고 수면 단계가 서로 맞춰졌다(12쌍)</td></tr>
+      <tr><td>남자 정자는 겨울에 더 많아질까?</td><td>찬바람 젖꼭지·고환: 민망한 남자 몸 + 계절</td><td><span class="chip share">공유형</span></td><td>Levitas 외, <i>Fertil Steril</i> 2013(정액 검사 6천여 건). 겨울 농도가 가장 높고 봄부터 낮아졌다</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">키스 마크(쪽쪽 자국)도 후보였지만 공식·학술 출처를 찾지 못해 뺐다. trends.md의 "최근 5년 논문" 기준을 넘는 2013·2018·2019 논문은 원리 근거로만 쓰고, 고를 때 더 최근 연구가 있는지 한 번 더 찾는다.</p>
+</section>
+
+<section>
+  <h2>한계</h2>
+  <ul>
+    <li>인스타 웹 인사이트에는 평균 시청 시간이 없다. 인스타 쪽 유지력은 유튜브 숫자로 미뤄 본다.</li>
+    <li>점수가 있는 영상은 36편으로 가중치 조정 기준(30편)을 겨우 넘는다. 업로드 99편 중 7일 지난 영상은 76편이다.</li>
+    <li>유튜브에는 터진 영상이 없어(모두 중앙값 3배 미만) 유튜브 상관은 작은 차이의 순위에서 나왔다.</li>
+    <li>인스타 전용 릴스 4편(꼼짝 않고 누워, 지린내, 자궁, 공황)은 작업과 잇지 못했다.</li>
+    <li>점수는 사람이 10개 중 고른 주제에만 있다. 상관은 "고른 것 안에서"의 신호다.</li>
+    <li>인스타 기간은 최근 30일이다. 오래된 영상의 누적 숫자는 들어가지 않았다.</li>
+    <li>도우미 스크립트가 curious 축이 없던 옛 추천에서 멈춰서 고쳤다(축마다 점수가 있는 영상만 센다). 테스트 하나를 더했다.</li>
+  </ul>
+</section>
+</main>
