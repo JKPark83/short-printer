@@ -149,6 +149,14 @@ def test_lifespan_migrates_legacy_folder(tmp_path, monkeypatch):
     assert "예전 로그" in html and "#커피상식 #카페" in html and (job.dir / "log.txt").exists()   # 원본은 남는다
 
 
+def test_recover_stops_when_jobs_disk_missing(tmp_path, monkeypatch):
+    """외장 디스크가 빠지면 빈 폴더를 만들지 않고 멈춘다."""
+    monkeypatch.setattr(config, "JOBS_DIR", tmp_path / "T31" / "data" / "jobs")
+    with pytest.raises(RuntimeError, match="외장 디스크"):
+        web.recover()
+    assert not (tmp_path / "T31").exists()
+
+
 def test_recover_marks_running_jobs_interrupted():
     job = Job.create(CH, "커피", "LKOcTG4J4tYTPR9DnLeM")
     job.step("script", status="done")

@@ -19,7 +19,8 @@ load_dotenv()
 
 FFMPEG = os.environ.get("SP_FFMPEG") or "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"   # 빈 값이면 기본값
 CLAUDE_MODEL = "claude-opus-5-5"   # 대본·검수·조사 모두 이 모델로 고정한다(출력 상한 128000)
-JOBS_DIR = ROOT / "jobs"
+# 작업 미디어(클립·음성·렌더 영상) 폴더. 외장 디스크에 두려면 .env SP_JOBS_DIR=/Volumes/T31/…/jobs
+JOBS_DIR = Path(os.environ.get("SP_JOBS_DIR") or ROOT / "jobs").expanduser()
 TRENDS_DIR = ROOT / "trends"   # 주제 찾기(추천) 기록 폴더
 SCHEDULES_DIR = ROOT / "schedules"   # 정해진 시각에 만들어 올리는 스케줄
 DB = ROOT / "shorts.db"   # 상태·로그·JSON 결과물(SQLite). 미디어는 위 폴더에 남는다

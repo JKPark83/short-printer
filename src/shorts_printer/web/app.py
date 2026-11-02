@@ -211,6 +211,9 @@ def recover() -> None:
     """앱이 켜질 때: 끊긴 작업·주제 찾기를 interrupted로, 반쯤 쓰인 *.tmp 파일을 지운다."""
     # ponytail: 다른 터미널에서 `sp run`·`sp trends`가 돌고 있어도 중단으로 표시한다.
     # 둘을 같이 쓰려면 상태 json에 pid를 남겨 살아 있는지 볼 것
+    # 외장 디스크가 빠졌을 때 부팅 디스크에 /Volumes/… 폴더를 새로 만들지 않게 멈춘다
+    if not config.JOBS_DIR.parent.is_dir():
+        raise RuntimeError(f"작업 폴더 {config.JOBS_DIR.parent}가 없어요. 외장 디스크가 연결됐는지 보세요")
     for root in (config.JOBS_DIR, config.TRENDS_DIR):
         root.mkdir(parents=True, exist_ok=True)
     # 스케줄 것이면 실패 알림을 보낸다(after_*는 손으로 만든 것엔 아무것도 하지 않는다)
