@@ -409,31 +409,29 @@ function drawCounters(t) {
 
 // ------------------------------------------------------------------ 기록 사진
 // 설명에 그때 보이는 땅 이름이 있으면(핀 이름표 먼저) 그 땅에 꽂고, 없으면(그림·인물 등) 오른쪽 위 카드로 띄운다
-function card(img, cap, x, y, w, h, a, k, fy) {   // 괄호 틀, 천천히 다가가기(k), 아래 설명
-  const ir = img.width / img.height, fr = w / h;   // cover로 자른다
-  const sw = ir > fr ? img.height * fr : img.width, sh = ir > fr ? img.height : img.width / fr;
+function card(img, cap, x, y, w, h, a, k) {   // 괄호 틀, 천천히 다가가기(k), 아래 설명
+  // 사진은 자르지 않고 칸 안에 맞춘다(contain): 칸 높이 상한(mapplan PHOTO_BOX)보다 세로로 긴 사진은 양옆이 빈다
+  const ir = img.width / img.height, fr = w / h;
+  const dw = ir < fr ? h * ir : w, dh = ir < fr ? h : w / ir, dx = x + (w - dw) / 2, dy = y + (h - dh) / 2;
   const f = w / 620;   // 설명·틀은 카드 크기에 맞춘다
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(5,8,11,.6)'; ctx.fillRect(x - 10, y - 10, w + 20, h + 74 * f);
-  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.beginPath(); ctx.rect(dx, dy, dw, dh); ctx.clip();
   ctx.filter = 'saturate(.55) contrast(1.05)';
-  // 세로로 긴 그림은 위에서 자른다(초상화 얼굴이 위에 있다, 파이프라인 object-position 50% 0과 같게).
-  // 인물이 아닌 그림은 photos의 fy(0 위 ~ 1 아래)로 볼 곳을 고른다
-  const sy = ir > fr ? (img.height - sh / k) / 2 : fy == null ? (sh - sh / k) * 0.3 : (img.height - sh / k) * fy;
-  ctx.drawImage(img, (img.width - sw / k) / 2, sy, sw / k, sh / k, x, y, w, h);
+  ctx.drawImage(img, dx - dw * (k - 1) / 2, dy - dh * (k - 1) / 2, dw * k, dh * k);   // 가운데로 다가간다
   ctx.restore();
   brackets(ctx, x - 18, y - 18, x + w + 18, y + h + 82 * f, { len: 26, w: 1.8, alpha: a });
   ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = C.amber; ctx.fillRect(x, y + h + 26 * f, 10, 10); ctx.restore();
   text(ctx, cap, x + 22, y + h + 41 * f, { font: `700 ${Math.round(27 * Math.max(f, 0.85))}px SC`, alpha: a, halo: 4 });
 }
 function drawPhotos(t, cam) {
-  for (const [id, , cap, t0, t1, x, y, w, , ratio, , , fy] of F.photos) {
+  for (const [id, , cap, t0, t1, x, y, w, , ratio] of F.photos) {
     if (t < t0 || t > t1) continue;
     const img = PHOTO[id], k = lerp(1, 1.1, (t - t0) / (t1 - t0)), out = 1 - ss(seg(t, t1 - 0.32, t1));
     const pin = PIN[id];
     if (!pin) {
       const h = Math.round(w * (ratio || img.height / img.width)), e = eo(seg(t, t0, t0 + 0.6));
-      ctx.save(); ctx.translate(0, -40 * (1 - e)); card(img, cap, x, y, w, h, e * out, k, fy); ctx.restore();
+      ctx.save(); ctx.translate(0, -40 * (1 - e)); card(img, cap, x, y, w, h, e * out, k); ctx.restore();
       continue;
     }
     // 땅에 꽂기: 땅 점에서 기둥이 솟고(0~0.35초) 카드가 그 위에 펼쳐진다(0.25~0.8초)
@@ -449,7 +447,7 @@ function drawPhotos(t, cam) {
     const u = eo(seg(t, t0 + 0.25, t0 + 0.8));
     if (u <= 0) continue;
     ctx.save(); ctx.translate(top[0], top[1]); ctx.scale(lerp(0.6, 1, u), u); ctx.translate(-top[0], -top[1]);   // 기둥 끝에서 펼친다
-    card(img, cap, cx, cy, pw, ph, u * out, k, fy);
+    card(img, cap, cx, cy, pw, ph, u * out, k);
     ctx.restore();
   }
 }
