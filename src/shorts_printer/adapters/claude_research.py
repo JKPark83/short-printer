@@ -2,7 +2,7 @@
 import re
 
 from .. import config
-from .claude import FALLBACK, SEARCH_USD, cost, errors, stream, with_sites
+from .claude import FALLBACK, errors, stream, system_blocks, turns, usage
 
 REFUSAL = "Claude가 이 주제의 조사를 거절했어요. 주제를 바꿔 보세요."
 
@@ -124,20 +124,11 @@ class ClaudeResearch:
              "citations": {"enabled": True}, "max_content_tokens": 8000} | where,
         ]
         messages = [{"role": "user", "content": text}]
-        contents, inp, out, searches = [], 0, 0, 0
-        with errors():
-            for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp, tools = with_sites(lambda t: stream(   # Opus 5.5 상한. 스트리밍이라야 SDK가 막지 않는다
-                    model=model, max_tokens=128000, system=system, messages=messages, tools=t, **FALLBACK), tools)
-                u = resp.usage
-                inp, out = inp + u.input_tokens, out + u.output_tokens
-                searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
-                contents.append(resp.content)
-                if resp.stop_reason != "pause_turn":
-                    break
-                messages.append({"role": "assistant", "content": resp.content})
+        with errors():   # 되풀이해 보내는 양(도구·지시문·열어 본 본문)이 가장 커서 이어 갈 때 캐시가 가장 많이 아낀다
+            resps, n = turns(lambda t, more: stream(   # Opus 5.5 상한. 스트리밍이라야 SDK가 막지 않는다
+                model=model, max_tokens=128000, system=system_blocks(system), messages=messages, tools=t,
+                **FALLBACK, **more), tools, messages)
+        resp = resps[-1]
         if resp.stop_reason == "refusal":
             raise RuntimeError(REFUSAL)
-        usd = cost(resp.model, inp, out)   # web_fetch는 토큰 말고 따로 안 받는다
-        return parse(contents), {"model": resp.model, "input_tokens": inp, "output_tokens": out,
-                                 "cost_usd": None if usd is None else round(usd + searches * SEARCH_USD, 4)}
+        return parse([r.content for r in resps]), usage(resp, n)   # web_fetch는 토큰 말고 따로 안 받는다

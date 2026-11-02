@@ -24,10 +24,24 @@ class LLM(Protocol):
         web에 사이트 목록을 주면 그 사이트 안에서만 검색한다.
         거절하면 RuntimeError(refusal), 결과가 없으면 RuntimeError(f"{what}을 받지 못했어요…").
         오류는 모두 한국어 RuntimeError.
-        사용량 = {"model", "input_tokens", "output_tokens", "cost_usd"(모르면 None)}."""
+        사용량 = {"model", "input_tokens", "output_tokens", "cost_usd"(모르면 None)}.
+        input_tokens는 캐시에 쓰고 읽은 입력까지 더한 값이고, cost_usd만 캐시 단가로 셌다.
+        그래서 저장된 사용량을 cost()로 다시 세면 캐시 읽기가 정가로 잡힌다(다시 세지 말고 cost_usd를 쓴다)."""
 
     def cost(self, input_tokens: int, output_tokens: int) -> float | None:
-        """지금 모델로 이만큼 쓰면 드는 달러. 모르면 None."""
+        """지금 모델로 이만큼 쓰면 드는 달러(입력은 모두 정가로 센다). 모르면 None."""
+
+
+class Cached(str):
+    """앞부분(head)이 다른 호출과 같은 지시문. 그냥 문자열로 쓰이고(다른 공급자는 몰라도 된다), Claude만 head 끝에
+    캐시 위치를 둔다. 같은 앞부분으로 5분 안에 거듭 부르는 곳(롱폼 장마다·지도 장마다·롱폼 고쳐 쓰기)에만 쓴다.
+    한 번만 부르는 지시문에 쓰면 캐시 쓰기(입력의 1.25배)만 하고 읽지 못해 오히려 비싸다."""
+    head: str
+
+    def __new__(cls, head: str, tail: str = "") -> "Cached":
+        s = super().__new__(cls, f"{head}\n\n{tail}" if tail else head)
+        s.head = head
+        return s
 
 
 def add_usage(a: dict | None, b: dict | None) -> dict | None:
