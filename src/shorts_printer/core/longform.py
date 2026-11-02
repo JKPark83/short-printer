@@ -1,5 +1,6 @@
 """롱폼(16:9 지도 역사 영상) 열 단계(docs/plan/longform.md). 쇼츠와 같은 run_steps로 돌고, 끝난 단계는 건너뛴다.
 사람 승인 두 번: 대본(script_ok) 전엔 음성을 읽지 않고, 초안(draft_ok) 전엔 렌더하지 않는다."""
+import re
 import shutil
 from pathlib import Path
 
@@ -254,12 +255,13 @@ def step_draft(job: Job, sv: Services) -> str:
     path = media.fetch_music(m["title"], m["url"])
     music = sound.track(path, m["credit"])
     _copy(path, project / "assets" / music["file"])
+    modern = any(int(y) >= sound.MODERN_YEAR for d in parts["dates"] for y in re.findall(r"\d+", d[1]))
     sounds = sound.place(total=total, end_start=end_start, cam=parts["cam"],
                          turns=[S[i] for i, b in enumerate(beats) if b == "turn"],
                          hits=[(x[0], x[3]) for x in parts["flashes"]],
                          marches=[(a[2], a[7]) for a in parts["arrows"]],
                          final=next((S[i] for i, b in enumerate(beats) if b == "final"), None),
-                         photos=[p[3] for p in parts["photos"]], music=music, lib=lib)
+                         photos=[p[3] for p in parts["photos"]], music=music, lib=lib, modern=modern)
     for name in {x[1] for x in sounds} - {music["file"]}:
         _copy(sound.ASSETS / name, project / "assets" / name)
     # 자막은 영상에 굽는다: YouTube CC는 기본으로 꺼져 있어 대부분 못 본다

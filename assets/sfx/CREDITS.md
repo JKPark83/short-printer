@@ -26,12 +26,22 @@
 | `cannon-fire.mp3` | Cannon fire.wav (0~4.24초) | Jon285 | https://freesound.org/people/Jon285/sounds/106850 | CC0 |
 | `sea-1.mp3` | Boat_waves.wav (4~8.5초) | Lydmakeren | https://freesound.org/people/Lydmakeren/sounds/510900 | CC0 |
 | `sea-2.mp3` | rowing boat rear wave.wav (0~4.5초) | Fenodyrie | https://freesound.org/people/Fenodyrie/sounds/588308 | CC0 |
+| `artillery-1.mp3` | R12-31-Artillery Guns Firing.wav (12.8~17.3초, artillery-guns에서) | craigsmith | https://freesound.org/people/craigsmith/sounds/486027 | CC0 |
+| `artillery-2.mp3` | R12-11-Artillery Explosion Sequence.wav (23.3~27.8초, artillery-seq에서) | craigsmith | https://freesound.org/people/craigsmith/sounds/486020 | CC0 |
+| `mg-1.mp3` | Heavy Machine Gun (0~3.08초) | ShawnyBoy | https://freesound.org/people/ShawnyBoy/sounds/165394 | CC0 |
+| `mg-2.mp3` | Firefight (9~13.5초) | TheBuilder15 | https://freesound.org/people/TheBuilder15/sounds/404334 | CC0 |
+| `battle-1.mp3` | Battle, war zone gun fight (0~4.5초) | alanmcki | https://freesound.org/people/alanmcki/sounds/326442 | CC0 |
+| `battle-2.mp3` | War sounds (0~4.5초) | Dragout | https://freesound.org/people/Dragout/sounds/150305 | CC0 |
+| `tank-1.mp3` | t26_moving_01.wav (1~5.5초) | greatmganga | https://freesound.org/people/greatmganga/sounds/329800 | CC0 |
+| `tank-2.mp3` | tracked vehicle.wav (2.5~7초) | cognito perceptu | https://freesound.org/people/cognito%20perceptu/sounds/121531 | CC0 |
+| `plane-1.mp3` | Spitfire over Cliffs of Dover UK (10.5~15초) | itinerantmonk108 | https://freesound.org/people/itinerantmonk108/sounds/700584 | CC0 |
+| `plane-2.mp3` | Jet Plane Flyby.flac (2~6.5초) | qubodup | https://freesound.org/people/qubodup/sounds/189446 | CC0 |
 | `shutter.mp3` | Camera Shutter Click | Kodack | https://freesound.org/people/Kodack/sounds/271010 | CC0 |
 | `whoosh-cinematic.mp3` | whoosh-cinematic | Pixabay | https://pixabay.com/sound-effects/ (media-use 스킬 묶음) | Pixabay Content License |
 | `riser.mp3` | riser | Pixabay | https://pixabay.com/sound-effects/ (media-use 스킬 묶음) | Pixabay Content License |
 | `impact-bass-2.mp3` | impact-bass-2 | Pixabay | https://pixabay.com/sound-effects/ (media-use 스킬 묶음) | Pixabay Content License |
 
-- 새로 더한 Freesound 파일(말발굽·행군·함성·칼·화살·불·총·포·바다)은 미리 듣기에서 괄호 안 구간을 잘라 -15 LUFS로 맞췄다.
+- 새로 더한 Freesound 파일(말발굽·행군·함성·칼·화살·불·총·포·바다, 현대전의 포병·기관총·총격전·전차·비행기)은 미리 듣기에서 괄호 안 구간을 잘라 -15 LUFS로 맞췄다.
 - 효과음에 사람 말소리(구령·녹음 슬레이트)가 섞이면 안 된다. 넣기 전에 음성 검출(Silero VAD, faster-whisper의 `get_speech_timestamps`)로 말소리 구간이 없는지 본다. 옛 arrows-1(mcaseydesign 474121)은 영어 대사가 섞여 바꿨다.
 - Freesound 파일은 CC0이라 표기 의무가 없지만 끝 화면에 만든 이를 적는다. Freesound 미리 듣기 mp3(hq)다.
 - Pixabay 파일은 CC0가 아니라 Pixabay Content License다(상업 사용·영상 속 재배포 가능, 표기 의무 없음). 효과음만 따로 재배포하지는 않는다.
@@ -41,5 +51,5 @@
 - `duration`: ffprobe 길이(초).
 - `onset`: 소리가 시작하는 곳. `silencedetect=n=-35dB:d=0.25`의 첫 무음이 0초에서 시작하면 그 끝, 아니면 0.
 - `peak`: 큰 소리 구간의 끝. 50 ms마다 RMS를 재서 최대에서 3 dB 안인 마지막 칸의 끝(라이저가 터지는 곳, 휙 소리가 닿는 곳).
-- `role`: move(카메라 이동) · turn(이야기 전환) · final(마지막 선) · photo(사진) · bed(깔리는 포성), 번쩍임 kind(cannon · gun · clash · arrows · fire · shout), 화살표 행군(hooves · march · sea). 실제로 고르는 건 `sound.CUES`의 이름 목록이다.
+- `role`: move(카메라 이동) · turn(이야기 전환) · final(마지막 선) · photo(사진) · bed(깔리는 포성), 번쩍임 kind(cannon · gun · clash · arrows · fire · shout), 화살표 행군(hooves · march · sea · tank · plane), 현대전(화면 날짜 1900년 뒤)에 바꿔 쓰는 artillery · mg · battle(`sound.MODERN`). 실제로 고르는 건 `sound.CUES`의 이름 목록이다.
 - `credit`: 끝 화면 표기. 첫 낱말이 출처(Freesound·Pixabay), 나머지가 만든 이.

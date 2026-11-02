@@ -30,10 +30,21 @@ CUES = {
     "hooves": (("hooves-1", "hooves-2"), "onset", 0, 0.3, None, 0.3, 1.0),
     "march": (("march-1", "march-2"), "onset", 0, 0.3, None, 0.3, 1.0),
     "sea": (("sea-1", "sea-2"), "onset", 0, 0.3, None, 0.5, 1.0),
+    # 현대전(MODERN으로 바꿔 쓴다): 포병·기관총·총격전, 전차 궤도·비행기
+    "artillery": (("artillery-1", "cannon-near", "artillery-2", "distant-boom"), "onset", 0, 0.45, None, 0, 0.8),
+    "mg": (("mg-1", "mg-2"), "onset", 0, 0.4, None, 0, 0.5),
+    "battle": (("battle-1", "battle-2"), "onset", 0, 0.35, None, 0.2, 1.0),
+    "tank": (("tank-1", "tank-2"), "onset", 0, 0.3, None, 0.3, 1.0),
+    "plane": (("plane-1", "plane-2"), "onset", 0, 0.3, None, 0.3, 1.0),
 }
-# 화살표 병력 그림 → 행군 소리. tank·plane은 맞는 소리가 아직 없어 조용하다
-# ponytail: 현대전 소리(전차 궤도·비행기)가 필요해지면 sfx를 더하고 여기 한 줄씩
-MARCH = {"cavalry": "hooves", "spearman": "march", "soldier": "march", "sailship": "sea", "ship": "sea"}
+# 화살표 병력 그림 → 행군 소리
+MARCH = {"cavalry": "hooves", "spearman": "march", "soldier": "march", "sailship": "sea", "ship": "sea",
+         "tank": "tank", "plane": "plane"}
+# 현대전(화면 날짜가 MODERN_YEAR 뒤)에는 옛 소리를 바꾼다: 머스킷·옛 대포·칼·함성 대신 포병·기관총·총격전.
+# 보병 행군(발소리·장구 덜컹임)은 말·마차처럼 들려서 뺀다(None)
+# ponytail: 보병은 소리가 없다. 군용 트럭 소리를 구하면 "march": "truck"으로
+MODERN_YEAR = 1900
+MODERN = {"cannon": "artillery", "gun": "mg", "clash": "battle", "shout": "battle", "arrows": "battle", "march": None}
 WHOOSH_GAP = 2.0   # 휙 소리끼리 이보다 가까우면 뒤엣것을 뺀다
 MARCH_GAP = 6.0    # 같은 행군 소리끼리 이보다 가까우면 뒤엣것을 뺀다(한 장면 화살표 여럿이 한꺼번에 뜬다)
 MUSIC_LUFS = -28.0   # 곡마다 이 크기로 맞춘다(내레이션 10 LU 아래). 곡 음량이 10 dB 넘게 달라 고정 배율은 안 된다
@@ -109,12 +120,13 @@ def _music(music: dict, spans: list[tuple[float, float]], total: float) -> list[
 
 def place(*, total: float, end_start: float, cam: list, turns: list[float], hits: list[tuple[float, str]],
           final: float | None, photos: list[float], music: dict, lib: dict, marches: list[tuple[float, str]] = (),
-          silence: tuple[float, float] | None = None) -> list[list]:
+          silence: tuple[float, float] | None = None, modern: bool = False) -> list[list]:
     """음악과 효과음을 film dict의 sounds 줄로 놓는다. 끝 화면(end_start 뒤)에는 효과음을 두지 않는다.
 
     cam: [[시작, 옮기는 초, lng, lat, scale]], hits: [(시각, 번쩍임 kind)], marches: [(시각, 화살표 unit)],
     music: track()이 돌려준 것, lib: sfx.json,
     silence: 음악을 끄는 정적 (시작, 끝) — 앞 구간은 페이드 아웃으로 끝나고 뒤 구간이 영상 끝까지 간다.
+    modern: 현대전이면 MODERN으로 소리를 바꾼다.
     """
     spans = [(0, silence[0]), (silence[1], total)] if silence else [(0, total)]
     fx, last = [], -math.inf
@@ -128,7 +140,8 @@ def place(*, total: float, end_start: float, cam: list, turns: list[float], hits
     heard: dict[str, list[float]] = {}   # 소리 종류마다 놓은 시각: 몇 번째인지로 파일을 돌려 쓴다
     for t, role, gap in sorted([(t, kind, 0) for t, kind in hits] +
                                [(t, MARCH[unit], MARCH_GAP) for t, unit in marches if unit in MARCH]):
-        if t - (heard.get(role) or [-math.inf])[-1] >= gap:
+        role = MODERN.get(role, role) if modern else role
+        if role and t - (heard.get(role) or [-math.inf])[-1] >= gap:
             k = len(heard.setdefault(role, []))
             heard[role].append(t)
             fx.append(_cue(f"fx-{role}-{k + 1}", role, t, lib, k))

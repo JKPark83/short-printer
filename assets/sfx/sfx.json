@@ -206,5 +206,85 @@
     "peak": 0.75,
     "role": "sea",
     "credit": "Freesound Fenodyrie"
+  },
+  "artillery-1": {
+    "file": "sfx/artillery-1.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 4.0,
+    "role": "artillery",
+    "credit": "Freesound craigsmith"
+  },
+  "artillery-2": {
+    "file": "sfx/artillery-2.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 1.45,
+    "role": "artillery",
+    "credit": "Freesound craigsmith"
+  },
+  "tank-1": {
+    "file": "sfx/tank-1.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 4.15,
+    "role": "tank",
+    "credit": "Freesound greatmganga"
+  },
+  "tank-2": {
+    "file": "sfx/tank-2.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 4.15,
+    "role": "tank",
+    "credit": "Freesound cognito perceptu"
+  },
+  "plane-1": {
+    "file": "sfx/plane-1.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 3.55,
+    "role": "plane",
+    "credit": "Freesound itinerantmonk108"
+  },
+  "plane-2": {
+    "file": "sfx/plane-2.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 4.2,
+    "role": "plane",
+    "credit": "Freesound qubodup"
+  },
+  "mg-1": {
+    "file": "sfx/mg-1.mp3",
+    "duration": 3.08,
+    "onset": 0,
+    "peak": 1.7,
+    "role": "mg",
+    "credit": "Freesound ShawnyBoy"
+  },
+  "mg-2": {
+    "file": "sfx/mg-2.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 3.15,
+    "role": "mg",
+    "credit": "Freesound TheBuilder15"
+  },
+  "battle-1": {
+    "file": "sfx/battle-1.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 2.15,
+    "role": "battle",
+    "credit": "Freesound alanmcki"
+  },
+  "battle-2": {
+    "file": "sfx/battle-2.mp3",
+    "duration": 4.5,
+    "onset": 0,
+    "peak": 1.65,
+    "role": "battle",
+    "credit": "Freesound Dragout"
   }
 }

@@ -58,8 +58,17 @@ def test_flash_kinds_rotate_files_and_marches_are_spaced():
     assert [by[f"fx-clash-{i}"] for i in (1, 2, 3)] == ["sfx/clash-1.mp3", "sfx/clash-2.mp3", "sfx/clash-1.mp3"]
     assert by["fx-arrows-1"] == "sfx/arrows-1.mp3"
     hooves = [c[2] for c in fx if c[0].startswith("fx-hooves")]
-    assert hooves == [100.0, 106.5]   # 같은 장면 화살표 여럿·6초 안 행군은 한 번만, 전차·빈 unit은 소리 없다
-    assert by["fx-hooves-2"] == "sfx/hooves-2.mp3" and by["fx-sea-1"] == "sfx/sea-1.mp3" and len(fx) == 7
+    assert hooves == [100.0, 106.5]   # 같은 장면 화살표 여럿·6초 안 행군은 한 번만, 빈 unit은 소리 없다
+    assert by["fx-hooves-2"] == "sfx/hooves-2.mp3" and by["fx-sea-1"] == "sfx/sea-1.mp3" and len(fx) == 8
+
+
+def test_modern_swaps_old_sounds_and_drops_foot_march():
+    fx = [c for c in _place(hits=[(50.0, "cannon"), (70.0, "gun"), (90.0, "shout")],
+                            marches=[(100.0, "soldier"), (110.0, "tank"), (120.0, "plane")], modern=True)
+          if c[0].startswith("fx-") and c[0].split("-")[1] not in ("move", "turn", "final", "photo")]
+    assert [c[1] for c in fx] == ["sfx/artillery-1.mp3", "sfx/mg-1.mp3", "sfx/battle-1.mp3",
+                                  "sfx/tank-1.mp3", "sfx/plane-1.mp3"]   # 보병 발소리는 말·마차처럼 들려 뺀다
+
 
 
 def test_early_cue_trims_file_head():
