@@ -19,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
 from .. import config, registry
-from ..core import channel, longform, pipeline, scenes, schedule, script, subtitles, trends, voice
+from ..core import channel, insights, longform, pipeline, scenes, schedule, script, subtitles, trends, voice
 from ..core.channel import Channel
 from ..core.pipeline import STEPS, Job, in_review, in_voice_review, upload_of, uploading
 from ..core.schedule import Schedule
@@ -27,6 +27,7 @@ from ..core.trends import Trend
 from ..infra import ffmpeg
 from ..infra.store import migrate, redact, upload_state
 from ..ports.llm import add_usage
+from . import charts
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ ICONS = {
         '<path d="M20 3v4"/>'
         '<path d="M22 5h-4"/>'),
     "trending": '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>',
+    "chart": '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
     "trash": (
         '<path d="M3 6h18"/>'
         '<path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>'
@@ -1129,6 +1131,99 @@ async def _fields(request: Request) -> dict:
     return {"channel": f.get("channel", ""), "name": f.get("name", ""), "source": f.get("source", ""),
             "voice": f.get("voice", ""), "keyword": f.get("keyword", ""), "topics": f.get("topics", "").splitlines(),
             "when": when}
+
+
+INSIGHT_TABS = {"overview": "개요", "videos": "영상", "audience": "시청자"}
+PIES = ("format", "subscribed", "device")   # 갈래가 적어 도넛으로 보는 시청자 기준
+
+
+def _video_jobs(cid: str) -> dict[str, str]:
+    """이 채널에서 올린 작업: YouTube 영상 id → 작업 id(성과에서 그 편 작업 화면으로 간다).
+    작업마다 저장소를 한 번씩 읽어서 작업 링크를 보이는 개요·영상 탭에서만 부른다."""
+    return {vid: j.id for j in Job.all() if (d := j.data) and d.get("channel") == cid
+            and (vid := upload_of(d).get("video_id"))}
+
+
+def _video_job(cid: str, video_id: str) -> str | None:
+    """영상 하나의 작업 id. 최근 작업부터 보고 찾으면 멈춘다(영상 상세 화면)."""
+    return next((j.id for j in reversed(Job.all()) if (d := j.data) and d.get("channel") == cid
+                 and upload_of(d).get("video_id") == video_id), None)
+
+
+def _pie(rows: list[dict]) -> dict:
+    parts = charts.slices(rows)
+    return {"parts": parts, "bg": charts.donut(parts)}
+
+
+def _insight_ctx(request: Request, days: int) -> tuple[Channel | None, dict]:
+    ch = _channels().get(_sel(request))
+    ctx = {"ch": ch, "days": days if days in insights.DAYS else 28, "data": None, "error": None, "jobs": {},
+           "tabs": INSIGHT_TABS}
+    if ch and not (api := registry.analytics(ch)).ready():
+        ctx["error"] = f"YouTube가 연결되지 않았어요. {api.hint}"
+    return ch, ctx
+
+
+@app.get("/insights")
+def insights_page(request: Request, tab: str = "overview", days: int = 28, sort: str = "new", page: str = ""):
+    """채널 성과: 개요(지표·추세·형식·하이라이트) · 영상(영상마다 기간 성과) · 시청자(유입·형식·기기 등 한눈에)."""
+    ch, ctx = _insight_ctx(request, days)
+    tab = tab if tab in INSIGHT_TABS else "overview"
+    ctx |= {"tab": tab, "page": page, "sorts": insights.SORTS}
+    if ch and not ctx["error"]:
+        api, expect, days = registry.analytics(ch), ch.publish.channel_id, ctx["days"]
+        try:
+            if tab == "videos":
+                ctx["data"] = insights.videos(api, page[:200], expect=expect, days=days, sort=sort)
+            elif tab == "audience":
+                ctx["data"] = d = insights.audiences(api, days, expect)
+                ctx["pies"] = {c["dim"]: _pie(c["rows"]) for c in d["cards"] if c["dim"] in PIES}
+            else:
+                ctx["data"] = d = insights.overview(api, days, expect)
+                ctx["review"] = insights.last_review(ch.id)
+                rows = d["daily"]["rows"]
+                ctx |= {"trend": charts.trend(rows, d["prev_daily"]["rows"]), "pie": _pie(d["format"]["rows"]),
+                        "week": charts.weekday(d["highlights"]["weekday"]),
+                        "sparks": {k: charts.spark([r.get(k) for r in rows]) for k in
+                                   ("views", "estimatedMinutesWatched", "averageViewPercentage", "subscribersGained")}}
+            if tab != "audience":   # 시청자 탭은 작업 링크를 쓰지 않는다
+                ctx["jobs"] = _video_jobs(ch.id)
+        except RuntimeError as e:
+            ctx["error"] = redact(str(e))
+    return _page(request, f"insight_{tab}.html", ctx)
+
+
+@app.post("/insights/review")
+def insight_review(request: Request, days: int = Form(28)):
+    """AI 성과 분석(channel.toml [insights] llm, 예: claude = Claude API). 1~2분 걸릴 수 있어 화면은 버튼을 잠근다."""
+    ch = _channels().get(_sel(request))
+    if not ch:
+        raise HTTPException(400, "채널을 먼저 골라 주세요")
+    api = registry.analytics(ch)
+    if not api.ready():
+        raise HTTPException(400, f"YouTube가 연결되지 않았어요. {api.hint}")
+    days = days if days in insights.DAYS else 28
+    try:
+        insights.review(api, registry.insight_llm(ch), ch, days, ch.publish.channel_id)
+    except RuntimeError as e:   # 실패도 남겨 화면에 이유를 보인다(지난 분석은 덮지 않고 error만 더한다)
+        last = insights.last_review(ch.id) or {}
+        insights.InsightReview(ch.id).put("review.json", last | {"error": redact(str(e))})
+    return RedirectResponse(f"/insights?days={days}&channel={ch.id}#ai-review", status_code=303)
+
+
+@app.get("/insights/videos/{video_id}")
+def insight_video_page(request: Request, video_id: str, days: int = 28):
+    """영상 하나의 기간 성과·일별 추이·구간 유지율·유입 경로."""
+    ch, ctx = _insight_ctx(request, days)
+    ctx["tab"] = "videos"
+    if ch and not ctx["error"]:
+        try:
+            ctx["data"] = d = insights.video(registry.analytics(ch), video_id, ctx["days"], ch.publish.channel_id)
+            ctx |= {"trend": charts.trend(d["daily"]["rows"], []), "curve": charts.retention(d["retention"]["rows"]),
+                    "pie": _pie(d["traffic"]["rows"]), "job": _video_job(ch.id, video_id)}
+        except RuntimeError as e:
+            ctx["error"] = redact(str(e))
+    return _page(request, "insight_detail.html", ctx)
 
 
 @app.get("/schedules")

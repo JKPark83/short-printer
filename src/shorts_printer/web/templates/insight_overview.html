@@ -1,0 +1,95 @@
+{% extends "_base.html" %}
+{% from "_insight_ui.html" import n, pct, md, delta, head, problem, spark, trend_chart, donut, notes with context %}
+{% block title %}성과 · Shorts Studio{% endblock %}
+{% block main %}
+<main id="page" tabindex="-1" class="wrap wrap-dash in-page">
+  {{ head(ch, tab, tabs, days) }}
+  {% if error or not ch %}{{ problem(ch, error) }}
+  {% else %}
+  {% set t, dl, hl = data.totals or {}, data.deltas, data.highlights %}
+  <p class="in-range">{{ md(data.range.startDate) }} ~ {{ md(data.range.endDate) }} <span class="muted">· 앞 기간 {{ md(data.previous.startDate) }} ~ {{ md(data.previous.endDate) }}{% if data.channel.subscribers is number %} · 구독자 {{ n(data.channel.subscribers) }}{% endif %}</span></p>
+
+  {% if data.status == 'no_data' %}
+  <div class="in-empty"><strong>이 기간엔 받은 데이터가 없어요</strong><p>아직 집계되지 않았거나 조회가 없었어요. 0과는 구별해서 보여 드려요.</p></div>
+  {% else %}
+  <section class="tiles in-kpis" aria-label="기간 합계">
+    <div class="tile"><span class="t-label">{{ icon('play', 14) }}조회수</span><span class="t-num">{{ n(t.views) }}</span>{{ delta(dl.views, (data.before or {}).views) }}{{ spark(sparks.views) }}</div>
+    <div class="tile"><span class="t-label">{{ icon('clock', 14) }}시청 시간</span><span class="t-num">{% if t.estimatedMinutesWatched is not number %}—{% elif t.estimatedMinutesWatched < 60 %}{{ n(t.estimatedMinutesWatched) }}<small>분</small>{% else %}{{ '%.1f'|format(t.estimatedMinutesWatched / 60) }}<small>시간</small>{% endif %}</span>{{ delta(dl.estimatedMinutesWatched, (data.before or {}).estimatedMinutesWatched) }}{{ spark(sparks.estimatedMinutesWatched) }}</div>
+    <div class="tile"><span class="t-label">{{ icon('film', 14) }}평균 시청 비율</span><span class="t-num">{{ '—' if t.averageViewPercentage is not number else '%.1f'|format(t.averageViewPercentage) }}<small>%</small></span>{{ delta(dl.averageViewPercentage, (data.before or {}).averageViewPercentage) }}{{ spark(sparks.averageViewPercentage) }}</div>
+    <div class="tile"><span class="t-label">{{ icon('sparkles', 14) }}구독 순증</span><span class="t-num">{% if t.subscribersGained is not number %}—{% else %}{{ '%+d'|format((t.subscribersGained or 0) - (t.subscribersLost or 0)) }}{% endif %}</span><span class="in-pill">+{{ n(t.subscribersGained) }} / −{{ n(t.subscribersLost) }}</span>{{ spark(sparks.subscribersGained) }}</div>
+  </section>
+
+  <section class="card in-card" aria-labelledby="h-trend">
+    <h2 id="h-trend" class="sr-only">조회수 흐름</h2>
+    {% if trend %}{{ trend_chart(trend, '조회수 흐름') }}{% else %}<p class="in-soft">흐름을 그릴 만큼 받은 날이 없어요.</p>{% endif %}
+    <ul class="in-stickers" aria-label="하이라이트">
+      <li class="s-sun"><span>가장 많이 본 날</span><b>{% if hl.best %}{{ md(hl.best.day) }}{% else %}—{% endif %}</b><small>{% if hl.best %}{{ n(hl.best.views) }}회{% else %}아직 없어요{% endif %}</small></li>
+      <li class="s-mint"><span>하루 평균</span><b>{{ '—' if hl.per_day is not number else hl.per_day if hl.per_day < 10 else n(hl.per_day) }}<small>회</small></b><small>받은 날 기준</small></li>
+      <li class="s-sky"><span>1천 회당 반응</span><b>{{ '—' if hl.react_per_k is not number else hl.react_per_k }}</b><small>좋아요·댓글·공유</small></li>
+    </ul>
+  </section>
+
+  <section id="ai-review" class="card in-card in-ai" aria-labelledby="h-ai">
+    <div class="in-cardhead">
+      <h2 id="h-ai">{{ icon('sparkles', 16) }}AI 성과 분석</h2>
+      <form method="post" action="/insights/review?channel={{ ch.id }}">
+        <input type="hidden" name="days" value="{{ days }}">
+        <button class="btn btn-primary" type="submit" data-busy="AI가 읽는 중… 1~2분">{{ icon('loader', 16, 'spin when-busy') }}<span>{{ '다시 분석' if review and review.headline else '분석 받기' }}</span></button>
+      </form>
+    </div>
+    {% if review and review.error %}<p class="banner banner-warn">{{ icon('alert', 18) }}<span>지난 분석을 받지 못했어요: {{ review.error }}</span></p>{% endif %}
+    {% if review and review.headline %}
+    <p class="in-ai-head">{{ review.headline }}</p>
+    <p class="in-soft">{{ review.llm }}{% if review.model %} · {{ review.model }}{% endif %} · {{ review.at|hm }} · {{ md(review.range.startDate) }} ~ {{ md(review.range.endDate) }}{% if review.cost_usd is number %} · ${{ '%.3f'|format(review.cost_usd) }}{% endif %}</p>
+    <ol class="in-ideas">{% for i in review.ideas %}
+      <li><div><b>{{ i.topic }}</b><small>{{ i.why }}</small></div>
+        <form method="post" action="/trends"><input type="hidden" name="channel" value="{{ ch.id }}"><input type="hidden" name="keyword" value="{{ i.topic }}">
+          <button class="btn btn-secondary" type="submit" data-busy="여는 중…">주제 찾기</button></form></li>
+    {% endfor %}</ol>
+    <p class="in-try"><span>{{ icon('trending', 14) }}다음 2주 실험</span>{{ review.experiment }}</p>
+    <details class="in-more"><summary>근거·해석·가설 보기</summary>
+      <dl class="in-why">
+        <dt>숫자로 확인된 것</dt><dd><ul>{% for f in review.facts %}<li>{{ f }}</li>{% endfor %}</ul></dd>
+        <dt>해석</dt><dd><ul>{% for f in review.reads %}<li>{{ f }}</li>{% endfor %}</ul></dd>
+        <dt>확인할 가설</dt><dd><ul>{% for f in review.hypotheses %}<li>{{ f }}</li>{% endfor %}</ul></dd>
+      </dl>
+    </details>
+    {% elif not (review and review.error) %}
+    <p class="in-soft">이 기간 숫자를 AI가 읽고 잘 된 점·가설·다음 편 3개를 제안해요. 쓰는 AI는 <code>channel.toml</code>의 <code>[insights] llm</code>에서 고르고(예: <code>claude</code> = Claude API), 비우면 채널 기본 AI를 써요.</p>
+    {% endif %}
+  </section>
+
+  <div class="in-duo">
+    <section class="card in-card" aria-labelledby="h-fmt">
+      <h2 id="h-fmt">Shorts · 일반</h2>
+      {{ donut(pie, n(data.format.total) ~ '회', 'Shorts·일반 조회 비율') }}
+    </section>
+    <section class="card in-card" aria-labelledby="h-week">
+      <h2 id="h-week">요일 리듬</h2>
+      {% if week %}
+      <ol class="in-week" aria-label="요일별 하루 평균 조회수">{% for w in week %}<li{% if w.best %} class="best"{% endif %}><span class="bar" style="height: {{ [w.pct, 6]|max }}%" aria-hidden="true"></span><b>{{ w.day }}</b><small>{{ '—' if w.avg is none else w.avg }}</small></li>{% endfor %}</ol>
+      {% set bests = week|selectattr('best')|list %}<p class="in-soft">{% if bests|length == 1 %}{{ bests[0].day }}요일에 가장 많이 봤어요. 올리는 요일을 고를 때 참고하세요.{% else %}요일마다 비슷해요. 아직 요일을 가릴 만큼 차이가 없어요.{% endif %}</p>
+      {% else %}<p class="in-soft">요일 리듬은 받은 날이 14일 넘게 쌓이면 보여요. 28일·90일로 보면 나와요.</p>{% endif %}
+    </section>
+  </div>
+
+  <section class="card in-card" aria-labelledby="h-top">
+    <h2 id="h-top">많이 본 영상</h2>
+    {% if data.top %}
+    {% set topv = (data.top|first).views or 1 %}
+    <ol class="in-rank">{% for v in data.top[:5] %}
+      <li>
+        <span class="no n{{ loop.index }}">{{ loop.index }}</span>
+        <a class="in-vlink" href="/insights/videos/{{ v.video }}?days={{ days }}">{% if v.thumbnail %}<img src="{{ v.thumbnail }}" alt="" loading="lazy">{% endif %}<span class="in-title">{{ v.title }}<small class="track" aria-hidden="true"><span style="width: {{ [(v.views or 0) / topv * 100, 3]|max }}%"></span></small></span></a>
+        <span class="in-num"><span>{{ n(v.views) }}<small>회</small></span><small class="sub">시청 {{ pct(v.averageViewPercentage) }}</small></span>
+        {% if jobs.get(v.video) %}<a class="chip" href="/jobs/{{ jobs[v.video] }}">작업</a>{% endif %}
+      </li>
+    {% endfor %}</ol>
+    {% if data.top|length > 5 %}<a class="in-link" href="/insights?tab=videos&days={{ days }}&sort=views">전체 영상 성과 보기</a>{% endif %}
+    {% else %}<p class="in-soft">이 기간에 조회된 영상이 없어요.</p>{% endif %}
+  </section>
+  {% endif %}
+  {{ notes(data.notes) }}
+  {% endif %}
+</main>
+{% endblock %}

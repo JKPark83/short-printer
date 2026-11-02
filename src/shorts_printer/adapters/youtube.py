@@ -23,7 +23,8 @@ UPLOAD = "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumab
 THUMBNAIL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set?uploadType=media&videoId="
 CAPTIONS = "https://www.googleapis.com/upload/youtube/v3/captions?uploadType=multipart&part=snippet"
 CAPTION_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"   # captions.insert는 upload 범위로 안 된다
-SCOPE = "https://www.googleapis.com/auth/youtube.upload " + CAPTION_SCOPE
+ANALYTICS_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly"   # 성과 화면(youtube_analytics)
+SCOPE = f"https://www.googleapis.com/auth/youtube.upload {CAPTION_SCOPE} {ANALYTICS_SCOPE}"
 EXPIRED = "YouTube 로그인이 만료됐어요. 터미널에서 uv run sp youtube-login --channel {channel}을 다시 하세요."
 CHUNK = 8 * 1024 * 1024   # 이어 올리기 조각. 256 KiB의 배수여야 한다
 RETRIES = 5   # 끊긴 뒤 받은 곳을 물어 다시 보내는 횟수(조각이 들어가면 새로 센다)
@@ -133,9 +134,14 @@ def login(token: Path) -> None:
     _save(token, {"refresh_token": tok["refresh_token"]})
 
 
+def refresh(token: Path) -> dict:
+    """refresh_token → {access_token, expires_in, scope}. scope로 받은 권한을 본다(성과 화면)."""
+    refresh_token = json.loads(token.read_text(encoding="utf-8"))["refresh_token"]
+    return _token(_client(), grant_type="refresh_token", refresh_token=refresh_token)
+
+
 def _access_token(token: Path) -> str:
-    refresh = json.loads(token.read_text(encoding="utf-8"))["refresh_token"]
-    return _token(_client(), grant_type="refresh_token", refresh_token=refresh)["access_token"]
+    return refresh(token)["access_token"]
 
 
 def _clean(s: str) -> str:
