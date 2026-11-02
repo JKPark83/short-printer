@@ -162,14 +162,16 @@ def perf(items: list[dict], today: date) -> list[dict]:
 def rho(items: list[dict], key: str) -> dict:
     """축마다 추천 점수와 성과의 순위 상관(스피어만). 점수가 다 같으면 None."""
     have = [r for r in items if r["scores"] and key in r]
-    out = {}
+    out, n = {}, {}
     for k in CRITERIA:
+        xs = [r for r in have if k in r["scores"]]   # 예전 추천은 축이 모자라다(curious 이전)
+        n[k] = len(xs)
         try:
-            out[k] = round(statistics.correlation([r["scores"][k] for r in have], [r[key] for r in have],
+            out[k] = round(statistics.correlation([r["scores"][k] for r in xs], [r[key] for r in xs],
                                                   method="ranked"), 3)
         except statistics.StatisticsError:
             out[k] = None
-    return {"n": len(have), "rho": out}
+    return {"n": min(n.values()), "n_axis": n, "rho": out}
 
 
 def propose(w: dict[str, int], r: dict[str, float | None], n: int) -> tuple[dict[str, int], str]:
@@ -196,7 +198,7 @@ def outliers(items: list[dict]) -> dict:
     """LLM 채점이 빗나간 사례(trends.md 점수 예시 고칠 재료): 높게 매겼는데 바닥, 낮게 매겼는데 최고."""
     out = {}
     for k in TUNABLE:
-        scored = [r for r in items if r["scores"]]
+        scored = [r for r in items if r["scores"] and k in r["scores"]]
         over = sorted((r for r in scored if r["scores"][k] >= 4 and r["perf"] <= 0.2), key=lambda r: r["perf"])
         under = sorted((r for r in scored if r["scores"][k] <= 2 and r["perf"] >= 0.8), key=lambda r: -r["perf"])
         out[k] = {"over": [_brief(r, k) for r in over[:5]], "under": [_brief(r, k) for r in under[:5]]}

@@ -55,3 +55,14 @@ def test_fit_finds_curious_signal_and_hits():
     assert out["correlation"]["perf"]["rho"]["trend"] is None   # 점수가 다 같으면 상관이 없다
     assert out["weights"]["proposed"]["curious"] == 30
     assert [h["job"] for h in out["hits"]["yt_views"]["hits"]] == ["0"]
+
+
+def test_fit_skips_axes_missing_in_old_picks():
+    rows = [{"job": str(i), "title": f"주제{i}", "hook": "", "uploaded": "2026-10-01", "yt_id": f"v{i}", "ig_url": None,
+             "scores": {"trend": 1 + i % 5, "fit": 4, "fresh": 3, "safe": 5}
+             | ({"curious": 1 + i % 5} if i % 2 else {}),
+             "yt": {"views": 1000 * (1 + i % 5) + i, "keep": 0.5}} for i in range(10)]
+    out = ti.fit({"channel": "x", "today": "2026-10-20", "weights": W, "youtube_error": None, "rows": rows}, [])
+    assert out["correlation"]["perf"]["n_axis"]["trend"] == 10
+    assert out["correlation"]["perf"]["n"] == 5   # curious가 있는 옛 추천 빼고 5편
+    assert out["correlation"]["perf"]["rho"]["curious"] > 0.8
