@@ -47,7 +47,7 @@ def test_get_sends_bearer_caches_and_keeps_token_out_of_result(api, monkeypatch)
     assert seen == [("https://www.googleapis.com/youtube/v3/channels?mine=true&part=snippet", "Bearer tok1")]
     got["items"].append(2)   # 돌려준 값을 바꿔도 캐시는 그대로
     assert api.data("channels", mine="true", part="snippet")["items"] == [1] and len(seen) == 1
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         api.data("search", q="x")   # 할당량 100짜리 검색은 읽지 않는다
 
 
@@ -91,3 +91,33 @@ def test_expired_login_names_the_channel(api, monkeypatch):
 
 def test_login_asks_for_analytics_scope():
     assert youtube.ANALYTICS_SCOPE in youtube.SCOPE.split() and youtube.CAPTION_SCOPE in youtube.SCOPE.split()
+
+
+def test_network_error_while_refreshing_token_becomes_korean_error(tmp_path, monkeypatch):
+    """접근 토큰이 끝난 채 와이파이가 끊기면(토큰 갱신 중 URLError·RemoteDisconnected) 500이 아니라 한국어 오류."""
+    from http.client import RemoteDisconnected
+    from urllib.error import URLError
+
+    from shorts_printer.adapters import youtube, youtube_analytics
+    api = youtube_analytics.YouTubeAnalytics(tmp_path / "t.json", "c")
+    for err in (URLError("down"), RemoteDisconnected("closed"), TimeoutError()):
+        monkeypatch.setattr(youtube, "refresh", lambda token, err=err: (_ for _ in ()).throw(err))
+        with pytest.raises(RuntimeError, match="YouTube 응답을 받지 못했어요"):
+            api.report(ids="channel==UC1", metrics="views")
+
+
+def test_relogin_swaps_the_cached_analytics_instance(tmp_path, monkeypatch):
+    """다시 로그인해 토큰 파일이 바뀌면 예전 접근 토큰·응답 캐시를 든 인스턴스를 버린다."""
+    import os
+
+    from shorts_printer import config, registry
+    from shorts_printer.core import channel
+    monkeypatch.setattr(config, "SECRETS_DIR", tmp_path)
+    ch = channel.load("momjob")
+    token = tmp_path / "channels" / ch.id / "youtube_token.json"
+    token.parent.mkdir(parents=True)
+    token.write_text("{}")
+    first = registry.analytics(ch)
+    assert registry.analytics(ch) is first   # 화면을 오가는 동안은 같은 인스턴스(5분 캐시)
+    os.utime(token, ns=(1, 1))
+    assert registry.analytics(ch) is not first

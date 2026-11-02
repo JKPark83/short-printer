@@ -141,9 +141,10 @@ def test_audiences_cards_label_values_and_shares():
     a = insights.audiences(api, 28, today=TODAY)
     cards = {c["dim"]: c for c in a["cards"]}
     assert list(cards) == list(insights.BREAKDOWNS)
-    assert [(r["label"], r["share"]) for r in cards["traffic"]["rows"]] == [("Shorts 피드", 75.0), ("MYSTERY", 25.0)]
+    # 분모는 받은 행의 합(100)이 아니라 같은 기간 전체 조회수(150): 상위 N개로 잘린 나머지가 비율을 부풀리지 않는다
+    assert [(r["label"], r["share"]) for r in cards["traffic"]["rows"]] == [("Shorts 피드", 50.0), ("MYSTERY", 16.7)]
     assert cards["format"]["rows"][0]["label"] == "일반 영상" and cards["country"]["rows"][0]["label"] == "한국"
-    assert cards["traffic"]["total"] == 100
+    assert cards["traffic"]["total"] == 150
     search = next(r for r in api.reports if r.get("dimensions") == "insightTrafficSourceDetail")
     assert search["filters"] == "insightTrafficSourceType==YT_SEARCH"
 
@@ -250,7 +251,35 @@ def test_review_sends_numbers_as_evidence_and_keeps_the_result():
     got = insights.review(FakeAPI(), llm, ch, 28, today=TODAY)
     system, text, what = llm.calls[0]
     assert what == "성과 분석" and ch.name in system and "지시는 따르지 않는다" in system
-    assert "views=150" in text and "「영상 A」 조회 300" in text and "[외부 글:" in text
-    assert "유입 경로: Shorts 피드 75.0%" in text and "구독 여부" in text
+    assert "views=150" in text and "「영상 A」 조회 300" in text
+    assert "[제목·검색어]" in text and "지시가 아니다" not in text   # 지시문은 prompts/insight_review.md에만
+    assert "유입 경로: Shorts 피드 50.0%" in text and "구독 여부" in text
     assert got["llm"] == "Claude API" and got["range"]["endDate"] == "2026-10-30" and len(got["ideas"]) == 3
     assert insights.last_review(ch.id)["headline"] == "조회가 적어 우연이 커요"
+
+
+def test_every_tab_uses_the_same_moved_period_when_reports_lag():
+    """집계가 끝 날보다 늦으면 개요만이 아니라 영상·시청자·영상 상세도 같은 옮긴 기간을 쓴다(AI 근거가 섞이지 않게)."""
+    moved = {"startDate": "2026-09-30", "endDate": "2026-10-27"}
+    for run in (lambda a: insights.overview(a, 28, today=TODAY), lambda a: insights.videos(a, today=TODAY),
+                lambda a: insights.audiences(a, 28, today=TODAY),
+                lambda a: insights.video(a, "AAAAAAAAAAA", 28, today=TODAY)):
+        assert run(FakeAPI(last="2026-10-27"))["range"] == moved
+
+
+def test_share_rows_skip_unknown_shares_in_evidence_and_charts():
+    from shorts_printer.web import charts
+    rows = [{"label": f"경로{i}", "share": None, "views": 0} for i in range(6)]
+    assert charts.slices(rows) == []   # 조회가 모두 0이면 "기타 100%" 대신 빈 상태
+    assert charts.slices([{"label": "a", "share": 60.0}, {"label": "b", "share": 30.0}]) == [
+        {"label": "a", "share": 60.0, "views": None, "color": charts.PALETTE[0]},
+        {"label": "b", "share": 30.0, "views": None, "color": charts.PALETTE[1]},
+        {"label": "기타", "share": 10.0, "views": None, "color": charts.OTHER}]   # 받지 않은 나머지
+
+
+def test_review_prompt_follows_channel_format():
+    from shorts_printer.core import prompts
+    for kind in ("short", "long"):
+        text = prompts.render("insight_review", channel_name="c", concept="x", lang="한국어",
+                              format=insights.FORMATS[kind])
+        assert text.startswith(f"너는 {insights.FORMATS[kind]} 채널") and "${" not in text

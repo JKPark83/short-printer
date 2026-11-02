@@ -46,7 +46,7 @@ def test_videos_audience_and_video_detail():
     assert "기간 조회수" in html and "300" in html and "이 기간 성과가 아직 없어요" in html   # B는 기간 성과 없음
     assert 'aria-current="true">기간 조회수순' in html
     html = get("/insights?tab=audience")
-    assert "Shorts 피드" in html and "75.0%" in html and "MYSTERY" in html and "한국" in html
+    assert "Shorts 피드" in html and "50.0%" in html and "MYSTERY" in html and "한국" in html
     assert html.count("conic-gradient(") == 3   # 형식·구독 여부·기기는 도넛
     html = get("/insights/videos/AAAAAAAAAAA?days=7")
     assert "구간 유지율" in html and "<polyline points=" in html and "https://youtu.be/AAAAAAAAAAA" in html

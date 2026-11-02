@@ -1,7 +1,7 @@
 """조립 지점: 이름 → 구현. 채널 설정을 읽어 core에 넘길 Services를 만든다.
 adapters를 아는 곳은 여기(와 web·cli의 로그인·Chrome 명령)뿐이다. 새 공급자는 adapters에 파일 하나 + 여기 한 줄."""
 import logging
-from functools import cache
+from functools import cache, lru_cache
 
 from . import config
 from .adapters.antigravity import Antigravity, AntigravityResearch
@@ -89,14 +89,20 @@ def splitter(language: str) -> Splitter:
     return SPLITTERS.get(language, DEFAULT_SPLITTER)
 
 
-@cache
-def _analytics(cid: str) -> YouTubeAnalytics:
+@lru_cache(maxsize=32)
+def _analytics(cid: str, stamp: int) -> YouTubeAnalytics:
     return YouTubeAnalytics(config.SECRETS_DIR / "channels" / cid / "youtube_token.json", cid)
 
 
 def analytics(ch: Channel) -> ChannelAnalytics:
-    """채널 성과 읽기(업로드와 같은 토큰). 화면을 오가도 5분 캐시가 남게 채널마다 하나를 쓴다."""
-    return _analytics(ch.id)
+    """채널 성과 읽기(업로드와 같은 토큰). 화면을 오가도 5분 캐시가 남게 채널마다 하나를 쓴다.
+    다시 로그인해 토큰 파일이 바뀌면 새로 만든다(예전 접근 토큰·응답 캐시를 최대 1시간 쓰지 않게)."""
+    token = config.SECRETS_DIR / "channels" / ch.id / "youtube_token.json"
+    try:
+        stamp = token.stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    return _analytics(ch.id, stamp)
 
 
 def insight_llm(ch: Channel) -> LLM:

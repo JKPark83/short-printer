@@ -6,7 +6,7 @@ import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -41,7 +41,7 @@ class YouTubeAnalytics:
 
     def data(self, resource: str, **params) -> dict:
         if resource not in RESOURCES:
-            raise ValueError(f"읽지 않는 YouTube 자원이에요: {resource}")
+            raise RuntimeError(f"읽지 않는 YouTube 자원이에요: {resource}")
         return self._get(DATA + resource, params)
 
     def report(self, **params) -> dict:
@@ -71,8 +71,8 @@ class YouTubeAnalytics:
             return copy.deepcopy(hit[1])
         err = None
         for attempt in range(3):
-            req = Request(url, headers={"Authorization": f"Bearer {self._auth()}", "Accept": "application/json"})
-            try:
+            try:   # 토큰 갱신(_auth)도 네트워크라 같은 try 안에서 받는다
+                req = Request(url, headers={"Authorization": f"Bearer {self._auth()}", "Accept": "application/json"})
                 with urlopen(req, timeout=20) as r:
                     body = json.loads(r.read() or b"{}")
                 break
@@ -85,7 +85,8 @@ class YouTubeAnalytics:
                     time.sleep(0.5 * (attempt + 1))
                     continue
                 err = youtube._error(e)
-            except (URLError, TimeoutError, ValueError):
+            # OSError: URLError·TimeoutError·RemoteDisconnected(urlopen이 감싸지 않는다)의 공통 부모
+            except (OSError, ValueError):
                 err = RuntimeError("YouTube 응답을 받지 못했어요. 잠시 뒤 다시 열어 보세요.")
             break
         if err:   # except 밖에서 던져 요청 정보(토큰 헤더)를 달고 가지 않게

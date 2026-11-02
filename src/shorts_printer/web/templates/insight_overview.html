@@ -55,7 +55,7 @@
       </dl>
     </details>
     {% elif not (review and review.error) %}
-    <p class="in-soft">이 기간 숫자를 AI가 읽고 잘 된 점·가설·다음 편 3개를 제안해요. 쓰는 AI는 제작 설정의 "성과 분석"에서 고르고(예: Claude API), 비우면 기본 AI를 써요.</p>
+    <p class="in-soft">이 기간 숫자를 AI가 읽고 잘 된 점·가설·다음 편 3개를 제안해요. 쓰는 AI는 <code>channel.toml</code>의 <code>[insights] llm</code>에서 고르고(예: <code>claude</code> = Claude API), 비우면 채널 기본 AI를 써요.</p>
     {% endif %}
   </section>
 

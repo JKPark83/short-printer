@@ -57,11 +57,12 @@ def retention(rows: list[dict], w: int = 300, h: int = 120) -> str:
 
 def slices(rows: list[dict], n: int = 4) -> list[dict]:
     """비율 조각: 위 n개 + 나머지는 '기타'. 색은 팔레트 순서, 기타는 회색."""
-    shown = [r for r in rows if isinstance(r.get("share"), int | float)][:n]
+    rows = [r for r in rows if isinstance(r.get("share"), int | float)]   # 조회가 모두 0이면 비율이 없다(빈 상태)
+    shown = rows[:n]
     rest = round(100 - sum(r["share"] for r in shown), 1)
     out = [{"label": r["label"], "share": r["share"], "views": r.get("views"), "color": PALETTE[i % len(PALETTE)]}
            for i, r in enumerate(shown)]
-    if len(rows) > n and rest > 0:
+    if shown and rest > 0:   # 분모가 기간 전체 조회수라 받지 않은 나머지도 기타로 남는다
         out.append({"label": "기타", "share": rest, "views": None, "color": OTHER})
     return out
 

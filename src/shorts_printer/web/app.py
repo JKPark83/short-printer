@@ -1138,9 +1138,16 @@ PIES = ("format", "subscribed", "device")   # 갈래가 적어 도넛으로 보�
 
 
 def _video_jobs(cid: str) -> dict[str, str]:
-    """이 채널에서 올린 작업: YouTube 영상 id → 작업 id(성과에서 그 편 작업 화면으로 간다)."""
+    """이 채널에서 올린 작업: YouTube 영상 id → 작업 id(성과에서 그 편 작업 화면으로 간다).
+    작업마다 저장소를 한 번씩 읽어서 작업 링크를 보이는 개요·영상 탭에서만 부른다."""
     return {vid: j.id for j in Job.all() if (d := j.data) and d.get("channel") == cid
             and (vid := upload_of(d).get("video_id"))}
+
+
+def _video_job(cid: str, video_id: str) -> str | None:
+    """영상 하나의 작업 id. 최근 작업부터 보고 찾으면 멈춘다(영상 상세 화면)."""
+    return next((j.id for j in reversed(Job.all()) if (d := j.data) and d.get("channel") == cid
+                 and upload_of(d).get("video_id") == video_id), None)
 
 
 def _pie(rows: list[dict]) -> dict:
@@ -1179,15 +1186,16 @@ def insights_page(request: Request, tab: str = "overview", days: int = 28, sort:
                         "week": charts.weekday(d["highlights"]["weekday"]),
                         "sparks": {k: charts.spark([r.get(k) for r in rows]) for k in
                                    ("views", "estimatedMinutesWatched", "averageViewPercentage", "subscribersGained")}}
-            ctx["jobs"] = _video_jobs(ch.id)
+            if tab != "audience":   # 시청자 탭은 작업 링크를 쓰지 않는다
+                ctx["jobs"] = _video_jobs(ch.id)
         except RuntimeError as e:
-            ctx["error"] = str(e)
+            ctx["error"] = redact(str(e))
     return _page(request, f"insight_{tab}.html", ctx)
 
 
 @app.post("/insights/review")
 def insight_review(request: Request, days: int = Form(28)):
-    """AI 성과 분석(제작 설정의 "성과 분석" AI, 예: Claude API). 1~2분 걸릴 수 있어 화면은 버튼을 잠근다."""
+    """AI 성과 분석(channel.toml [insights] llm, 예: claude = Claude API). 1~2분 걸릴 수 있어 화면은 버튼을 잠근다."""
     ch = _channels().get(_sel(request))
     if not ch:
         raise HTTPException(400, "채널을 먼저 골라 주세요")
@@ -1212,9 +1220,9 @@ def insight_video_page(request: Request, video_id: str, days: int = 28):
         try:
             ctx["data"] = d = insights.video(registry.analytics(ch), video_id, ctx["days"], ch.publish.channel_id)
             ctx |= {"trend": charts.trend(d["daily"]["rows"], []), "curve": charts.retention(d["retention"]["rows"]),
-                    "pie": _pie(d["traffic"]["rows"]), "job": _video_jobs(ch.id).get(video_id)}
+                    "pie": _pie(d["traffic"]["rows"]), "job": _video_job(ch.id, video_id)}
         except RuntimeError as e:
-            ctx["error"] = str(e)
+            ctx["error"] = redact(str(e))
     return _page(request, "insight_detail.html", ctx)
 
 
