@@ -236,7 +236,7 @@ def test_claude_returns_result_and_cost(monkeypatch):
     assert calls[0]["output_format"] is script.Script and calls[0]["fallbacks"] == "default"
     assert calls[0]["max_tokens"] == 128000
     assert calls[0]["messages"][0]["content"] == "글" and "tools" not in calls[0]
-    assert calls[0]["system"] == [{"type": "text", "text": "sys", "cache_control": {"type": "ephemeral"}}]
+    assert calls[0]["system"] == [{"type": "text", "text": "sys"}]   # 한 번 쓰는 지시문은 캐시하지 않는다
 
 
 def test_claude_web_search_resumes_pause_and_adds_search_cost(monkeypatch):

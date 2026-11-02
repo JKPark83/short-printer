@@ -11,7 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from ..infra import maptiles
-from ..ports.llm import LLM, add_usage
+from ..ports.llm import LLM, Cached, add_usage
 from . import prompts, research
 from .channel import Channel
 
@@ -168,7 +168,7 @@ def plan(llm: LLM, ch: Channel, script: dict, timing: list[dict], facts: list[di
             + f"\nstates(시간 순):\n{states or '없음(화살표·라벨로만)'}")
     firsts = sorted({0, *(c["first"] for c in script.get("chapters") or [] if 0 <= c["first"] < n)})
     scenes = [SceneMap(scene=i).model_dump() for i in range(n)]
-    sys = prompts.render("long_map_scenes", lang=ch.lang_name)
+    sys = Cached(prompts.render("long_map_scenes", lang=ch.lang_name))   # 장마다 같은 지시문으로 거듭 부른다
     for a, b in zip(firsts, [*firsts[1:], n], strict=True):
         part = old and old["scenes"][a:b]
         out, u = llm.ask(sys, f"{head}\n\n이 장의 장면:\n{lines(range(a, b))}" + fix(part), Chapter,

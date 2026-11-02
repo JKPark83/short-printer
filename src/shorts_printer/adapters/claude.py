@@ -78,6 +78,52 @@ def _image(img: bytes | str) -> dict:
     return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": data}}
 
 
+CACHE = {"type": "ephemeral"}   # 5분. 1시간(쓰기 2배)은 세 번 넘게 읽어야 남아서 쓰지 않는다
+
+
+def system_blocks(system: str) -> list[dict]:
+    """지시문 블록. Cached면 공통 앞부분(head) 끝에 캐시 위치를 둔다. 그냥 문자열은 캐시하지 않는다:
+    숏폼 대본·검수·썸네일·번역은 지시문이 저마다 달라 서로의 캐시를 읽지 못하고, 고쳐 쓰기는 사람이 대본을 읽은 뒤
+    누르니 5분 캐시가 이미 사라진 뒤다. 그런 호출에 캐시를 걸면 쓰기 값(1.25배)만 더 낸다."""
+    head = getattr(system, "head", None)
+    if head is None:
+        return [{"type": "text", "text": system}]
+    tail = system[len(head):].lstrip("\n")
+    return [{"type": "text", "text": head, "cache_control": CACHE}] + ([{"type": "text", "text": tail}] if tail else [])
+
+
+def turns(request, tools: list[dict] | None, messages: list[dict]) -> tuple[list, dict]:
+    """pause_turn으로 멈추면 그대로 돌려보내 이어 부르는 반복과 사용량 합계. 대본(ask)과 조사(gather)가 같이 쓴다.
+    request(tools, extra)는 응답 하나를 돌려준다. (응답들, {inp, out, written, read, searches}).
+    inp는 캐시 밖 입력만이다. 이어 부를 때만 요청 맨 위 cache_control(자동 캐시)을 켜서 앞선 검색 결과가 쌓인 대화를
+    다음 요청부터 캐시로 읽는다. 한 번에 끝나는 호출은 캐시 쓰기 값을 내지 않는다."""
+    n = dict.fromkeys(("inp", "out", "written", "read", "searches"), 0)
+    resps, extra = [], {}
+    for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
+        resp, tools = with_sites(lambda t, extra=extra: request(t, extra), tools)
+        u = resp.usage
+        n["inp"] += u.input_tokens
+        n["out"] += u.output_tokens
+        n["written"] += getattr(u, "cache_creation_input_tokens", 0) or 0
+        n["read"] += getattr(u, "cache_read_input_tokens", 0) or 0
+        n["searches"] += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
+        resps.append(resp)
+        if resp.stop_reason != "pause_turn":
+            break
+        messages.append({"role": "assistant", "content": resp.content})
+        extra = {"cache_control": CACHE}
+    return resps, n
+
+
+def usage(resp, n: dict) -> dict:
+    """사용량. input_tokens는 캐시에 쓰고 읽은 입력까지 더하고, 비용은 캐시 단가로 센다(ports/llm.py 참고)."""
+    # ponytail: 대체 모델이 돌았으면 응답 모델 값으로 한 번에 계산한다.
+    # 정확한 단계별 비용은 usage.iterations를 보면 된다
+    usd = cost(resp.model, n["inp"], n["out"], n["written"], n["read"])
+    return {"model": resp.model, "input_tokens": n["inp"] + n["written"] + n["read"],
+            "output_tokens": n["out"], "cost_usd": None if usd is None else round(usd + n["searches"] * SEARCH_USD, 4)}
+
+
 def stream(**kw):
     """스트리밍으로 부른다. 비스트리밍은 SDK가 max_tokens를 2만 남짓으로 막는다(10분 넘을 요청)."""
     with anthropic.Anthropic().beta.messages.stream(**kw) as s:
@@ -133,34 +179,19 @@ class Claude:
         # True면 어디서나, 사이트 목록이면 그 안에서만 검색한다
         tools = [WEB_SEARCH if isinstance(web, bool) else WEB_SEARCH | {"allowed_domains": list(web)}] if web else None
         messages = [{"role": "user", "content": content}]
-        inp = out = written = read = searches = 0
         with errors():
-            for _ in range(4):   # 검색이 길면 서버가 pause_turn으로 멈춘다. 그대로 돌려보내면 이어 간다
-                resp, tools = with_sites(lambda t: stream(
-                    model=model,
-                    # 생각 토큰도 여기서 빠진다. 대본은 생각만 1만 토큰을 넘기도 한다
-                    max_tokens=128000,   # Opus 5.5 상한
-                    # 지시문(system)만 캐시한다: 다시 검수·고쳐 쓰기는 같은 지시문에 user만 바뀐다.
-                    # 전체를 캐시하면 한 번 쓰는 호출까지 입력 전부를 1.25배로 쓴다
-                    system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-                    messages=messages,
-                    output_format=schema,
-                    **(extra | {"tools": t} if t else extra),
-                ), tools)
-                u = resp.usage
-                inp, out = inp + u.input_tokens, out + u.output_tokens
-                written += getattr(u, "cache_creation_input_tokens", 0) or 0
-                read += getattr(u, "cache_read_input_tokens", 0) or 0
-                searches += (u.server_tool_use.web_search_requests or 0) if u.server_tool_use else 0
-                if resp.stop_reason != "pause_turn":
-                    break
-                messages.append({"role": "assistant", "content": resp.content})
+            resps, n = turns(lambda t, more: stream(
+                model=model,
+                # 생각 토큰도 여기서 빠진다. 대본은 생각만 1만 토큰을 넘기도 한다
+                max_tokens=128000,   # Opus 5.5 상한
+                system=system_blocks(system),
+                messages=messages,
+                output_format=schema,
+                **(extra | more | ({"tools": t} if t else {})),
+            ), tools, messages)
+        resp = resps[-1]
         if resp.stop_reason == "refusal":
             raise RuntimeError(refusal)
         if resp.parsed_output is None:
             raise RuntimeError(f"{what}을 받지 못했어요(stop_reason={resp.stop_reason}).")
-        # ponytail: 대체 모델이 돌았으면 응답 모델 값으로 한 번에 계산한다.
-        # 정확한 단계별 비용은 usage.iterations를 보면 된다.
-        usd = cost(resp.model, inp, out, written, read)
-        return resp.parsed_output, {"model": resp.model, "input_tokens": inp + written + read, "output_tokens": out,
-                                    "cost_usd": None if usd is None else round(usd + searches * SEARCH_USD, 4)}
+        return resp.parsed_output, usage(resp, n)

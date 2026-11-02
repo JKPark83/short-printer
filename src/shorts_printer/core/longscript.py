@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..ports.llm import LLM, add_usage
+from ..ports.llm import LLM, Cached, add_usage
 from . import prompts, script
 from .channel import Channel
 from .script import Issue, Verdict
@@ -184,7 +184,7 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: S
                 f"목차:\n{_toc(outline)}\n\n"
                 f"지금 쓸 장: {k + 1}. {c.title}. 장면 약 {c.scenes}개, 박자 {', '.join(c.beats) or '없음'}\n\n"
                 f"앞 장 내레이션:\n{before}{sheet}")
-        out, u = llm.ask(prompts.render("long_scenes", **v), text, Scenes, what=f"{k + 1}장 장면",
+        out, u = llm.ask(Cached(prompts.render("long_scenes", **v)), text, Scenes, what=f"{k + 1}장 장면",
                          refusal=f"{llm.label}가 {k + 1}장 장면을 쓰지 않았어요. 주제를 바꿔 보세요.")
         usage = add_usage(usage, u)
         if not out.scenes:
@@ -253,7 +253,8 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, facts: Sequence[dict] = ()
             f"\n\n사용자 수정 요청: {note}")
     if facts:
         text += "\n\n" + script.sheet_block(facts)
-    out, usage = llm.ask(prompts.render("long_scenes", **values(ch)) + "\n\n" + prompts.render("long_revise"), text,
+    # 앞부분은 장면 쓰기와 같은 지시문이라 캐시해 두면 거듭 고칠 때 읽는다
+    out, usage = llm.ask(Cached(prompts.render("long_scenes", **values(ch)), prompts.render("long_revise")), text,
                          Revision, refusal=f"{llm.label}가 이 요청으로는 대본을 고치지 않았어요. 요청을 바꿔 보세요.",
                          what="고친 대본")
     scenes = [dict(sc) for sc in s["scenes"]]
