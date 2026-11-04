@@ -223,6 +223,7 @@ for (const t of ['seeked', 'ended']) document.addEventListener(t, e => { const m
 
 // ── 복사·다시 시도·업로드 (조각이 바뀌어도 동작하게 위임)
 let sample;   // 미리 듣기 중인 견본(새로 누르면 앞의 것을 멈춘다)
+const shared = {};   // 공유할 영상 주소 → 받아 둔 File
 document.addEventListener('click', async e => {
   const del = e.target.closest('[data-delete]');
   if (del) {
@@ -265,12 +266,17 @@ document.addEventListener('click', async e => {
   if (share && navigator.maxTouchPoints > 1 &&
       navigator.canShare?.({ files: [new File([], share.download, { type: 'video/mp4' })] })) {
     e.preventDefault();
-    toast('영상을 가져오는 중…');
     try {
-      const blob = await (await fetch(share.href)).blob();
-      await navigator.share({ files: [new File([blob], share.download, { type: 'video/mp4' })] });
+      if (!shared[share.href]) {
+        toast('영상을 가져오는 중…');
+        const blob = await (await fetch(share.href)).blob();
+        shared[share.href] = new File([blob], share.download, { type: 'video/mp4' });
+      }
+      await navigator.share({ files: [shared[share.href]] });
     } catch (err) {
-      if (err.name !== 'AbortError') location.href = share.href;   // 공유가 막히면 보통 내려받기로
+      // 큰 영상은 받는 사이 누름 권한이 사라져 공유가 막힌다. 받아 둔 걸로 다음 누름에 바로 띄운다
+      if (err.name === 'NotAllowedError') toast('영상을 받았어요. 한 번 더 누르면 저장 창이 떠요');
+      else if (err.name !== 'AbortError') location.href = share.href;   // 공유가 막히면 보통 내려받기로
     }
     return;
   }
