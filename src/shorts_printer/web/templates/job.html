@@ -126,9 +126,9 @@
            data-regen: 그 칸을 바꾸면 다시 만드는 단계(저장 막대 안내) #}
         <form id="edit" class="inline-edit">
           <dl class="kv">
-            {% for label, name, value, copy in [('제목', 'title', script.title, script.title), ('설명', 'description', script.description, script.description), ('태그', 'tags', script.tags|join(', '), tagline)] %}
+            {% for label, name, value, copy in [('제목', 'title', script.title, script.title), ('설명', 'description', script.description, script.description), ('첫 댓글', 'comment', script.comment or '', script.comment or ''), ('태그', 'tags', script.tags|join(', '), tagline)] %}
             <dt><label for="se-{{ name }}">{{ label }}</label></dt>
-            <dd>{% if name == 'description' %}<textarea id="se-{{ name }}" class="ie" name="{{ name }}" rows="3" maxlength="5000">{{ value }}</textarea>
+            <dd>{% if name in ('description', 'comment') %}<textarea id="se-{{ name }}" class="ie" name="{{ name }}" rows="{{ 3 if name == 'description' else 2 }}" maxlength="{{ 5000 if name == 'description' else 10000 }}"{% if name == 'comment' %} placeholder="올린 뒤 내가 다는 첫 댓글"{% endif %}>{{ value }}</textarea>
               {% else %}<input id="se-{{ name }}" class="ie" name="{{ name }}" value="{{ value }}"{% if name == 'title' %} maxlength="100" required pattern=".*\S.*"{% else %} placeholder="쉼표로 나눠요"{% endif %}>{% endif %}
               <button class="btn-icon" type="button" data-copy="{{ copy }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
             {% endfor %}
@@ -167,7 +167,7 @@
         </details>
         {% else %}
         <dl class="kv">
-          {% for label, value in [('제목', script.title), ('설명', script.description), ('태그', tagline)] %}
+          {% for label, value in [('제목', script.title), ('설명', script.description), ('첫 댓글', script.comment or ''), ('태그', tagline)] if value or label != '첫 댓글' %}
           <dt>{{ label }}</dt>
           <dd><span>{{ value }}</span><button class="btn-icon" type="button" data-copy="{{ value }}" aria-label="{{ label }} 복사">{{ icon('copy') }}</button></dd>
           {% endfor %}

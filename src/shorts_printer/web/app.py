@@ -688,8 +688,8 @@ def _clean(s: str) -> str:
 
 
 @app.post("/api/jobs/{job_id}/edit")
-def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), tags: str = Form(""),
-              sentences: list[str] = Form([]), voice: str = Form(""), cues: list[str] = Form([]),  # noqa: B008
+def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), comment: str = Form(""),
+              tags: str = Form(""), sentences: list[str] = Form([]), voice: str = Form(""), cues: list[str] = Form([]),  # noqa: B008
               thumb: list[str] = Form([]), accent: str = Form(""), prompts: list[str] = Form([])):  # noqa: B008
     """상세 화면에서 손으로 고친 값. 바뀐 칸을 보고 다시 할 단계만 고른다.
     문장·목소리 → 음성부터(자막은 새로 나뉘어 고친 자막 줄은 버린다), 자막 줄 → 그 문장을 고친 줄대로 고쳐 음성부터,
@@ -707,10 +707,11 @@ def save_edit(job_id: str, title: str = Form(""), description: str = Form(""), t
     if (not old or len(lines) != len(old["sentences"]) or not all(lines)
             or any(size(s) > cap for s, o in zip(lines, old["sentences"], strict=True) if s != o)):
         raise HTTPException(400, f"문장은 장면 수만큼, 비우지 않고 {cap}{script.UNITS[unit]} 안으로 적어 주세요")
-    if not title or len(title) > 100 or len(description) > 5000:
-        raise HTTPException(400, "제목은 1~100자, 설명은 5000자까지 적을 수 있어요")
+    if not title or len(title) > 100 or len(description) > 5000 or len(comment) > 10000:
+        raise HTTPException(400, "제목은 1~100자, 설명은 5000자, 첫 댓글은 10000자까지 적을 수 있어요")
     tags = [t for t in (x.strip().lstrip("#").strip() for x in tags.split(",")) if t]
-    files = {"script.json": old | {"title": title, "description": description.strip(), "tags": tags,
+    files = {"script.json": old | {"title": title, "description": description.strip(), "comment": comment.strip(),
+                                   "tags": tags,
                                    "sentences": lines}}
     if prompts:
         if not in_review(job.data):

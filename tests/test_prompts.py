@@ -26,6 +26,15 @@ def test_every_prompt_file_renders_for_a_real_channel():
         assert s and "${" not in s and "---" not in s.splitlines()[0]
 
 
+def test_drama_prompts_render_for_the_drama_channel():
+    from shorts_printer.core import channel, script, trends
+    ch = channel.load("ko-animal-siworld")
+    s = script.system(ch)
+    assert "며느리, 시어머니" in s and "${" not in s and "사실 시트" not in s.split("## 채널")[0]
+    assert "${" not in prompts.render("script_proofread_drama", lang=ch.lang_name, limit=10)
+    assert "${" not in trends.system_idea(ch) and "1차 출처" not in trends.system_idea(ch)
+
+
 def test_every_long_prompt_renders_for_a_real_channel():
     from shorts_printer.core import channel, longscript, research, trends
     ch = channel.load("momjob").model_copy(update={"format": "long"})

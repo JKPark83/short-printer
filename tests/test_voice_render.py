@@ -54,6 +54,14 @@ def test_voice_joins_sentences_with_gap(tmp_path, ch):
     assert (tmp_path / "voice.wav").exists()
 
 
+def test_drama_lines_use_each_cast_voice_and_keep_speaker(tmp_path, ch):
+    ch = ch.model_copy(update={"cast": {"며느리": channel.Role(voice="PDoCXqBQFGsvfO0hNkEs")}})
+    fake = Fake(fake_speak)
+    _, t = voice.synth(fake, ch, ["하나", "둘"], "elevenlabs", tmp_path, lambda m: None, ["며느리", "해설"])
+    assert fake.calls == ["PDoCXqBQFGsvfO0hNkEs", "elevenlabs"]   # 배역표에 없는 해설은 작업 목소리
+    assert [x["speaker"] for x in t] == ["며느리", "해설"]
+
+
 def test_render_gradient_with_subtitles(tmp_path, ch):
     _, timing = voice.synth(Fake(fake_speak), ch, ["커피 한 잔"], "elevenlabs", tmp_path, lambda m: None)
     subtitles.write_ass(tmp_path / "subs.ass", subtitles.cues(timing, KO, KO.limit), ch.font)

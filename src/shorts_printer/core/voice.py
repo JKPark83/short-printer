@@ -2,6 +2,7 @@
 import hashlib
 import os
 import wave
+from collections.abc import Sequence
 from pathlib import Path
 
 from .. import config
@@ -27,7 +28,7 @@ def _read_all(sentences: list[str], job_dir: Path, log, speak) -> list[dict]:
         w.setsampwidth(2)
         w.setframerate(RATE)
         for i, text in enumerate(sentences):
-            (src, ws), wav = speak(text, out / f"s{i:02d}"), out / f"s{i:02d}.pcm.wav"   # 공급자가 .wav를 줘도 안 겹치게
+            (src, ws), wav = speak(i, text, out / f"s{i:02d}"), out / f"s{i:02d}.pcm.wav"   # 공급자가 .wav를 줘도 안 겹치게
             ffmpeg.run(["-i", src, "-ar", RATE, "-ac", 1, "-c:a", "pcm_s16le", wav])
             with wave.open(str(wav), "rb") as r:
                 frames = r.readframes(r.getnframes())
@@ -73,11 +74,18 @@ def sample(tts: TTS, ch: Channel, voice: str) -> Path:
     return path
 
 
-def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path, log) -> tuple[str, list[dict]]:
-    """(읽은 엔진 이름, 문장 시각). voice.wav는 job_dir에, 시각은 부른 쪽이 저장한다."""
+def synth(tts: TTS, ch: Channel, sentences: list[str], voice: str, job_dir: Path, log,
+          speakers: Sequence[str] = ()) -> tuple[str, list[dict]]:
+    """(읽은 엔진 이름, 문장 시각). voice.wav는 job_dir에, 시각은 부른 쪽이 저장한다.
+    speakers: 드라마 채널의 문장마다 배역. 배역표(channel.cast)에 있으면 그 목소리, 없으면(해설 등) voice로 읽고
+    시각에 speaker를 남겨 자막이 배역 색을 고른다."""
     if voice not in ch.tts.voices:   # 예전 작업의 edge-tts·macOS say 목소리, 다른 채널 목소리
         raise RuntimeError(f"더는 쓰지 않는 목소리({voice})예요. 작업 화면에서 다른 목소리를 골라 주세요")
     _check(tts)
-    timing = _read_all(sentences, job_dir, log, lambda text, out: tts.speak(voice, text, out))
+    who = list(speakers) if len(speakers) == len(sentences) else [""] * len(sentences)
+    voices = [ch.cast[w].voice if w in ch.cast else voice for w in who]
+    timing = _read_all(sentences, job_dir, log, lambda i, text, out: tts.speak(voices[i], text, out))
+    if any(who):
+        timing = [t | {"speaker": w} for t, w in zip(timing, who, strict=True)]
     return tts.label, _fit(timing, job_dir, log)
 

@@ -57,6 +57,16 @@ def test_header_and_ass_use_channel_font(tmp_path):
     assert "Style: Cap,Apple SD Gothic Neo,84," in ass and "Dialogue: 0,0:00:00.00,0:00:01.50,Cap,,0,0,0,,안녕" in ass
 
 
+def test_ass_gives_each_cast_its_color_style(tmp_path):
+    cs = [{"start": 0, "end": 1, "text": "가", "speaker": "남편"},
+          {"start": 1, "end": 2, "text": "나", "speaker": "해설"}]
+    write_ass(tmp_path / "s.ass", cs, "x", colors={"며느리": "#FFD54F", "남편": "#80D8FF"})
+    ass = (tmp_path / "s.ass").read_text()
+    assert "Style: R1,x,84,&H00FFD880," in ass   # #RRGGBB → &H00BBGGRR
+    assert ",R1,,0,0,0,,가" in ass and ",Cap,,0,0,0,,나" in ass   # 배역표에 없으면 흰 Cap
+    assert cues([{"text": "가", "start": 0, "end": 1, "speaker": "남편"}], KO, 10)[0]["speaker"] == "남편"
+
+
 def test_write_srt_numbers_cues_with_millisecond_times(tmp_path):
     write_srt(tmp_path / "c.srt", [{"start": 1.4, "end": 3.25, "text": "가"},
                                    {"start": 3661.0, "end": 3662.0005, "text": "나"}])

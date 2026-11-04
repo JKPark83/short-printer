@@ -12,15 +12,23 @@ from ..infra.store import atomic_write_text
 from ..ports.splitter import Splitter
 
 
-def header(font: str, margin: int = 1465) -> str:   # 기본은 band 자리
+def _bgr(color: str) -> str:
+    """#RRGGBB → ASS &H00BBGGRR"""
+    return f"&H00{color[5:7]}{color[3:5]}{color[1:3]}".upper()
+
+
+def header(font: str, margin: int = 1465, colors: dict[str, str] | None = None) -> str:   # 기본은 band 자리
+    """colors: 드라마 채널 배역 {이름: #RRGGBB}. 배역마다 글자색만 다른 스타일 R0, R1 …을 더한다."""
+    cap = f"{font},84,{{}},&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,{margin},1"
+    roles = "".join(f"Style: R{k},{cap.format(_bgr(c))}\n" for k, c in enumerate((colors or {}).values()))
     return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Cap,{font},84,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,{margin},1
-[Events]
+Style: Cap,{cap.format("&H00FFFFFF")}
+{roles}[Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
@@ -76,7 +84,7 @@ def cues(timing: list[dict], splitter: Splitter, limit: int, hand: list[list[str
             for p in parts[:-1]:
                 starts.append(starts[-1] + (s["end"] - s["start"]) * len(p) / total)
         # 다음 덩어리가 나올 때까지 띄워 깜빡이지 않게 한다
-        out += [{"start": round(a, 2), "end": round(b, 2), "text": p}
+        out += [{"start": round(a, 2), "end": round(b, 2), "text": p} | ({"speaker": s["speaker"]} if "speaker" in s else {})
                 for p, a, b in zip(parts, starts, starts[1:] + [s["end"]], strict=True)]
     return out
 
@@ -119,9 +127,12 @@ def escape(text: str) -> str:
     return text.replace("\\", "\\⁠").replace("{", "｛").replace("}", "｝")
 
 
-def write_ass(path: Path, cues: list[dict], font: str, margin: int = 1465) -> None:
-    lines = [f"Dialogue: 0,{ts(c['start'])},{ts(c['end'])},Cap,,0,0,0,,{escape(c['text'])}" for c in cues]
-    atomic_write_text(path, header(font, margin) + "\n".join(lines) + "\n")
+def write_ass(path: Path, cues: list[dict], font: str, margin: int = 1465, colors: dict[str, str] | None = None) -> None:
+    """colors가 있으면 배역(cue의 speaker) 대사를 그 배역 색 스타일로 쓴다. 표에 없는 배역(해설 등)은 흰 Cap."""
+    style = {n: f"R{k}" for k, n in enumerate(colors or {})}
+    lines = [f"Dialogue: 0,{ts(c['start'])},{ts(c['end'])},{style.get(c.get('speaker'), 'Cap')},,0,0,0,,"
+             f"{escape(c['text'])}" for c in cues]
+    atomic_write_text(path, header(font, margin, colors) + "\n".join(lines) + "\n")
 
 
 def write_srt(path: Path, cues: list[dict]) -> None:

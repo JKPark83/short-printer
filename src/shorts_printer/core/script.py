@@ -37,6 +37,7 @@ class Plan(BaseModel):
 class Script(BaseModel):
     title: str = Field(description="쇼츠 제목. 40자 이내, 해시태그 없이")
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
+    comment: str = Field("", description="올린 사람이 다는 첫 댓글 앞부분: 궁금증을 남기는 짧은 물음 한 문장(규칙은 지시문의 첫 댓글)")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
     plan: Plan = Field(default_factory=Plan, description="장면을 쓰기 전에 세우는 개요")
     scenes: list[Scene] = Field(description="장면 목록. 장면 하나 = 문장 하나, 읽는 순서")
@@ -53,6 +54,34 @@ class Script(BaseModel):
             "fact_ids": [s.fact_ids for s in self.scenes], "prompts_ko": [s.prompt_ko for s in self.scenes]}
 
 
+class Line(BaseModel):
+    """드라마 채널(channel.cast)의 장면 하나 = 배역 대사 하나. 사실 시트가 없어 fact_ids는 없다."""
+    link: str = Field("", description="쓰기 전에 정하는 앞 대사와의 관계 한 줄(규칙은 지시문의 장면 잇기)")
+    speaker: str = Field(description="말하는 배역 이름(지시문의 배역표 글자 그대로). 해설이면 해설")
+    sentence: str = Field(description="그 배역의 대사(짧은 문장 1~2개)")
+    prompt: str = Field(description="이 대사 동안 보일 하드 컷 2~3개의 영어 영상 생성 프롬프트, 스타일 머리말 없이")
+    prompt_ko: str = Field("", description="prompt를 한국어로 짧게. 검수용")
+
+
+class Beat(BaseModel):
+    # scenes보다 먼저 받는다: 갈등·반전을 정하고 대사를 쓰면 장면이 사연 나열로 흩어지지 않는다
+    cards: list[str] = Field(default_factory=list, description="섞을 상황 카드 2~3개, 한 줄씩")
+    conflict: str = Field("", description="첫 대사로 던질 갈등 한 줄")
+    twist: str = Field("", description="마지막 대사의 반전·화해 한 줄")
+
+
+class Sitcom(Script):
+    plan: Beat = Field(default_factory=Beat, description="대사를 쓰기 전에 세우는 개요")
+    scenes: list[Line] = Field(description="대사 목록. 장면 하나 = 대사 하나, 말하는 순서")
+
+    def flat(self) -> dict:
+        """Script.flat에 speakers(장면마다 배역)를 더한다. 음성·자막이 배역 목소리·색을 고른다."""
+        return self.model_dump(exclude={"scenes"}) | {
+            "sentences": [s.sentence for s in self.scenes], "speakers": [s.speaker for s in self.scenes],
+            "prompts": [s.prompt for s in self.scenes], "fact_ids": [[] for _ in self.scenes],
+            "prompts_ko": [s.prompt_ko for s in self.scenes]}
+
+
 UNITS = {"chars": "자", "words": "단어"}
 
 
@@ -60,7 +89,7 @@ def system(ch: Channel) -> str:
     """채널 대본 지시문. 글 파일은 부를 때마다 읽어 고치면 바로 반영된다."""
     c = ch.script
     lo, hi = c.sentence
-    return prompts.render("script", lang=ch.lang_name, duration=c.duration, scenes=c.scenes, lo=lo, hi=hi,
+    return prompts.render("script_drama" if ch.cast else "script", cast=", ".join(ch.cast), lang=ch.lang_name, duration=c.duration, scenes=c.scenes, lo=lo, hi=hi,
                           unit=UNITS[c.unit], total_lo=lo * c.scenes, total_hi=hi * c.scenes,
                           channel_script=ch.text("script.md"), channel_video=ch.video_rules())
 
@@ -68,6 +97,7 @@ def system(ch: Channel) -> str:
 class Revision(BaseModel):
     title: str = Field(description="쇼츠 제목. 40자 이내, 해시태그 없이")
     description: str = Field(description="영상 설명 2~3문장, 끝에 해시태그 3개")
+    comment: str = Field("", description="올린 사람이 다는 첫 댓글 앞부분: 궁금증을 남기는 짧은 물음 한 문장(규칙은 지시문의 첫 댓글)")
     tags: list[str] = Field(description="검색 태그 5~10개, # 없이")
     sentences: list[str] = Field(description="장면마다 내레이션(짧은 문장 1~2개). 받은 장면과 같은 개수, 같은 순서")
 
@@ -77,6 +107,12 @@ class Draft(Revision):
     fact_ids: list[list[str]] = Field(default_factory=list,
                                       description="장면마다 근거로 삼은 사실 시트 ID 목록. 받은 장면과 같은 개수")
     prompts_ko: list[str] = Field(default_factory=list, description="장면마다 prompt를 한국어로 짧게. 검수용")
+
+
+def comment(ch: Channel, text: str) -> str:
+    """LLM이 쓴 첫 댓글 요약 + 채널 끝 문장(publish.comment_end). 고쳐 쓰기로 다시 들어와도 두 번 붙지 않는다."""
+    end = ch.publish.comment_end
+    return "\n".join(x for x in (text.strip().removesuffix(end).rstrip(), end) if x)
 
 
 def _fit(xs, n: int, empty) -> list:
@@ -113,10 +149,13 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False,
     n = len(s["sentences"])
     shots = _fit(s.get("prompts"), n, str)   # 예전 대본엔 없다
     refs = _fit(s.get("fact_ids"), n, list)
-    scenes = "\n".join(f"{i}. {t}" + (f"\n   (화면: {p})" if p else "") + (f"\n   (근거: {', '.join(r)})" if r else "")
-                       for i, (t, p, r) in enumerate(zip(s["sentences"], shots, refs, strict=True), 1))
-    text = (f"제목: {s['title']}\n설명: {s['description']}\n태그: {', '.join(s['tags'])}\n장면 {n}개:\n{scenes}"
-            f"\n\n사용자 수정 요청: {note}")
+    who = _fit(s.get("speakers"), n, str)   # 드라마 채널만 있다
+    scenes = "\n".join(f"{i}. {t}" + (f"\n   (말하는 배역: {w})" if w else "") + (f"\n   (화면: {p})" if p else "")
+                       + (f"\n   (근거: {', '.join(r)})" if r else "")
+                       for i, (t, w, p, r) in enumerate(zip(s["sentences"], who, shots, refs, strict=True), 1))
+    body = s.get("comment", "").removesuffix(ch.publish.comment_end).strip()   # 끝 문장은 코드가 다시 붙인다
+    text = (f"제목: {s['title']}\n설명: {s['description']}\n첫 댓글: {body}\n태그: {', '.join(s['tags'])}"
+            f"\n장면 {n}개:\n{scenes}\n\n사용자 수정 요청: {note}")
     if facts:
         text += "\n\n" + sheet_block(facts)
     refusal = f"{llm.label}가 이 요청으로는 대본을 고치지 않았어요. 요청을 바꿔 보세요."
@@ -136,6 +175,7 @@ def revise(llm: LLM, ch: Channel, s: dict, note: str, draft: bool = False,
             new["prompts"] = [p if p.startswith(style) else f"{style} {p}" for p in new["prompts"]]
     else:   # 문장만 바뀌어 근거는 그대로 잇는다
         new["fact_ids"] = refs
+    new["comment"] = comment(ch, new["comment"] or s.get("comment", ""))   # 모델이 빼먹으면 예전 것
     return s | new, usage
 
 
@@ -257,13 +297,14 @@ def proofread(llm: LLM, ch: Channel, s: dict, splitter: Splitter, limit: int,
         return " / ".join(p for part in SENTENCE_END.split(t) if part.strip() for p in splitter.chunks(part, limit))
     # 화면은 머리말을 뺀 장면 몫만 보인다(머리말은 모든 장면에 같다)
     shown = [p.removeprefix(ch.video.style).strip() for p in s.get("prompts") or [""] * len(s["sentences"])]
-    scenes = "\n".join(f"{i}. {cut(t)}" + (f"\n   (화면: {p})" if p else "")
-                       for i, (t, p) in enumerate(zip(s["sentences"], shown, strict=True), 1))
+    who = _fit(s.get("speakers"), len(s["sentences"]), str)
+    scenes = "\n".join(f"{i}. " + (f"[{w}] " if w else "") + cut(t) + (f"\n   (화면: {p})" if p else "")
+                       for i, (t, w, p) in enumerate(zip(s["sentences"], who, shown, strict=True), 1))
     text = (f"주제: {topic}\n" if topic else "") + (f"제목: {s['title']}\n설명: {s['description']}\n"
                                                     f"장면 {len(s['sentences'])}개(자막 끊는 자리는 /):\n{scenes}")
     if facts:
         text += "\n\n" + sheet_block(facts)
-    name = "script_proofread_ko" if ch.language == "ko" else "script_proofread"
+    name = "script_proofread_drama" if ch.cast else "script_proofread_ko" if ch.language == "ko" else "script_proofread"
     verdict, usage = llm.ask(prompts.render(name, lang=ch.lang_name, limit=limit), text, Verdict,
                              refusal=f"{llm.label}가 이 대본을 검수하지 않았어요.", what="검수 결과")
     if long := too_long(ch, s["sentences"]):
@@ -299,9 +340,10 @@ def write(llm: LLM, ch: Channel, topic: str, brief: str | None = None, recent: S
     if facts:
         text += "\n\n" + sheet_block(facts)
     refusal = f"{llm.label}가 이 주제로는 대본을 쓰지 않았어요. 주제를 바꿔 보세요."
-    script, usage = llm.ask(system(ch), text, Script, refusal=refusal, what="대본")
+    script, usage = llm.ask(system(ch), text, Sitcom if ch.cast else Script, refusal=refusal, what="대본")
     if not script.scenes:
         raise RuntimeError("대본을 받지 못했어요(문장이 비었어요).")
+    script = script.model_copy(update={"comment": comment(ch, script.comment)})
     # 장면마다 LLM이 화풍을 달리 쓰면 영상이 들쭉날쭉해서 채널 머리말을 코드로 붙인다
     if style := ch.video.style:
         script = script.model_copy(update={"scenes": [s.model_copy(update={"prompt": f"{style} {s.prompt}"})

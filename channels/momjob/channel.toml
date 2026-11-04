@@ -51,6 +51,7 @@ also = ["instagram"]   # 더 올리는 곳. Instagram은 바로 공개라 작업
 category = "27"
 footer = "※ 의학적 진단·치료 조언이 아닌 일반 정보입니다. 영상은 AI로 만든 이미지입니다."
 sources_heading = "출처"
+comment_end = "내 몸에 대해 궁금한게 있으면 댓글로 달아주세요.🫡"
 
 [research]
 domains = ["msdmanuals.com", "amc.seoul.kr", "snuh.org", "health.kdca.go.kr", "kdca.go.kr", "mfds.go.kr",

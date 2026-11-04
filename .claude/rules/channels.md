@@ -41,7 +41,8 @@
 | `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs` · `typecast`) |
 | `[tts]` `default` / `sample` | 기본 목소리 키(없으면 voices 맨 앞) / 미리 듣기 문장(채널 언어) |
 | `[tts.voices]` | `{목소리 키: 화면 이름}`. ElevenLabs는 목소리 ID(`elevenlabs` 키는 `.env`의 `ELEVENLABS_VOICE_ID`), Typecast는 `tc_…` ID |
-| `[video]` `provider` | `flow`(사람이 올림) · `flow-auto`(전용 Chrome). 쓸 수 없으면 flow. 롱폼은 저절로 16:9 판(`flow-16x9`·`flow-auto-16x9`)을 쓴다 |
+| `[cast]` | 드라마(상황극) 채널 배역 `{"이름" = { voice = tts.voices 키, color = "#RRGGBB" }}`(TOML이라 한글 이름은 따옴표). 있으면 자료 조사를 건너뛰고 대본은 `prompts/script_drama.md`(배역 대사)·검수는 `script_proofread_drama.md`, 대사마다 그 배역 목소리·자막 색을 쓴다. 표에 없는 speaker(해설)는 작업 목소리·흰 자막. 비우면 내레이션 채널 |
+| `[video]` `provider` | `flow`(사람이 올림) · `flow-auto`(전용 Chrome) · `vidogrid`(VidoGrid API, Omni 1.1 Flash 720p 8초, `.env`의 `VIDOGRID_API_KEY`). 쓸 수 없으면 flow. 롱폼은 저절로 16:9 판(`flow-16x9`·`flow-auto-16x9`·`vidogrid-16x9`)을 쓴다 |
 | `[video]` `style` | 모든 장면 프롬프트 앞 머리말. 영어 |
 | `[video]` `season` | 시즌 연출 `seasons/<이름>.md`(예 `halloween`·`christmas`). 마스코트 옷·배경 분위기를 바꾸는 규칙이 장면 규칙 뒤에 붙는다. 비우면 평소대로 |
 | `[style]` `font` | 글꼴. 비우면 언어 기본(ko Apple SD Gothic Neo · ja Hiragino Sans · en Helvetica Neue) |
@@ -55,6 +56,7 @@
 | `[publish]` `also` | 더 올리는 곳 목록(registry `PUBLISHERS` 이름, 예 `["instagram"]`). 작업 화면에서 버튼을 눌러야만 올라가고 스케줄은 `provider`만 올린다. Instagram은 바로 공개, 캡션 끝에 해시태그(태그 30개까지), `footer`는 자르지 않는다. 연결은 `uv run sp instagram-login --channel <id>` |
 | `[publish]` `channel_id` | `UC…`. 스튜디오 화면으로 올릴 때 이 채널로 간다. 비우면 Chrome에서 고른 채널 |
 | `[publish]` `footer` | 업로드할 때 설명 맨 끝에 빈 줄 하나 두고 붙는 문구(AI 표시 등). 비우면 안 붙는다 |
+| `[publish]` `comment_end` | 첫 댓글 끝에 줄을 바꿔 붙는 고정 문장(댓글 요청 등). LLM은 앞의 짧은 물음 한 문장만 쓴다. 비우면 물음만 |
 | `[publish]` `sources_heading` | 설명란 출처 머리말(`출처`·`出典`). 비우면 출처를 붙이지 않는다 |
 | `[trends]` `production` | 우리 제작 방식 한 단락(주제 찾기 지시문에 들어간다) |
 | `[trends]` `weights` | `trend`(화제성)·`curious`(호기심)·`fit`(제작 적합도)·`fresh`(차별화)·`safe`(안전성) 다섯 개, 합 100 |

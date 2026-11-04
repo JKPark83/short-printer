@@ -538,6 +538,13 @@ def test_step_research_saves_facts_and_usage():
     assert "주장" in calls[0] and "사실 1개" in job.tail()[-1]
 
 
+def test_drama_channel_skips_research():
+    ch = channel.load(CH).model_copy(update={"cast": {"며느리": channel.Role(voice="elevenlabs")}})
+    job = Job.create(CH, "시댁 방문", "v")
+    assert pipeline.step_research(job, services(channel=ch, research=None)) == "건너뜀"
+    assert job.doc("facts.json") is None
+
+
 def test_step_research_without_facts_keeps_notes_and_usage():
     def gather(system, text, **kw):
         note = {"text": "확인 못 함: 요금", "url": "", "title": "", "published": "", "retrieved_at": ""}

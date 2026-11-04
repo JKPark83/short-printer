@@ -242,16 +242,17 @@ class IdeasOut(BaseModel):
 
 
 def system_idea(ch: Channel) -> str:
-    """prompts/trend_idea.md(롱폼은 long_trend_idea.md)에 채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
+    """prompts/trend_idea.md(롱폼은 long_trend_idea.md, 드라마 채널은 trend_idea_drama.md)에
+    채널 값과 주제 기준(ideas.md, 없는 채널은 빈 값)을 채운다."""
     rules = ch.text("ideas.md") if (ch.dir / "ideas.md").exists() else ""
     if _long(ch):
         lo, hi = ch.long.minutes
         return prompts.render("long_trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
                               channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
                               minutes=f"{lo}~{hi}분", facts=ch.long.max_facts)
-    return prompts.render("trend_idea", lang=ch.lang_name, concept=ch.concept, production=ch.trends.production,
-                          channel_rules=ch.text("trends.md"), idea_rules=rules, n=IDEA_N,
-                          duration=ch.script.duration, scenes=ch.script.scenes)
+    return prompts.render("trend_idea_drama" if ch.cast else "trend_idea", lang=ch.lang_name, concept=ch.concept,
+                          production=ch.trends.production, channel_rules=ch.text("trends.md"), idea_rules=rules,
+                          n=IDEA_N, duration=ch.script.duration, scenes=ch.script.scenes)
 
 
 def finish_ideas(out: IdeasOut, weights: dict[str, int], ordered: bool = False) -> dict:

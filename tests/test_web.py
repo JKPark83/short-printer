@@ -314,6 +314,8 @@ def test_review_edit_saves_and_confirm_starts(monkeypatch):
     assert d["steps"]["render"]["status"] == "pending" and web.q._q.get_nowait() == ("run", job.id)
     job.update(status="waiting")
     assert client.post(url, data=form | {"title": "t2"}).status_code == 200 and web.q._q.empty()   # 제목만이면 저장만
+    assert client.post(url, data=form | {"comment": " 여러분은? "}).status_code == 200 and web.q._q.empty()
+    assert job.doc("script.json")["comment"] == "여러분은?" and 'name="comment"' in client.get(f"/jobs/{job.id}").text
     rev = client.post(f"/api/jobs/{job.id}/script/revise", data={"note": "더 짧게"}).json()
     assert "다시 확인" in rev["msg"] and job.data["status"] == "queued"
     web.q._q.get_nowait()

@@ -1,0 +1,54 @@
+# 채널 설정. 키 설명은 docs/plan/multi-channel.md와 .claude/rules/channels.md
+name = "동물시월드"
+description = "동물시월드: 코기 며느리와 푸들 시어머니, 진돗개 시아버지네 강아지 가족이에요. 명절, 김장, 반찬통, 예고 없는 방문. 누구나 한 번쯤 겪어 본 시댁 일을 강아지 가족이 아주 진지하게 벌이는 1분 30초 시트콤입니다. 커뮤니티에서 많이 나온 상황을 섞어 새로 쓴 이야기로, 실화가 아닙니다. 영상은 AI로 만든 영상입니다."
+concept = "며느리 시점으로 보는 시댁 생활 코미디. 명절·방문·반찬·호칭·육아 참견처럼 누구나 겪는 상황을 실사 강아지 가족 시트콤으로"
+language = "ko"
+daily_goal = 1
+sensitive_gate = false
+llm = "claude"
+
+[script]
+scenes = 14
+sentence = [36, 54]   # 초당 약 7.7자면 한 대사 5~7초(8초 클립 안), 14장면이 약 80~90초
+unit = "chars"
+duration = "80~90초"
+
+[tts]
+provider = "elevenlabs"
+default = ""
+sample = "어머님, 그 통은 제 비상식량이에요. 거기 손대시면 안 돼요."
+
+[tts.voices]   # {ElevenLabs 목소리 ID: 화면 이름}. "elevenlabs"는 .env ELEVENLABS_VOICE_ID. 배역 목소리를 고르면 여기에 더한다
+elevenlabs = "기본 목소리"
+
+# 배역 {이름: 목소리(tts.voices 키)·자막 색}. 대본의 speaker가 이 이름이다. 목소리를 고르면 voice를 그 ID로 바꾼다
+[cast]
+"며느리" = { voice = "elevenlabs", color = "#FFD54F" }
+"시어머니" = { voice = "elevenlabs", color = "#FF8A80" }
+"남편" = { voice = "elevenlabs", color = "#80D8FF" }
+"시아버지" = { voice = "elevenlabs", color = "#B9F6CA" }
+"시누이" = { voice = "elevenlabs", color = "#EA80FC" }
+
+[video]
+provider = "flow"
+style = "Photorealistic live-action footage of real dogs, not animated, not cartoon, not CGI-looking, shot on a cinema camera at dog eye level, natural soft daylight, shallow depth of field, realistic fur texture and real dog body movement on four legs, real lived-in Korean home and countryside yard, plain unbranded household items with no lettering, same look in every shot."
+
+[style]
+accent = "#FFD54F"
+background = ["#3b2a1f", "#5c4033"]
+layout = "full"   # 띠 없이 9:16 전체. 배역 얼굴을 크게 보이고 제목·자막은 위아래 UI를 피한다
+
+[thumbnail]
+max_line = 10
+max_total = 20
+
+[publish]
+provider = "youtube"
+category = "22"
+footer = "※ 커뮤니티에서 흔한 상황을 섞어 새로 쓴 창작 이야기이며 실화가 아닙니다. 영상은 AI로 만든 영상입니다."
+sources_heading = ""
+
+[trends]
+production = "Claude가 상황 한 줄로 한국어 시트콤 대본을 쓰고, 배역마다 다른 TTS 목소리가 대사를 읽고 배역 색 자막이 뜬다. 약 80~90초, 14장면(장면 하나가 대사 하나). 배경은 장면마다 AI로 만든 실사 클립이고, 같은 강아지 가족(코기 며느리, 푸들 시어머니, 진돗개 시아버지, 골든두들 남편, 말티푸 시누이)이 진짜 개처럼 네 발로 움직인다. 직접 촬영, 실존 인물·방송 화면, 특정 브랜드는 못 쓴다. 실제 사연을 그대로 옮겨야 하는 이야기, 한 사람을 악역으로 망신 줘야 웃기는 이야기, 이혼·폭력·돈 다툼처럼 무거운 이야기는 못 만든다."
+weights = { trend = 15, curious = 20, fit = 30, fresh = 20, safe = 15 }
+keywords = ["시월드", "시어머니", "며느리", "고부갈등", "시댁", "명절"]

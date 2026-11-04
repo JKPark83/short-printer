@@ -55,6 +55,18 @@ def test_write_without_style_keeps_prompt(tmp_path):
     assert [x.prompt for x in s.scenes] == ["p1", "p2"]
 
 
+def test_cast_channel_writes_sitcom_with_speakers(tmp_path):
+    ch = make_channel(tmp_path, cast={"Mom": {"voice": "v"}})
+    sitcom = script.Sitcom(title="t", description="d", tags=[], sensitive="",
+                           plan=script.Beat(cards=["a"], conflict="c", twist="w"),
+                           scenes=[script.Line(link="l", speaker="Mom", sentence="Hi", prompt="p", prompt_ko="")])
+    llm = FakeLLM(sitcom)
+    s, _ = script.write(llm, ch, "visit")
+    assert llm.calls[0]["schema"] is script.Sitcom and s.flat()["speakers"] == ["Mom"]
+    with pytest.raises(pydantic.ValidationError, match="voice가 tts.voices에 없어요"):
+        make_channel(tmp_path, cast={"Mom": {"voice": "nope"}})
+
+
 def test_ko_system_keeps_every_old_rule(ko):
     sys = script.system(ko)
     for rule in ["80~90초", "정확히 11개", "56~63자", "63자를 넘지", "이모지·해시태그·괄호", "120~160단어",
@@ -100,6 +112,18 @@ def test_revise_keeps_scene_count_and_prompts(ko):
     with pytest.raises(RuntimeError, match="장면 수"):
         script.revise(FakeLLM(script.Revision(title="t", description="d", tags=[], sentences=["하나"])),
                       ko, s, "줄여 줘")
+
+
+def test_comment_end_is_added_once(ko):
+    """채널 끝 문장은 코드가 붙이고, 고쳐 쓰기로 다시 들어와도(모델이 빼먹어도) 한 번만 붙는다."""
+    end = lambda s: ko.model_copy(update={"publish": ko.publish.model_copy(update={"comment_end": s})})  # noqa: E731
+    ch = end("궁금하면 댓글로!")
+    assert script.comment(ch, " 요약. ") == "요약.\n궁금하면 댓글로!" == script.comment(ch, "요약.\n궁금하면 댓글로!")
+    assert script.comment(end(""), " 요약. ") == "요약."
+    s = OK.flat() | {"comment": "요약.\n궁금하면 댓글로!"}
+    llm = FakeLLM(script.Revision(title="t", description="d", tags=[], sentences=["하나", "둘"]))
+    new, _ = script.revise(llm, ch, s, "짧게")
+    assert new["comment"] == "요약.\n궁금하면 댓글로!" and "첫 댓글: 요약.\n" in llm.calls[0]["text"]
 
 
 def test_draft_revise_rewrites_prompts_too(ko):

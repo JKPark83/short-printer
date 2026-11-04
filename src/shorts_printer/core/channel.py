@@ -42,6 +42,11 @@ class TTSCfg(BaseModel):
         return self
 
 
+class Role(BaseModel):
+    voice: str   # tts.voices 키
+    color: str = Field("#FFFFFF", pattern=HEX)   # 대사 자막 색
+
+
 class VideoCfg(BaseModel):
     provider: str = "flow"
     style: str = ""   # 모든 장면 프롬프트 앞 머리말(영어)
@@ -74,6 +79,7 @@ class PublishCfg(BaseModel):
     category: str = "22"
     channel_id: str = ""   # UC… 스튜디오 화면으로 올릴 때 이 채널로 간다
     footer: str = ""   # 설명 맨 끝에 붙는 문구(AI 표시 등). LLM이 빼먹지 않게 코드로 붙인다
+    comment_end: str = ""   # 첫 댓글 끝 문장(댓글 요청). LLM이 바꿔 쓰지 않게 코드로 붙인다
     sources_heading: str = ""   # 설명란 출처 머리말(출처 / 出典). 비우면 붙이지 않는다
     also: list[str] = []   # 더 올리는 곳(registry PUBLISHERS 이름). 스케줄은 provider만 올린다
 
@@ -146,6 +152,15 @@ class Channel(BaseModel):
     research: ResearchCfg = ResearchCfg()
     long: LongCfg = LongCfg()
     insights: InsightsCfg = InsightsCfg()
+    # 드라마(상황극) 채널 배역 {이름: Role}. 있으면 자료 조사 없이 배역 대사로 대본을 쓰고(script_drama),
+    # 대사마다 그 배역 목소리·자막 색을 쓴다. 비우면 내레이션 채널
+    cast: dict[str, Role] = {}
+
+    @model_validator(mode="after")
+    def _cast(self):
+        if bad := [n for n, r in self.cast.items() if r.voice not in self.tts.voices]:
+            raise ValueError(f"cast({', '.join(bad)})의 voice가 tts.voices에 없어요")
+        return self
 
     @property
     def lang_name(self) -> str:

@@ -103,6 +103,9 @@ def missing_clips(job: Job) -> list[int]:
 
 
 def step_research(job: Job, sv: Services) -> str:
+    if sv.channel.cast:   # 드라마 채널은 지어낸 상황극이라 사실 시트가 없다
+        job.log("드라마 채널이라 자료 조사를 건너뛰어요")
+        return "건너뜀"
     facts, usage = research.gather(sv.research, sv.channel, job.data["topic"], job.data.get("brief"))
     job.put("facts.json", facts)
     job.update(research_usage=usage)
@@ -249,8 +252,9 @@ def reprompt(job: Job, sv: Services) -> None:
 
 
 def step_voice(job: Job, sv: Services) -> str:
-    sentences = job.doc("script.json")["sentences"]
-    engine, timing = voice.synth(sv.tts, sv.channel, sentences, job.data["voice"], job.dir, job.log)
+    s = job.doc("script.json")
+    engine, timing = voice.synth(sv.tts, sv.channel, s["sentences"], job.data["voice"], job.dir, job.log,
+                                 s.get("speakers", ()))
     job.update(voice_draft=False)   # 예전 초안 음성 작업도 채널 TTS로 다시 읽으면 초안 표시를 지운다
     job.put("timing.json", timing)
     return engine
@@ -289,7 +293,8 @@ def step_render(job: Job, sv: Services) -> str:
     t = job.doc("thumb.json")   # 위 띠 제목은 썸네일 훅 문구. 없으면(예전 작업) 대본 제목
     title = (t["lines"], t["accent"]) if t else ([job.doc("script.json")["title"]], "")
     if cues := job.doc("cues.json"):   # 없으면(아주 예전 작업) 있던 subs.ass 그대로
-        subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub)
+        subtitles.write_ass(job.dir / "subs.ass", cues, sv.channel.font, render.LAYOUTS[sv.channel.style.layout].sub,
+                            {n: r.color for n, r in sv.channel.cast.items()})
     # 따옴표 낱말(표시 라벨)은 "no voices"를 적어도 영상 모델이 읽어 버려서, 그 장면은 클립 소리를 통째로 뺀다
     mute = {i for i, p in enumerate(job.doc("script.json").get("prompts", [])) if '"' in p}
     job.update(duration=render.render(job.dir, clips, timing[-1]["end"], sv.channel, sv.splitter, title,
