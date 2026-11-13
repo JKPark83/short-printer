@@ -40,6 +40,7 @@
 | `[script]` `duration` | 목표 길이 문구(지시문에 들어간다. 예: `"40~50초"`) |
 | `[tts]` `provider` | registry `TTSES` 이름(`elevenlabs` · `typecast`) |
 | `[tts]` `default` / `sample` | 기본 목소리 키(없으면 voices 맨 앞) / 미리 듣기 문장(채널 언어) |
+| `[tts]` `female` | 주인공이 여자면(주제 찾기·대본 LLM이 `female_lead`로 판단. 추천 화면·스케줄은 주제를 고를 때, 대본을 쓰면 다시 맞춘다) 기본 목소리 대신 쓰는 voices 키. 기본 목소리로 둔 작업만 바꾼다. 비우면 안 바꾼다 |
 | `[tts.voices]` | `{목소리 키: 화면 이름}`. ElevenLabs는 목소리 ID(`elevenlabs` 키는 `.env`의 `ELEVENLABS_VOICE_ID`), Typecast는 `tc_…` ID |
 | `[cast]` | 드라마(상황극) 채널 배역 `{"이름" = { voice = tts.voices 키, color = "#RRGGBB" }}`(TOML이라 한글 이름은 따옴표). 있으면 자료 조사를 건너뛰고 대본은 `prompts/script_drama.md`(배역 대사)·검수는 `script_proofread_drama.md`, 대사마다 그 배역 목소리·자막 색을 쓴다. 표에 없는 speaker(해설)는 작업 목소리·흰 자막. 비우면 내레이션 채널 |
 | `[video]` `provider` | `flow`(사람이 올림) · `flow-auto`(전용 Chrome) · `vidogrid`(VidoGrid API, Omni 1.1 Flash 720p 8초, `.env`의 `VIDOGRID_API_KEY`). 쓸 수 없으면 flow. 롱폼은 저절로 16:9 판(`flow-16x9`·`flow-auto-16x9`·`vidogrid-16x9`)을 쓴다 |
@@ -62,8 +63,8 @@
 | `[trends]` `weights` | `trend`(화제성)·`curious`(호기심)·`fit`(제작 적합도)·`fresh`(차별화)·`safe`(안전성) 다섯 개, 합 100 |
 | `[trends]` `keywords` | 주제 찾기 [인기 쇼츠 참고]에서 쓸 YouTube 검색어 목록(OR로 묶는다). 낱말마다 띄어쓰기 없이(`우리몸`), 띄어 쓰면 검색이 거의 안 잡힌다. 비면 인기 쇼츠 참고를 못 쓴다 |
 | `[trends]` `abroad` | 인기 쇼츠 참고를 켰을 때 함께 볼 해외(영어) 검색어. 지난 1년 쇼츠를 누적 조회수 순으로 10개 모아 주제 2~3개를 그 소재에서 고른다(할당량 102 더). 낱말 규칙은 `keywords`와 같다. 비면 해외는 안 본다 |
-| `[trends]` `llm` | 주제 찾기(추천·시리즈 편)만 다른 LLM으로(registry `LLMS` 이름). `claude-code`는 Claude 구독으로 돌고 WebSearch 도구로 검색한다(5번까지. 허용 사이트는 훅이 검색마다 `allowed_domains`로 덮어써 API처럼 강제한다). 비우면 `llm` |
-| `[research]` `provider` | registry `RESEARCHERS` 이름(`claude` · `antigravity`. antigravity는 서버 인용·페이지 읽기 도구가 없어 검색 요약의 사실과 모델이 적은 URL을 쓴다. 페이지 본문과 대조하지 않고 quote도 없다. 허용 사이트 밖 출처는 코드가 버린다) |
+| `[trends]` `llm` | 주제 찾기(추천·시리즈 편)만 다른 LLM으로(registry `LLMS` 이름). `claude-code`는 Claude 구독으로 돌고 생각 깊이는 `.env`의 `CLAUDE_CODE_TRENDS_EFFORT`(기본 medium), WebSearch 도구로 검색한다(5번까지. 허용 사이트는 훅이 검색마다 `allowed_domains`로 덮어써 API처럼 강제한다). 비우면 `llm` |
+| `[research]` `provider` | registry `RESEARCHERS` 이름(`claude` · `claude-code` · `antigravity`. `claude-code`는 Claude 구독으로 돌고 researcher 하위 에이전트를 병렬로 띄워 WebSearch·WebFetch로 찾는다(딥리서치). 생각 깊이는 `.env`의 `CLAUDE_CODE_RESEARCH_EFFORT`(기본 medium). citation이 없어 모델이 적은 URL을 쓰고 quote는 없다. antigravity는 서버 인용·페이지 읽기 도구가 없어 검색 요약의 사실과 모델이 적은 URL을 쓴다. 페이지 본문과 대조하지 않고 quote도 없다. 허용 사이트 밖 출처는 코드가 버린다) |
 | `[research]` `domains` | 자료 조사 허용 사이트(`kdca.go.kr`처럼 도메인만, `https://`·경로는 떼어 읽는다). `news`와 둘 다 비면 자료 조사 단계가 멈춘다 |
 | `[research]` `news` | 언론 기사 사이트. `domains`와 합쳐 검색하고, 여기서 온 사실은 "보도"로 구별한다 |
 | `[research]` `open` | true면 사이트 제한 없이 블로그·일반 웹까지 검색한다. `domains`·`news`는 먼저 볼 곳이 되고, 그 밖에서 온 사실은 "웹"으로 구별한다. 기본 false |

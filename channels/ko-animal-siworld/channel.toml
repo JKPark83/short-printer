@@ -5,7 +5,7 @@ concept = "며느리 시점으로 보는 시댁 생활 코미디. 명절·방문
 language = "ko"
 daily_goal = 1
 sensitive_gate = false
-llm = "claude"
+llm = "claude-code"   # Claude 구독으로(API 크레딧을 쓰지 않는다)
 
 [script]
 scenes = 14

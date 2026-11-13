@@ -48,6 +48,8 @@ CLAUDE_CREDIT_SINCE = os.environ.get("CLAUDE_CREDIT_SINCE") or None
 # 생각 깊이(low·medium·high·xhigh·max)
 CLAUDE_CODE_MODEL = os.environ.get("CLAUDE_CODE_MODEL") or "claude-opus-5-5"
 CLAUDE_CODE_EFFORT = os.environ.get("CLAUDE_CODE_EFFORT") or "high"
+CLAUDE_CODE_TRENDS_EFFORT = os.environ.get("CLAUDE_CODE_TRENDS_EFFORT") or "medium"   # 주제 찾기만. high는 20분씩
+CLAUDE_CODE_RESEARCH_EFFORT = os.environ.get("CLAUDE_CODE_RESEARCH_EFFORT") or "medium"   # 자료 조사(하위 에이전트)
 
 # Antigravity(구독): channel.toml llm·[script] llm·[research] provider = "antigravity"일 때 모델(agy models)과
 # 생각 깊이(low·medium·high·xhigh·max). 모델 이름에 깊이가 붙어 있어 깊이는 비우면 넘기지 않는다.

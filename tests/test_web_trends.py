@@ -112,6 +112,17 @@ def test_trend_page_shows_request_criteria_and_picks():
     assert client.get("/trends/..%2Fx").status_code == 404 and client.get("/trends/nope").status_code == 404
 
 
+def test_female_lead_pick_preselects_female_voice():
+    t = Trend.create(CH, "엄마")
+    t.put("picks.json", {"summary": "", "excluded": [], "picks": [pick(0), pick(1, female_lead=True)]})
+    t.update(status="done", steps={"pick": {"status": "done", "engine": "m", "sec": 1.0}})
+    tts = channel.load(CH).tts
+    html = client.get(f"/trends/{t.id}").text
+    first, second = html.split('id="pv-1"')
+    assert first.split('id="pv-0"')[1].count(f'value="{tts.default}" selected') == 1
+    assert second.split("</select>")[0].count(f'value="{tts.female}" selected') == 1
+
+
 def test_trend_page_before_results():
     t = Trend.create(CH)
     t.update(status="queued")
@@ -205,6 +216,17 @@ def test_recover_interrupts_running_trend():
     t.update(status="running")
     web.recover()
     assert t.data["status"] == "interrupted"
+
+
+def test_reject_button_marks_pick_and_records_topic():
+    t = done_trend("겨울", n=2)
+    assert f'action="/trends/{t.id}/reject"' in client.get(f"/trends/{t.id}").text
+    r = client.post(f"/trends/{t.id}/reject", data={"pick": 1}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == f"/trends/{t.id}#p-1"
+    assert trends.rejected(CH) == ["정전기 1"] and t.doc("picks.json")["picks"][1]["rejected"] is True
+    html = client.get(f"/trends/{t.id}").text
+    assert "안 하기로 한 주제예요" in html and html.count("이 주제로 만들기") == 1
+    assert client.post(f"/trends/{t.id}/reject", data={"pick": 5}).status_code == 400
 
 
 def test_again_button(queued):

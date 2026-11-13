@@ -1,0 +1,152 @@
+<title>알쓸몸잡 릴스 성과 현황</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 배치: 한 단 읽기 폭(본문 68ch), 표·차트만 넓게. 결론 → 근거 → 한계 → 할 일 순서 */
+:root {
+  --bg: #f6f7f5; --surface: #ffffff; --fg: #17211f; --muted: #5d6b67; --line: #dbe1dd;
+  --share: #0e7c72; --save: #c2570c; --share-soft: #d9efec; --save-soft: #fbe6d4; --dot: #8a9a95;
+  --font: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121816; --surface: #1a2220; --fg: #e8eeeb; --muted: #9aaaa5; --line: #2c3835;
+  --share: #4fc4b8; --save: #f0914a; --share-soft: #173b37; --save-soft: #45290f; --dot: #6f807b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121816; --surface: #1a2220; --fg: #e8eeeb; --muted: #9aaaa5; --line: #2c3835;
+  --share: #4fc4b8; --save: #f0914a; --share-soft: #173b37; --save-soft: #45290f; --dot: #6f807b; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 16px; line-height: 1.75;
+  padding-block: 40px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-size: 1.9rem; line-height: 1.3; font-weight: 700; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.3rem; line-height: 1.4; font-weight: 700; margin: 28px 0 0; text-wrap: balance; }
+h3 { font-size: 1.05rem; font-weight: 600; margin: 8px 0 0; }
+p, ul { margin: 0; max-width: 68ch; }
+ul { padding-left: 1.2em; } li + li { margin-top: 6px; }
+.meta { color: var(--muted); font-size: .88rem; }
+.lead { font-size: 1.06rem; }
+a { color: var(--share); }
+a:focus-visible { outline: 2px solid var(--share); outline-offset: 2px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.stats div { background: var(--surface); padding: 14px 16px; }
+.stats b { display: block; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.stats span { color: var(--muted); font-size: .85rem; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; font-size: .82rem; }
+.n { text-align: right; } th.n { text-align: right; }
+td.hi { color: var(--save); font-weight: 600; }
+.bar { display: inline-block; height: 10px; background: var(--share); vertical-align: middle; margin-right: 8px; min-width: 1px; }
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); padding: 16px; }
+figcaption { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+svg { display: block; width: 100%; min-width: 560px; height: auto; }
+.grid { stroke: var(--line); stroke-width: 1; } .grid.mark { stroke: var(--share); stroke-dasharray: 4 4; }
+.tick { fill: var(--muted); font-size: 11px; } .axis { fill: var(--muted); font-size: 12px; }
+.dot { stroke: var(--surface); stroke-width: 1; } .dot.pl { fill: var(--dot); } .dot.sv { fill: var(--save); }
+.dot.big.pl { fill: var(--share); }
+.num { fill: var(--surface); font-size: 10px; font-weight: 700; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: .85rem; color: var(--muted); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.two section { padding: 16px; min-width: 0; }
+.two .a { background: var(--share-soft); } .two .b { background: var(--save-soft); }
+.two h3 { margin: 0 0 6px; }
+.note { border-left: 3px solid var(--line); padding-left: 14px; color: var(--muted); font-size: .92rem; }
+</style>
+<main>
+<p class="meta">인스타그램 @_momjob_ · 릴스 85편(2026-10-20 ~ 11-11) · 2026-11-11 수집</p>
+<h1>공유는 퍼뜨리고, 저장은 팔로워를 남긴다</h1>
+<p class="lead">릴스는 팔로워 수의 두 배 가까이 보일 만큼 잘 퍼지고 있습니다. 다만 조회의 87%가 15편에서 나오고, 팔로우의 69%가 두 편에서 나옵니다. 조회는 공유율을 따라가고 팔로우는 저장율을 따라가므로, 퍼지는 영상과 팔로워를 남기는 영상이 서로 다릅니다.</p>
+
+<div class="stats">
+  <div><b>164.2만</b><span>85편 조회수 합</span></div>
+  <div><b>2,774</b><span>편당 조회 중앙값(평균 19,315)</span></div>
+  <div><b>99.1%</b><span>팔로워가 아닌 시청자(최근 30일)</span></div>
+  <div><b>1,567</b><span>릴스가 만든 팔로우(현재 팔로워 1,435)</span></div>
+</div>
+
+<h2>조회는 소수 히트에 몰리고, 바닥은 둘째 주에 오른 뒤 멈췄다</h2>
+<p>전기장판 한 편이 전체 조회의 41.3%입니다. 절반이 넘는 47편은 3천 조회를 못 넘었습니다. 그래서 평균 대신 중앙값으로 봐야 합니다.</p>
+<div class="scroll"><table>
+<tr><th>조회 구간</th><th class="n">편수</th><th>조회 점유율</th></tr>
+<tr><td>5만 이상</td><td class="n">6</td><td><span class="bar" style="width:140px"></span>70.1%</td></tr>
+<tr><td>1만~5만</td><td class="n">9</td><td><span class="bar" style="width:34px"></span>17.1%</td></tr>
+<tr><td>3천~1만</td><td class="n">23</td><td><span class="bar" style="width:15px"></span>7.6%</td></tr>
+<tr><td>1천~3천</td><td class="n">43</td><td><span class="bar" style="width:10px"></span>5.2%</td></tr>
+<tr><td>1천 미만</td><td class="n">4</td><td><span class="bar" style="width:1px"></span>0.1%</td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>주</th><th class="n">편수</th><th class="n">조회 중앙</th><th class="n">3천↑</th><th class="n">1만↑</th><th class="n">공유율 중앙</th><th class="n">저장율 중앙</th></tr>
+<tr><td>10/20~26</td><td class="n">43</td><td class="n">1,794</td><td class="n">21%</td><td class="n">7.0%</td><td class="n">0.33%</td><td class="n">0.124%</td></tr>
+<tr><td>10/27~11/2</td><td class="n">19</td><td class="n">4,865</td><td class="n">74%</td><td class="n">36.8%</td><td class="n">1.16%</td><td class="n">0.196%</td></tr>
+<tr><td>11/3~11/9</td><td class="n">20</td><td class="n">4,702</td><td class="n">70%</td><td class="n">25.0%</td><td class="n">0.63%</td><td class="n">0.216%</td></tr>
+<tr><td>11/10~11</td><td class="n">3</td><td class="n">2,061</td><td class="n">1편</td><td class="n">0편</td><td class="n">0.82%</td><td class="n">0.202%</td></tr>
+</table></div>
+<p>첫 주에서 둘째 주로 바닥이 2.7배 올랐지만 원인은 나눌 수 없습니다. 첫 주에는 하루 19편씩 몰아 올렸고, 계정이 처음 노출되던 때였고, 주제와 첫 문장 꼴도 그 무렵 같이 바뀌었습니다. 편당 팔로워 조회는 180회 안팎이라 바닥을 올린 것은 비팔로워 추천 노출입니다.</p>
+
+<h2>공유율 3%를 넘으면 거의 터진다</h2>
+<figure>
+<div class="legend"><span><i style="background:var(--share)"></i>번호 붙은 편(아래 표)</span><span><i style="background:var(--save)"></i>저장율 0.25% 이상</span><span><i style="background:var(--dot)"></i>그 밖</span></div>
+<div class="scroll"><svg viewBox="0 0 720 460" role="img" aria-label="릴스 85편의 공유율과 조회수 산점도"><line x1="56" x2="704" y1="400.9" y2="400.9" class="grid"/><text x="48" y="404.9" text-anchor="end" class="tick">100</text><line x1="56" x2="704" y1="303.6" y2="303.6" class="grid"/><text x="48" y="307.6" text-anchor="end" class="tick">1천</text><line x1="56" x2="704" y1="206.2" y2="206.2" class="grid"/><text x="48" y="210.2" text-anchor="end" class="tick">1만</text><line x1="56" x2="704" y1="108.9" y2="108.9" class="grid"/><text x="48" y="112.9" text-anchor="end" class="tick">10만</text><line y1="16" y2="416" x1="56.0" x2="56.0" class="grid"/><text x="56.0" y="434" text-anchor="middle" class="tick">0</text><line y1="16" y2="416" x1="198.6" x2="198.6" class="grid"/><text x="198.6" y="434" text-anchor="middle" class="tick">0.1%</text><line y1="16" y2="416" x1="402.6" x2="402.6" class="grid"/><text x="402.6" y="434" text-anchor="middle" class="tick">1%</text><line y1="16" y2="416" x1="500.0" x2="500.0" class="grid mark"/><text x="500.0" y="434" text-anchor="middle" class="tick">3%</text><line y1="16" y2="416" x1="606.7" x2="606.7" class="grid"/><text x="606.7" y="434" text-anchor="middle" class="tick">10%</text><line y1="16" y2="416" x1="704.0" x2="704.0" class="grid"/><text x="704.0" y="434" text-anchor="middle" class="tick">30%</text><text x="380.0" y="454" text-anchor="middle" class="axis">공유율(공유 ÷ 조회, 로그 눈금)</text><text x="14" y="216.0" text-anchor="middle" class="axis" transform="rotate(-90 14 216.0)">조회수(로그 눈금)</text><circle cx="297.7" cy="282.8" r="4" class="dot pl"><title>면도하면 털이 굵어진다는 말, 진짜예요? · 조회 1,635 · 공유율 0.31% · 저장율 0.000%</title></circle><circle cx="202.1" cy="305.3" r="4" class="dot pl"><title>녹음한 내 목소리, 왜 딴사람처럼 들리는 걸까? · 조회 959 · 공유율 0.10% · 저장율 0.000%</title></circle><circle cx="303.6" cy="353.6" r="4" class="dot pl"><title>배불러 죽겠는데 케이크는 어떻게 또 들어가요? · 조회 306 · 공유율 0.33% · 저장율 0.000%</title></circle><circle cx="304.7" cy="354.2" r="4" class="dot pl"><title>손가락 자꾸 꺾으면 나중에 관절염 생긴다던데? · 조회 302 · 공유율 0.33% · 저장율 0.000%</title></circle><circle cx="56.0" cy="293.1" r="4" class="dot pl"><title>온몸에 털이 나는데 손바닥만 매끈한 까닭은? 손바닥과 발바닥에는 왜 털이 · 조회 1,282 · 공유율 0.00% · 저장율 0.078%</title></circle><circle cx="259.1" cy="286.0" r="4" class="dot pl"><title>아무도 없을 때 손끝이 코로 가는 버릇, 나만 그런 게 아니었습니다. ( · 조회 1,515 · 공유율 0.20% · 저장율 0.198%</title></circle><circle cx="378.0" cy="284.1" r="4" class="dot pl"><title>같은 방귀 냄새인데 남의 것은 숨부터 참게 되고, 내 것은 견딜 만합니다 · 조회 1,586 · 공유율 0.76% · 저장율 0.189%</title></circle><circle cx="399.0" cy="287.6" r="4" class="dot pl"><title>다들 오늘도 코파기 했죠?? 어른 대상 한 설문에서는 91퍼센트가 지금도 · 조회 1,459 · 공유율 0.96% · 저장율 0.206%</title></circle><circle cx="284.3" cy="276.5" r="4" class="dot sv"><title>죽기 직전 인생이 주마등처럼 스친다는 말, 뇌에는 어떤 기록이 남아 있을 · 조회 1,898 · 공유율 0.26% · 저장율 0.263%</title></circle><circle cx="422.7" cy="260.2" r="4" class="dot pl"><title>겨드랑이에는 손바닥과 다른 땀샘이 털이 자라는 구멍으로 땀을 내보냅니다. · 조회 2,792 · 공유율 1.25% · 저장율 0.036%</title></circle><circle cx="275.4" cy="252.3" r="4" class="dot pl"><title>코털을 뽑으면 뇌막염이 된다는 말, 어디까지 맞을까요? · 조회 3,366 · 공유율 0.24% · 저장율 0.119%</title></circle><circle cx="322.1" cy="274.6" r="4" class="dot pl"><title>찬바람이 불면 팔꿈치도 무릎도 괜찮은데 유독 발뒤꿈치만 쩍쩍 갈라집니다. · 조회 1,984 · 공유율 0.40% · 저장율 0.202%</title></circle><circle cx="370.8" cy="244.9" r="4" class="dot pl"><title>공공장소 커플을 관찰한 연구에서는 오른쪽으로 고개를 돌린 사람이 왼쪽보다 · 조회 4,009 · 공유율 0.70% · 저장율 0.125%</title></circle><circle cx="157.7" cy="284.3" r="4" class="dot sv"><title>머릿속은 쉴 새 없이 바쁜데, 생각의 속도에 초당 10비트라는 제한이 있 · 조회 1,577 · 공유율 0.06% · 저장율 0.380%</title></circle><circle cx="444.1" cy="278.3" r="4" class="dot pl"><title>피부는 계속 벗겨지는데 문신은 어떻게 평생 갈까? · 조회 1,817 · 공유율 1.60% · 저장율 0.055%</title></circle><circle cx="56.0" cy="287.1" r="4" class="dot pl"><title>사람 장을 펼치면 테니스장만 하다는 비유, 그 숫자는 어디서 왔을까요? · 조회 1,478 · 공유율 0.00% · 저장율 0.135%</title></circle><circle cx="347.7" cy="266.3" r="4" class="dot pl"><title>기록상 가장 오래 깨어 있던 사람은 264시간, 꼬박 열하루를 버텼습니다 · 조회 2,415 · 공유율 0.54% · 저장율 0.124%</title></circle><circle cx="138.9" cy="275.0" r="4" class="dot pl"><title>코는 아프지 않은 날에도 콧물을 만듭니다. 콧속의 가는 털이 콧물을 목  · 조회 1,964 · 공유율 0.05% · 저장율 0.153%</title></circle><circle cx="439.3" cy="266.9" r="4" class="dot pl"><title>자는 동안 1년에 거미 여덟 마리를 삼킨다는 말, 한 번쯤 들어 보셨죠? · 조회 2,381 · 공유율 1.51% · 저장율 0.084%</title></circle><circle cx="358.0" cy="282.2" r="4" class="dot pl"><title>멀쩡하던 사람이 하필 변기 앞에서 다리가 풀리는 배뇨 실신. 힘을 줄 때 · 조회 1,657 · 공유율 0.60% · 저장율 0.000%</title></circle><circle cx="387.1" cy="276.3" r="4" class="dot pl"><title>생리통인데 허리랑 허벅지는 왜 아파요? · 조회 1,907 · 공유율 0.84% · 저장율 0.210%</title></circle><circle cx="333.2" cy="274.9" r="4" class="dot pl"><title>주말 내내 푹 잤는데 월요일엔 왜 더 피곤해요? · 조회 1,970 · 공유율 0.46% · 저장율 0.102%</title></circle><circle cx="293.9" cy="280.9" r="4" class="dot pl"><title>결혼하면 생리통 낫는다는 어른들 말, 근거 있어? · 조회 1,708 · 공유율 0.29% · 저장율 0.117%</title></circle><circle cx="330.5" cy="284.2" r="4" class="dot sv"><title>간이 아프다는 느낌, 왜 한 번도 못 느껴 봤을까? · 조회 1,580 · 공유율 0.44% · 저장율 0.253%</title></circle><circle cx="56.0" cy="287.3" r="4" class="dot pl"><title>라식으로 시력 되찾으면, 노안은 비켜 갈까? · 조회 1,470 · 공유율 0.00% · 저장율 0.068%</title></circle><circle cx="170.7" cy="290.1" r="4" class="dot pl"><title>공황발작은 왜 몇 분 만에 저절로 멎을까? · 조회 1,375 · 공유율 0.07% · 저장율 0.218%</title></circle><circle cx="328.5" cy="211.7" r="4" class="dot sv"><title>아기 낳고 커진 자궁, 어떻게 다시 줄어들지? · 조회 8,786 · 공유율 0.43% · 저장율 0.296%</title></circle><circle cx="207.9" cy="278.9" r="4" class="dot pl"><title>화장실 지린내는 왜 갓 눈 오줌보다 독해요? · 조회 1,794 · 공유율 0.11% · 저장율 0.000%</title></circle><circle cx="197.7" cy="256.9" r="4" class="dot pl"><title>꼼짝 않고 누워 있으면 살은 언제부터 상할까? (욕창) · 조회 3,019 · 공유율 0.10% · 저장율 0.033%</title></circle><circle cx="56.0" cy="288.7" r="4" class="dot pl"><title>음주측정기는 입김으로 대체 뭘 재는 거예요? · 조회 1,422 · 공유율 0.00% · 저장율 0.070%</title></circle><circle cx="379.2" cy="278.2" r="4" class="dot pl"><title>손톱 물어뜯는 손, 왜 자꾸 입으로 갈까? · 조회 1,824 · 공유율 0.77% · 저장율 0.164%</title></circle><circle cx="296.5" cy="282.3" r="4" class="dot pl"><title>통화 중 허공에 손짓, 대체 누구한테 하는 거야? · 조회 1,654 · 공유율 0.30% · 저장율 0.121%</title></circle><circle cx="262.2" cy="241.1" r="4" class="dot pl"><title>아침 빈속에 달리면 지방이 더 빠지나요? · 조회 4,384 · 공유율 0.20% · 저장율 0.182%</title></circle><circle cx="381.7" cy="273.7" r="4" class="dot pl"><title>가만히 앉으면 다리가 왜 혼자 떨리지? · 조회 2,025 · 공유율 0.79% · 저장율 0.049%</title></circle><circle cx="342.1" cy="260.4" r="4" class="dot sv"><title>입냄새는 정말 위에서 올라올까요? 여러 연구를 모아 보면 원인의 열에 여 · 조회 2,774 · 공유율 0.51% · 저장율 0.252%</title></circle><circle cx="56.0" cy="285.9" r="4" class="dot pl"><title>캄캄한 새벽, 어른은 눈꺼풀이 내려앉는데 아기는 왜 혼자 깨어 있을까요? · 조회 1,518 · 공유율 0.00% · 저장율 0.066%</title></circle><circle cx="56.0" cy="280.3" r="4" class="dot pl"><title>미꾸라지가 진흙 속에서 쓰는 뒤쪽 장 호흡을, 포유류에게도 시험해 본 연 · 조회 1,735 · 공유율 0.00% · 저장율 0.115%</title></circle><circle cx="56.0" cy="285.2" r="4" class="dot pl"><title>1848년 철도 공사장에서 쇠막대가 피니어스 게이지의 머리를 뚫었습니다. · 조회 1,545 · 공유율 0.00% · 저장율 0.000%</title></circle><circle cx="413.5" cy="262.3" r="4" class="dot pl"><title>공중화장실에서 옆 칸에 누가 들어오면 급했던 오줌이 멈춰 버리는 순간이  · 조회 2,652 · 공유율 1.13% · 저장율 0.113%</title></circle><circle cx="284.6" cy="276.5" r="4" class="dot pl"><title>샤워를 몇 주 거르면 피부에는 무슨 일이 생길까요? · 조회 1,896 · 공유율 0.26% · 저장율 0.053%</title></circle><circle cx="466.4" cy="243.0" r="4" class="dot sv"><title>같은 밥을 먹어도 왜 변비는 여자에게 더 흔할까요? · 조회 4,190 · 공유율 2.05% · 저장율 0.310%</title></circle><circle cx="415.7" cy="237.7" r="4" class="dot pl"><title>옆에서 드르렁 코 고는 사람은 왜 대개 남자일까요? · 조회 4,745 · 공유율 1.16% · 저장율 0.148%</title></circle><circle cx="435.9" cy="263.0" r="4" class="dot pl"><title>아무도 없는 화장실인데도 힘을 주면 끙 소리가 저절로 나오죠. · 조회 2,612 · 공유율 1.46% · 저장율 0.115%</title></circle><circle cx="349.3" cy="263.9" r="4" class="dot sv"><title>거울 속 내 얼굴은 괜찮은데 사진 속 얼굴은 왜 낯설까요? · 조회 2,554 · 공유율 0.55% · 저장율 0.313%</title></circle><circle cx="411.4" cy="242.3" r="4" class="dot pl"><title>지하철에서 급똥이 오면 덥지도 않은데 식은땀이 줄줄 흐르죠. · 조회 4,257 · 공유율 1.10% · 저장율 0.188%</title></circle><circle cx="386.4" cy="219.4" r="4" class="dot pl"><title>찬바람 부는 아침에 현관문을 열면 코끝에 와닿는 겨울 냄새가 있습니다. · 조회 7,319 · 공유율 0.83% · 저장율 0.205%</title></circle><circle cx="356.8" cy="236.7" r="4" class="dot pl"><title>안과 검사 때 눈에 훅 부는 바람은 각막 한가운데를 살짝 납작하게 눌러서 · 조회 4,865 · 공유율 0.60% · 저장율 0.247%</title></circle><circle cx="203.8" cy="259.5" r="4" class="dot pl"><title>아침에 분명 씻었는데 밤이면 다시 번들거리는 얼굴. 잠들기 전 세수는 무 · 조회 2,835 · 공유율 0.11% · 저장율 0.247%</title></circle><circle cx="94.8" cy="254.6" r="4" class="dot pl"><title>아이라인을 그리면 몇 분 만에 가루가 눈 표면의 눈물로 들어간다는 연구가 · 조회 3,183 · 공유율 0.03% · 저장율 0.157%</title></circle><circle cx="449.6" cy="227.0" r="4" class="dot pl"><title>집집마다 한 번쯤 다투는 앉아 쏴 논쟁을 몸속 원리로 따져 봤습니다. · 조회 6,120 · 공유율 1.70% · 저장율 0.196%</title></circle><circle cx="227.8" cy="241.6" r="4" class="dot pl"><title>임종 직전에도 귀는 끝까지 듣는다는 말이 있습니다. · 조회 4,328 · 공유율 0.14% · 저장율 0.092%</title></circle><circle cx="466.2" cy="235.7" r="4" class="dot pl"><title>마주 앉아 이야기하다 침이 튀어 민망했던 적 있으신가요? · 조회 4,976 · 공유율 2.05% · 저장율 0.100%</title></circle><circle cx="380.8" cy="252.8" r="4" class="dot pl"><title>음식이 나오면 먹기 전에 사진부터 찍는 그 몇 초가 맛에 무슨 일을 할까 · 조회 3,323 · 공유율 0.78% · 저장율 0.120%</title></circle><circle cx="565.0" cy="205.8" r="4" class="dot pl"><title>고추를 먹은 다음 날 화장실에서 왜 또 화끈거리는지 몸의 원리로 짚어 봅 · 조회 10,096 · 공유율 6.25% · 저장율 0.198%</title></circle><circle cx="281.6" cy="207.0" r="4" class="dot pl"><title>몇 시간 만에 화장실로 뛰게 되는 까닭을 몸속 원리로 풀었습니다. 상온에 · 조회 9,813 · 공유율 0.26% · 저장율 0.224%</title></circle><circle cx="282.6" cy="232.1" r="4" class="dot sv"><title>갓 닦은 이도 몇 분이면 침 단백질 막에 덮이고, 그 위에 세균이 붙어  · 조회 5,422 · 공유율 0.26% · 저장율 0.258%</title></circle><circle cx="280.5" cy="231.0" r="4" class="dot pl"><title>몇 숟갈만 먹었는데 명치가 꽉 막힌 듯한 그 느낌, 정말 음식이 걸린 걸 · 조회 5,564 · 공유율 0.25% · 저장율 0.216%</title></circle><circle cx="335.9" cy="257.5" r="4" class="dot sv"><title>배란일 무렵엔 성욕이 오르고 끌리는 남자 얼굴까지 바뀐다는 말이 있습니다 · 조회 2,973 · 공유율 0.47% · 저장율 0.303%</title></circle><circle cx="222.5" cy="195.1" r="4" class="dot pl"><title>주먹을 쥘 때 맨 끝에 말려 드는 새끼손가락은 악력의 몇 퍼센트를 낼까요 · 조회 13,019 · 공유율 0.13% · 저장율 0.069%</title></circle><circle cx="252.6" cy="270.7" r="4" class="dot pl"><title>화가 치밀면 왜 손이 뒷목으로 갈까요? · 조회 2,176 · 공유율 0.18% · 저장율 0.092%</title></circle><circle cx="393.8" cy="262.3" r="4" class="dot sv"><title>허벅지에 생기는 오렌지 껍질 같은 셀룰라이트는 살이 쪄서만 생기지 않고 · 조회 2,653 · 공유율 0.91% · 저장율 0.528%</title></circle><circle cx="421.8" cy="240.7" r="4" class="dot pl"><title>영상을 보며 먹은 점심과 그냥 먹은 점심은 같은 양이라도 배부름이 다를  · 조회 4,429 · 공유율 1.24% · 저장율 0.226%</title></circle><circle cx="445.2" cy="260.3" r="4" class="dot pl"><title>남의 침은 질색인데 연인과 하는 키스는 왜 괜찮을까요? · 조회 2,785 · 공유율 1.62% · 저장율 0.215%</title></circle><circle cx="483.4" cy="271.6" r="4" class="dot pl"><title>생리 전에 초콜릿이 당기는 게 정말 몸 때문인지 연구로 풀어 봤습니다. · 조회 2,131 · 공유율 2.49% · 저장율 0.235%</title></circle><circle cx="496.9" cy="216.4" r="4" class="dot pl"><title>변기에 앉아 버티는 몇 분과 똥이 실제로 나오는 시간은 얼마나 다를까요. · 조회 7,864 · 공유율 2.90% · 저장율 0.153%</title></circle><circle cx="138.9" cy="246.1" r="4" class="dot sv"><title>열이 날 때 이불 속에서 덜덜 떨리는 까닭과 땀이 언제 나는지 · 조회 3,895 · 공유율 0.05% · 저장율 0.282%</title></circle><circle cx="335.4" cy="276.0" r="4" class="dot pl"><title>신생아실에서 한 아기가 울면 다른 아기들까지 따라 우는 이유를 실험으로 · 조회 1,922 · 공유율 0.47% · 저장율 0.052%</title></circle><circle cx="385.6" cy="273.0" r="4" class="dot pl"><title>아기 울음만 들려도 가슴에 젖이 몰리는 것 같은 까닭을 몸속 호르몬으로  · 조회 2,061 · 공유율 0.82% · 저장율 0.097%</title></circle><circle cx="454.4" cy="208.8" r="4" class="dot pl"><title>기쁨이 터진 올림픽 결승 포옹도 평균 약 3초였습니다. 직접 안아 본 실 · 조회 9,418 · 공유율 1.79% · 저장율 0.202%</title></circle><circle cx="56.0" cy="406.3" r="4" class="dot sv"><title>마취로 깊이 잠든 사이, 뇌는 옆에서 하는 말을 알아들을까요? · 조회 88 · 공유율 0.00% · 저장율 1.136%</title></circle><g><circle cx="574.3" cy="216.7" r="9" class="dot sv big"/><text x="574.3" y="220.2" text-anchor="middle" class="num">14</text><title>남자는 7초마다 야한 생각을 한다는 말, 한 번쯤 들어 보셨죠. 대학생들 · 조회 7,811 · 공유율 6.94% · 저장율 0.269%</title></g><g><circle cx="435.7" cy="133.3" r="9" class="dot sv big"/><text x="435.7" y="136.8" text-anchor="middle" class="num">6</text><title>오른손잡이도 아기는 왼팔에 안는 경우가 많습니다. 흔히 말하는 심장 소리 · 조회 56,166 · 공유율 1.45% · 저장율 0.515%</title></g><g><circle cx="646.5" cy="133.2" r="9" class="dot pl big"/><text x="646.5" y="136.7" text-anchor="middle" class="num">5</text><title>젖도 안 나오는데 남자는 왜 젖꼭지가 있지? · 조회 56,302 · 공유율 15.69% · 저장율 0.211%</title></g><g><circle cx="581.1" cy="139.2" r="9" class="dot sv big"/><text x="581.1" y="142.7" text-anchor="middle" class="num">8</text><title>다 털었는데 바지에 찔끔, 이거 왜 이래? · 조회 48,816 · 공유율 7.49% · 저장율 0.324%</title></g><g><circle cx="546.5" cy="280.3" r="9" class="dot sv big"/><text x="546.5" y="283.8" text-anchor="middle" class="num">15</text><title>고환은 왜 한쪽만 더 처져 있을까요? · 조회 1,735 · 공유율 5.07% · 저장율 0.403%</title></g><g><circle cx="495.9" cy="77.5" r="9" class="dot sv big"/><text x="495.9" y="81.0" text-anchor="middle" class="num">2</text><title>밥만 먹으면 화장실이 급해지는데, 방금 먹은 음식이 벌써 내려온 걸까요? · 조회 210,255 · 공유율 2.86% · 저장율 0.397%</title></g><g><circle cx="673.0" cy="143.3" r="9" class="dot pl big"/><text x="673.0" y="146.8" text-anchor="middle" class="num">10</text><title>찬바람이 불면 털도 없는 젖꼭지가 옷 위로 바짝 섭니다. 털 대신 젖꼭지 · 조회 44,358 · 공유율 21.14% · 저장율 0.142%</title></g><g><circle cx="610.3" cy="141.8" r="9" class="dot pl big"/><text x="610.3" y="145.3" text-anchor="middle" class="num">9</text><title>방귀가 나올 것 같아 멈칫하는 순간에도 엉덩이는 그게 방귀인지 똥인지 가 · 조회 45,942 · 공유율 10.42% · 저장율 0.183%</title></g><g><circle cx="461.7" cy="28.0" r="9" class="dot sv big"/><text x="461.7" y="31.5" text-anchor="middle" class="num">1</text><title>전기장판을 뜨끈하게 켜고 잔 아침에 몸이 왜 더 무거운지, 잠과 몸속 온 · 조회 678,019 · 공유율 1.95% · 저장율 0.407%</title></g><g><circle cx="557.0" cy="129.1" r="9" class="dot pl big"/><text x="557.0" y="132.6" text-anchor="middle" class="num">4</text><title>10초 키스 한 번에 입속 세균이 몇 마리나 오가는지, 요구르트 음료로  · 조회 62,011 · 공유율 5.71% · 저장율 0.203%</title></g><g><circle cx="558.8" cy="154.2" r="9" class="dot pl big"/><text x="558.8" y="157.7" text-anchor="middle" class="num">11</text><title>젖꼭지 둘레의 작은 돌기를 보고 나만 이런가 싶었던 적 있죠. (젖꼭지  · 조회 34,233 · 공유율 5.83% · 저장율 0.149%</title></g><g><circle cx="373.5" cy="182.9" r="9" class="dot sv big"/><text x="373.5" y="186.4" text-anchor="middle" class="num">12</text><title>허리를 꼿꼿이 펴고 앉으면 디스크가 정말 덜 눌릴까요? (허리 꼿꼿이 앉 · 조회 17,369 · 공유율 0.72% · 저장율 0.259%</title></g><g><circle cx="589.3" cy="114.6" r="9" class="dot pl big"/><text x="589.3" y="118.1" text-anchor="middle" class="num">3</text><title>오늘따라 가늘게 나온 변을 보면 굵기가 어디서 정해지는지 궁금해집니다.  · 조회 87,379 · 공유율 8.22% · 저장율 0.142%</title></g><g><circle cx="256.9" cy="138.4" r="9" class="dot sv big"/><text x="256.9" y="141.9" text-anchor="middle" class="num">7</text><title>탯줄이 떨어진 자리 배꼽은 겉으로 보면 오목하게 닫혀 있습니다. (배꼽) · 조회 49,770 · 공유율 0.19% · 저장율 0.267%</title></g><g><circle cx="627.8" cy="184.9" r="9" class="dot sv big"/><text x="627.8" y="188.4" text-anchor="middle" class="num">13</text><title>거울 앞에서 혼자 걱정하던 안으로 들어간 젖꼭지가 왜 그런 모양인지 (쏙 · 조회 16,567 · 공유율 12.69% · 저장율 0.404%</title></g></svg></div>
+<figcaption>점 하나가 릴스 한 편입니다. 점선은 공유율 3%입니다. 공유가 0인 편은 왼쪽 끝에 찍었습니다. 점에 마우스를 올리면 제목과 수치가 보입니다.</figcaption>
+</figure>
+<p>공유율 3% 이상 11편 중 9편이 1만 조회를 넘었습니다(중앙 44,358). 1% 미만 56편은 중앙 1,967입니다. 조회와의 순위 상관은 공유율 +0.587, 저장율 +0.418이고 좋아요율은 +0.070으로 관계가 없습니다. 예외도 있습니다. 배꼽과 허리 꼿꼿이는 공유율이 낮은데 터졌고, 7초마다 야한 생각과 고환은 공유율이 높은데 안 터졌습니다.</p>
+<div class="scroll"><table>
+<tr><th class="n">#</th><th>릴스</th><th class="n">조회</th><th class="n">공유율</th><th class="n">저장율</th><th class="n">팔로우</th><th class="n">1천 뷰당 팔로우</th></tr>
+<tr><td class="n">1</td><td><a href="https://www.instagram.com/reel/DfGJzuIhwVh/">전기장판 켜고 자면</a></td><td class="n">678,019</td><td class="n">1.95%</td><td class="n hi">0.407%</td><td class="n">526</td><td class="n">0.78</td></tr><tr><td class="n">2</td><td><a href="https://www.instagram.com/reel/De_nSsaBe6_/">밥 먹으면 화장실</a></td><td class="n">210,255</td><td class="n">2.86%</td><td class="n hi">0.397%</td><td class="n">558</td><td class="n">2.65</td></tr><tr><td class="n">3</td><td><a href="https://www.instagram.com/reel/DfRcU5pB772/">똥 굵기</a></td><td class="n">87,379</td><td class="n">8.22%</td><td class="n">0.142%</td><td class="n">38</td><td class="n">0.43</td></tr><tr><td class="n">4</td><td><a href="https://www.instagram.com/reel/DfHKDB1haEh/">10초 키스 세균</a></td><td class="n">62,011</td><td class="n">5.71%</td><td class="n">0.203%</td><td class="n">11</td><td class="n">0.18</td></tr><tr><td class="n">5</td><td><a href="https://www.instagram.com/reel/DeySAZdhrL-/">남자 젖꼭지</a></td><td class="n">56,302</td><td class="n">15.69%</td><td class="n">0.211%</td><td class="n">53</td><td class="n">0.94</td></tr><tr><td class="n">6</td><td><a href="https://www.instagram.com/reel/DexMQr5TUUR/">아기는 왜 왼팔에</a></td><td class="n">56,166</td><td class="n">1.45%</td><td class="n hi">0.515%</td><td class="n">45</td><td class="n">0.80</td></tr><tr><td class="n">7</td><td><a href="https://www.instagram.com/reel/DfSEmmEBauA/">배꼽</a></td><td class="n">49,770</td><td class="n">0.19%</td><td class="n hi">0.267%</td><td class="n">65</td><td class="n">1.31</td></tr><tr><td class="n">8</td><td><a href="https://www.instagram.com/reel/DeyyEoDh8su/">바지에 찔끔</a></td><td class="n">48,816</td><td class="n">7.49%</td><td class="n hi">0.324%</td><td class="n">42</td><td class="n">0.86</td></tr><tr><td class="n">9</td><td><a href="https://www.instagram.com/reel/DfEoKIVBrW0/">방귀인지 똥인지</a></td><td class="n">45,942</td><td class="n">10.42%</td><td class="n">0.183%</td><td class="n">20</td><td class="n">0.43</td></tr><tr><td class="n">10</td><td><a href="https://www.instagram.com/reel/DfCOmr2BPAc/">찬바람 젖꼭지</a></td><td class="n">44,358</td><td class="n">21.14%</td><td class="n">0.142%</td><td class="n">7</td><td class="n">0.16</td></tr><tr><td class="n">11</td><td><a href="https://www.instagram.com/reel/DfHVLHLhO6q/">젖꼭지 둘레 돌기</a></td><td class="n">34,233</td><td class="n">5.83%</td><td class="n">0.149%</td><td class="n">32</td><td class="n">0.94</td></tr><tr><td class="n">12</td><td><a href="https://www.instagram.com/reel/DfH6nKFh6ey/">허리 꼿꼿이 앉기</a></td><td class="n">17,369</td><td class="n">0.72%</td><td class="n hi">0.259%</td><td class="n">7</td><td class="n">0.40</td></tr><tr><td class="n">13</td><td><a href="https://www.instagram.com/reel/DfhJ_FSh6am/">쏙 들어간 젖꼭지</a></td><td class="n">16,567</td><td class="n">12.69%</td><td class="n hi">0.404%</td><td class="n">10</td><td class="n">0.60</td></tr><tr><td class="n">14</td><td><a href="https://www.instagram.com/reel/Dewm2-Ch6ca/">7초마다 야한 생각</a></td><td class="n">7,811</td><td class="n">6.94%</td><td class="n hi">0.269%</td><td class="n">6</td><td class="n">0.77</td></tr><tr><td class="n">15</td><td><a href="https://www.instagram.com/reel/De82XJThrA5/">고환 한쪽 처짐</a></td><td class="n">1,735</td><td class="n">5.07%</td><td class="n hi">0.403%</td><td class="n">2</td><td class="n">1.15</td></tr>
+</table></div>
+
+<h2>히트는 두 갈래이고, 팔로워는 한쪽에서만 나온다</h2>
+<div class="two">
+<section class="a"><h3>공유형: 조회를 끈다</h3><p>찬바람 젖꼭지, 방귀인지 똥인지, 똥 굵기, 키스 세균처럼 남에게 말하기 민망한 내 몸 이야기입니다. 공유율 5~21%로 퍼지지만 팔로워는 거의 안 남습니다. 찬바람 젖꼭지는 4.4만 조회에 팔로우 7명입니다.</p></section>
+<section class="b"><h3>저장형: 팔로워를 남긴다</h3><p>전기장판, 밥 먹으면 화장실, 아기 왼팔, 배꼽처럼 내 생활을 설명하거나 고쳐 주는 이야기입니다. 공유율은 2% 안팎인데 저장율이 높고, 1천 뷰당 팔로우가 0.78~2.65명입니다.</p></section>
+</div>
+<p>팔로우 1,567명 중 558명이 밥 먹으면 화장실, 526명이 전기장판에서 왔고 24편은 0명입니다. 1천 뷰당 팔로우는 공유율과 관계가 없고(+0.110) 저장율과 관계가 있습니다(+0.452). 히트가 작았던 셋째 주에는 일주일 동안 164명만 늘었습니다. 두 갈래 구분은 수치에서 읽어 낸 해석이며, 시청 유지 수치가 없어 확인하지는 못했습니다.</p>
+
+<h2>훅보다 주제가 크다</h2>
+<p>민망한 몸 소재 29편의 공유율 중앙값은 2.05%, 그 밖 55편은 0.31%로 약 6.6배 차이입니다. 히트는 모두 시청자 자신의 몸과 그 순간으로 시작합니다. 바닥 편은 기기, 남(아기·연구 속 인물), 가정형, 속설 검증이 많습니다.</p>
+<div class="scroll"><table>
+<tr><th>주제 묶음(손 분류)</th><th class="n">편수</th><th class="n">조회 중앙</th><th class="n">1만↑</th><th class="n">공유율 중앙</th><th class="n">팔로우 합</th></tr>
+<tr><td>성·생식기·젖꼭지</td><td class="n">6</td><td class="n">25,400</td><td class="n">4</td><td class="n">9.81%</td><td class="n">110</td></tr>
+<tr><td>배설·화장실</td><td class="n">15</td><td class="n">6,120</td><td class="n">5</td><td class="n">1.70%</td><td class="n">692</td></tr>
+<tr><td>수면·생활 습관</td><td class="n">10</td><td class="n">3,009</td><td class="n">2</td><td class="n">0.50%</td><td class="n">549</td></tr>
+<tr><td>소화·입</td><td class="n">7</td><td class="n">4,429</td><td class="n">0</td><td class="n">0.33%</td><td class="n">13</td></tr>
+<tr><td>여성 건강</td><td class="n">5</td><td class="n">2,131</td><td class="n">0</td><td class="n">0.47%</td><td class="n">16</td></tr>
+<tr><td>몸 구조·피부·털</td><td class="n">15</td><td class="n">1,984</td><td class="n">2</td><td class="n">0.24%</td><td class="n">93</td></tr>
+<tr><td>감각·뇌·마음</td><td class="n">12</td><td class="n">1,738</td><td class="n">0</td><td class="n">0.12%</td><td class="n">25</td></tr>
+<tr><td>몸 버릇</td><td class="n">7</td><td class="n">1,654</td><td class="n">0</td><td class="n">0.33%</td><td class="n">7</td></tr>
+</table></div>
+<p>배설·화장실 묶음이 기둥입니다. 편수가 가장 많은데도 셋 중 하나가 1만을 넘었고, 팔로우의 44%를 만들었고, 주별 중앙값이 1,726 → 4,257 → 9,954로 올랐습니다. 수면·생활 습관의 팔로우 549명은 거의 전기장판 한 편의 몫입니다.</p>
+<p>"여기 [A인데 B]" 훅 28편은 중앙 4,647로 바닥이 거의 없고, "~죠?" 33편은 중앙 2,612이지만 3만 이상 7편을 냈습니다. 그런데 훅 유형이 올린 시기와 거의 그대로 겹쳐서 훅 효과만 떼어 볼 수 없습니다. 비민망 소재의 공유율은 어느 훅이든 0.3% 안팎으로 같았습니다. 11월 들어 큰 히트가 줄어든 것은 민망 소재 비율이 16편 중 10편에서 28편 중 9편으로 내려간 것으로도 설명됩니다.</p>
+
+<h2>추천 점수는 성과와 거꾸로 움직였다</h2>
+<p>점수를 따라갈 수 있는 76편에서 추천 총점과 조회의 순위 상관은 −0.347, 공유는 −0.268입니다. 적합도(fit)와 안전성(safe)이 민망 소재를 깎는데, 공유를 끄는 것이 바로 그 소재이기 때문입니다. 100점이던 손바닥 털, 94점이던 관절염·녹음 목소리·월요일 피곤이 모두 바닥에 있습니다. 호기심(curious)은 값이 4와 5뿐이라 가중치 25가 변별을 못 합니다.</p>
+<p class="note">이 상관은 이미 골라서 만든 주제 안에서 잰 값입니다. 추천받고 만들지 않은 주제의 성과는 없어서, 점수가 낮은 주제를 더 만들면 낫다고까지는 말할 수 없습니다.</p>
+
+<h2>업계 기준으로는 노출이 넘치고 전환이 약하다</h2>
+<ul>
+<li>팔로워 1~5천 브랜드 계정의 릴스는 편당 평균 약 580회 조회됩니다(<a href="https://www.socialinsider.io/social-media-benchmarks/instagram">Socialinsider</a>). 이 계정은 중앙값이 2,774회로, 보통 편 하나가 팔로워 수의 약 190%를 봅니다. 벤치마크는 브랜드 계정이고 비율의 분모가 달라 정밀한 비교는 아닙니다.</li>
+<li>인스타그램 대표는 순위 신호로 시청 시간, 도달 대비 좋아요, 도달 대비 보내기를 꼽았고 보내기는 비팔로워 노출에 더 중요하다고 했습니다(<a href="https://buffer.com/resources/instagram-algorithms/">Buffer 정리</a>). 시청자 99%가 비팔로워인 이 계정에서 공유율이 조회를 가르는 것과 맞습니다.</li>
+<li>1천 뷰당 팔로우 0.95명이 좋은지 나쁜지는 공개 기준치가 없어 판정할 수 없습니다.</li>
+<li>추천 가이드라인을 되풀이해 어기면 계정 전체가 한동안 추천에서 빠질 수 있습니다(<a href="https://help.instagram.com/313829416281232">Instagram 도움말</a>). 선정성은 낱말보다 이미지 기준이라, 젖꼭지·배설 소재는 썸네일과 장면이 노출처럼 보이지 않는지가 중요합니다.</li>
+<li>AI로 만들었다는 이유만으로 도달이 줄지는 않습니다. 다만 생성 도구 워터마크가 보이면 추천 대상에서 빠집니다.</li>
+</ul>
+
+<h2>이 자료로 판정할 수 없는 것</h2>
+<ul>
+<li>평균 시청 시간, 처음 3초 건너뛰기 비율, 유지 그래프는 웹에 없고 앱에만 있습니다. 바닥 편이 주제 때문인지 첫 장면 때문인지 가를 수 없습니다.</li>
+<li>훅 유형, 캡션 물음형·서술형, 요일·시간대는 시기와 겹치거나 칸당 5~11편이라 결론을 낼 수 없습니다.</li>
+<li>편별 팔로우 합(1,567)이 현재 팔로워(1,435)보다 약 130명 많은 까닭과, 릴스 조회 합이 계정 30일 조회(154.9만)보다 6% 많은 까닭은 알 수 없습니다.</li>
+<li>올린 지 3일이 안 된 6편은 최종 성과가 아닙니다. 쏙 들어간 젖꼭지는 1.7일 만에 16,567 조회, 공유율 12.69%입니다.</li>
+<li>11/10~11에 바꾼 주제·대본 규칙은 영상이 1~2편뿐이라 효과를 볼 수 없습니다.</li>
+</ul>
+
+<h2>다음에 해 볼 만한 것</h2>
+<ul>
+<li><b>두 갈래로 나눠 기획합니다.</b> 공유형은 배설·화장실을 기둥으로 민망 소재 비율을 둘째 주 수준으로 되돌리고, 저장형(잠·식사·자세처럼 생활을 설명하는 주제)을 일정 비율로 넣습니다. 공유형은 공유율 3%, 저장형은 저장율 0.3%와 1천 뷰당 팔로우로 봅니다.</li>
+<li><b>추천 점수의 안전성·적합도 기준을 나눕니다.</b> 정책상 위험한 이미지인지로만 깎고, 말하기 민망하다는 이유로는 깎지 않게 합니다. 바꾼 뒤 그 주 공유율 중앙값이 오르는지로 확인합니다.</li>
+<li><b>한 번에 하나만 바꾸고 같은 주 안에서 비교합니다.</b> 팔로워가 1천 명을 넘어 트라이얼 릴스를 쓸 수 있을 것으로 보이며, 주제·훅 시험용으로 맞습니다.</li>
+<li><b>앱에서 시청 유지를 읽습니다.</b> 히트 몇 편과 바닥 몇 편의 건너뛰기 비율을 나란히 놓으면 실마리가 생깁니다. 밥 먹으면 화장실 편이 프로필 방문 4,200회를 끈 까닭도 캡션 전문으로 확인해 볼 만합니다.</li>
+</ul>
+<p class="note">프로필 문구, 고정 릴스, 시리즈 이름이 팔로우 전환을 올린다는 수치 근거는 찾지 못했습니다. 시험해 볼 가치는 있지만 추론입니다.</p>
+</main>

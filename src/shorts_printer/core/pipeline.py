@@ -142,6 +142,9 @@ def step_script(job: Job, sv: Services) -> str:
     job.put("script.json", s.flat())
     job.update(usage=add_usage(job.data.get("usage"), usage))
     job.log(f"제목: {s.title} · 장면 {len(s.scenes)}개")
+    if (want := sv.channel.tts.lead(job.data["voice"], s.female_lead)) != job.data["voice"]:
+        job.update(voice=want)
+        job.log(f"주인공에 맞춰 목소리를 {sv.channel.tts.voices[want]}(으)로 바꿨어요")
     if s.sensitive and sv.channel.sensitive_gate:
         job.log(f"민감 분야({s.sensitive}): 대본을 확인한 뒤 [확인하고 계속]을 눌러야 장면을 만들어요")
     translate(job, sv)

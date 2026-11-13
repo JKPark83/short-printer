@@ -210,6 +210,20 @@ def test_fresh_run_avoids_topics_shown_in_earlier_runs():
     assert "앞서 추천한 주제:\n- 단풍 색\n- 고구마 냉장고" in text and "다른 채널 주제" not in text
 
 
+def test_rejected_topics_are_always_excluded():
+    trends.reject(CH, "하품은 왜 옮을까?")
+    trends.reject(CH, "하품은 왜 옮을까?")
+    trends.reject("ko-map-history", "다른 채널 주제")
+    assert trends.rejected(CH) == ["하품은 왜 옮을까?"]
+    answers = iter([[idea("하품은 왜 옮을까"), idea("간은 잘라 내도 다시 자랄까?")], [idea("손톱은 왜 빨리 자랄까?")]])
+    llm = FakeLLM(lambda *a: (trends.IdeasOut(summary="", picks=next(answers)), USAGE))
+    t = new()
+    trends.run(t, sv(llm))
+    text = llm.calls[0]["text"]
+    assert "보고 나서 하지 않기로 한 주제:\n- 하품은 왜 옮을까?" in text and "다른 채널 주제" not in text
+    assert "하품" not in " ".join(p["topic"] for p in t.doc("picks.json")["picks"])
+
+
 def test_pick_drops_repeats_of_earlier_topics_and_asks_again():
     pipeline.Job.create(CH, "하품은 왜 옮을까?", "v")
     old = new()

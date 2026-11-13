@@ -32,14 +32,23 @@ class TTSCfg(BaseModel):
     provider: str = "elevenlabs"
     voices: dict[str, str] = Field(min_length=1)   # {목소리 키: 화면 이름}. 앞이 기본
     default: str = ""
+    female: str = ""   # 대본 주인공이 여자면 default 대신 쓰는 목소리 키. 비우면 바꾸지 않는다
     sample: str   # 미리 듣기 문장(채널 언어)
 
     @model_validator(mode="after")
     def _default(self):
         if self.default and self.default not in self.voices:
             raise ValueError(f"tts.default({self.default})가 tts.voices에 없어요")
+        if self.female and self.female not in self.voices:
+            raise ValueError(f"tts.female({self.female})가 tts.voices에 없어요")
         self.default = self.default or next(iter(self.voices))
         return self
+
+    def lead(self, voice: str, female: bool) -> str:
+        """주인공에 맞춘 목소리. 기본 목소리로 둔 것만 바꾼다(사람이 고른 다른 목소리는 그대로)."""
+        if self.female and voice in (self.default, self.female):
+            return self.female if female else self.default
+        return voice
 
 
 class Role(BaseModel):

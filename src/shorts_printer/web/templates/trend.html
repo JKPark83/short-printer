@@ -131,12 +131,20 @@
                 <li><a href="{{ v.url }}" target="_blank" rel="noopener">{{ v.title }}</a> <span class="muted small">{{ v.channel }} · 시간당 {{ '{:,}'.format(v.views_per_hour) }}회</span></li>
               {% endfor %}</ul></dd>{% endif %}
             </dl>
+            {% if p.rejected %}
+            <p class="muted small">안 하기로 한 주제예요. 다음 추천부터 빠져요.</p>
+            {% else %}
             <form class="pick-form" method="post" action="/jobs">
               <input type="hidden" name="trend" value="{{ t.id }}"><input type="hidden" name="pick" value="{{ i }}">
               <label for="pv-{{ i }}">목소리</label>
-              <select id="pv-{{ i }}" name="voice">{% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == ch.tts.default }}>{{ label }}</option>{% endfor %}</select>
+              {% set pv = ch.tts.lead(ch.tts.default, p.female_lead) %}<select id="pv-{{ i }}" name="voice">{% for key, label in ch.tts.voices.items() %}<option value="{{ key }}"{{ ' selected' if key == pv }}>{{ label }}</option>{% endfor %}</select>
               <button class="btn btn-primary" type="submit" data-busy="만드는 중…">{{ icon('loader', 16, 'spin when-busy') }}<span>이 주제로 만들기</span></button>
             </form>
+            <form class="pick-form" method="post" action="/trends/{{ t.id }}/reject">
+              <input type="hidden" name="pick" value="{{ i }}">
+              <button class="btn btn-secondary" type="submit" title="이 주제는 앞으로 추천하지 않아요">안 함</button>
+            </form>
+            {% endif %}
             {% if ch.format == 'long' and not p.series %}
             <form class="pick-form" method="post" action="/trends/{{ t.id }}/series">
               <input type="hidden" name="pick" value="{{ i }}">

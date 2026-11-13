@@ -685,3 +685,27 @@ def test_flow_auto_fetches_submitted_scene_from_old_project_before_generating(mo
     got = [c["file"] for c in fa.FlowAuto().make(todo, tmp_path, lambda line: None)]
     assert fetched == [2, 9] and made == ["b", "c"]   # a는 받기만, b는 못 찾아 새로
     assert got == ["clip0.mp4", "clip1.mp4", "clip2.mp4"] and not list(tmp_path.glob("*.task"))
+
+
+def test_female_lead_switches_default_voice_only(monkeypatch):
+    ch = channel.load(CH)
+    female, default = ch.tts.female, ch.tts.default
+    usage = {"model": "m", "input_tokens": 1, "output_tokens": 1, "cost_usd": None}
+    lead = {"v": True}
+    monkeypatch.setattr(pipeline, "translate", lambda job, sv: None)
+    monkeypatch.setattr(pipeline.script, "write", lambda *a, **kw: (script_mod.Script(
+        title="t", description="d", tags=["a"], sensitive="", female_lead=lead["v"],
+        scenes=[script_mod.Scene(sentence="가", prompt="p")]), usage))
+    job = Job.create(CH, "주제", default)
+    pipeline.step_script(job, services())
+    assert job.data["voice"] == female and "미나" in job.tail()[-1]
+    # 다시 써서 여자 주인공이 아니면 기본으로 돌아간다
+    lead["v"] = False
+    pipeline.step_script(job, services())
+    assert job.data["voice"] == default
+    # 사람이 고른 다른 목소리는 건드리지 않는다
+    other = next(k for k in ch.tts.voices if k not in (female, default))
+    job = Job.create(CH, "주제", other)
+    lead["v"] = True
+    pipeline.step_script(job, services())
+    assert job.data["voice"] == other

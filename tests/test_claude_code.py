@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from shorts_printer import config, registry
 from shorts_printer.adapters import claude_code
-from shorts_printer.adapters.claude_code import ClaudeCode
+from shorts_printer.adapters.claude_code import ClaudeCode, ClaudeCodeResearch
 
 
 class Out(BaseModel):
@@ -52,6 +52,16 @@ def test_script_llm_follows_channel_script_llm():
     assert sv.script_llm is registry.LLMS[sv.channel.script.llm or sv.channel.llm]
 
 
+def test_trends_llm_uses_lower_effort(monkeypatch):
+    seen, ok = {}, {"is_error": False, "structured_output": {"answer": "짜다"}}
+    fake_run(monkeypatch, ok, seen)
+    sv = registry.services("momjob")
+    assert sv.trends_llm is registry.TREND_LLMS["claude-code"] and sv.trends_llm.effort == "medium"
+    sv.trends_llm.ask("짧게", "t", Out, refusal="거절", what="답")
+    assert seen["cmd"][seen["cmd"].index("--effort") + 1] == "medium"
+    assert ClaudeCode().effort == "high"   # 대본은 그대로
+
+
 def test_ask_turns_on_only_web_search_and_names_allowed_sites(monkeypatch):
     seen, ok, run = {}, {"is_error": False, "structured_output": {"answer": "짜다"}}, subprocess.run
     fake_run(monkeypatch, ok, seen)
@@ -76,4 +86,31 @@ def test_ask_turns_on_only_web_search_and_names_allowed_sites(monkeypatch):
 
 def test_trends_llm_follows_channel_trends_llm():
     sv = registry.services("momjob")
-    assert sv.trends_llm is registry.LLMS[sv.channel.trends.llm or sv.channel.llm]
+    assert sv.trends_llm is registry.TREND_LLMS[sv.channel.trends.llm or sv.channel.llm]
+
+
+def test_gather_runs_sub_agents_and_drops_out_of_scope_sources(monkeypatch):
+    seen = {}
+    found = {"facts": [
+        {"text": "물은 100도에서 끓는다.", "url": "https://www.kdca.go.kr/a", "title": "A", "published": "2025-01-02"},
+        {"text": "피부염은 방치하면 번진다.", "url": "https://sub.nih.gov/b", "title": "B"},
+        {"text": "블로그 주장", "url": "https://blog.example.com/c"},
+        {"text": "확인 못 함: 달은 치즈다", "url": ""},
+    ], "notes": ["검색 '물' 0건"]}
+    fake_run(monkeypatch, {"is_error": False, "structured_output": found, "usage": {"output_tokens": 3}}, seen)
+    facts, usage = ClaudeCodeResearch().gather("지시", "주제: 물", queries=3, max_pages=4,
+                                               domains=["kdca.go.kr", "nih.gov"])
+    assert [f["text"] for f in facts] == [
+        "Claude Code 조사: 출처 있는 사실 2개, 범위 밖 출처 1건 뺌", "검색 '물' 0건", "확인 못 함: 달은 치즈다",
+        "물은 100도에서 끓는다.", "피부염은 방치하면 번진다."]
+    assert all(not f["url"] for f in facts[:3]) and facts[3]["published"] == "2025-01-02" and facts[3]["retrieved_at"]
+    cmd = seen["cmd"]
+    assert cmd[cmd.index("--tools") + 1] == "WebSearch,WebFetch,Agent" == cmd[cmd.index("--allowedTools") + 1]
+    agents = json.loads(cmd[cmd.index("--agents") + 1])
+    assert agents["researcher"]["tools"] == ["WebSearch", "WebFetch"]
+    assert "kdca.go.kr, nih.gov" in agents["researcher"]["prompt"]
+    system = cmd[cmd.index("--system-prompt") + 1]
+    assert system.startswith("지시") and "3번까지" in system and "WebFetch로 4쪽까지" in system
+    assert "하위 에이전트" in system
+    assert cmd[cmd.index("--effort") + 1] == "medium" and seen["input"] == "주제: 물" and usage["cost_usd"] == 0.0
+    assert isinstance(registry.RESEARCHERS["claude-code"], ClaudeCodeResearch)

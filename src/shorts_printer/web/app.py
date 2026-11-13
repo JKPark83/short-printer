@@ -614,6 +614,8 @@ def delete_job(job_id: str):
         data = job.data
         if data["status"] in ACTIVE or uploading(data):
             raise HTTPException(409, "제작·업로드 중인 작업은 지울 수 없어요")
+        if data["status"] != "done":   # 보고 나서 접은 주제는 추천에 다시 내지 않는다. 올린 것은 made로 남는다
+            trends.reject(data["channel"], data["topic"])
         job.delete()
     return {"ok": True}
 
@@ -1018,6 +1020,22 @@ def trend_again(trend_id: str):
     new = trend.again()
     q.enqueue_trend(new.id)
     return RedirectResponse(f"/trends/{new.id}", status_code=303)
+
+
+@app.post("/trends/{trend_id}/reject")
+def trend_reject(trend_id: str, pick: int = Form(...)):
+    """추천 하나를 안 하기로 표시: 채널의 거절 목록에 넣어 다음 추천부터 늘 뺀다."""
+    trend = _load(Trend, trend_id)
+    picks = _picks(trend)
+    if not 0 <= pick < len(picks):
+        raise HTTPException(400, "없는 추천이에요")
+    trends.reject(trend.data["channel"], picks[pick]["topic"])
+
+    def mark(d):
+        d["picks"][pick]["rejected"] = True
+        return d
+    trend.edit("picks.json", mark)
+    return RedirectResponse(f"/trends/{trend.id}#p-{pick}", status_code=303)
 
 
 @app.post("/trends/{trend_id}/series")

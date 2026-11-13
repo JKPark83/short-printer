@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from shorts_printer import config, registry
 from shorts_printer.adapters.youtube import YouTube
-from shorts_printer.core import channel
+from shorts_printer.core import channel, trends
 from shorts_printer.core.longform import STEPS_LONG
 from shorts_printer.core.pipeline import STEPS, Job
 from shorts_printer.core.trends import Trend
@@ -45,6 +45,7 @@ def two_channels(tmp_path, monkeypatch):
     head, voices = toml.split("[tts.voices]")
     head = re.sub(r'(?m)^name = ".*"', 'name = "Space Facts"', head).replace('language = "ko"', 'language = "en"')
     head = re.sub(r'(?m)^default = ".*"', 'default = "enVoice1"', head)
+    head = re.sub(r'(?m)^female = .*\n', '', head)
     head = head.replace("daily_goal = 1", "daily_goal = 2")
     voices = '\nenVoice1 = "Adam"\n\n[video]' + voices.split("[video]", 1)[1]
     (en / "channel.toml").write_text(head + "[tts.voices]" + voices, encoding="utf-8")
@@ -381,11 +382,18 @@ def test_clip_replace_after_done_rerenders_only(monkeypatch):
     assert client.post(f"{url}/1", content=MP4).status_code == 409   # 올리는 중
 
 
-def test_checks_list_providers():
+def _api_llm(monkeypatch):
+    """채널 llm을 Claude API로 고정한다(실제 채널은 claude-code일 수 있다)."""
+    load = channel.load
+    monkeypatch.setattr(channel, "load", lambda cid: load(cid).model_copy(update={"llm": "claude"}))
+
+
+def test_checks_list_providers(monkeypatch):
+    _api_llm(monkeypatch)
     labels = [c[1] for c in web._checks(CH)]
     assert labels[0] == "Claude API 키" and "영상 · Google Flow(자동) (이 채널)" in labels
     assert "음성 · ElevenLabs" in labels
-    research = next(c for c in web._checks(CH) if c[1] == "조사 · Claude 조사")
+    research = next(c for c in web._checks(CH) if c[1] == "조사 · Claude Code 조사")
     assert "[research] domains" not in research[2]   # 채널에 허용 사이트가 있다
     assert "YouTube 업로드" in labels and labels == [c[1] for c in web._checks("all")]   # 전체는 첫 채널
     assert "YouTube Data API 키" not in labels   # 주제 찾기는 YouTube 키를 쓰지 않는다
@@ -546,6 +554,11 @@ def test_delete_job_removes_folder_but_not_while_running():
     assert 'data-delete="' + job.id in client.get("/").text
     assert client.post(f"/api/jobs/{job.id}/delete").json() == {"ok": True}
     assert not job.dir.exists() and client.post(f"/api/jobs/{job.id}/delete").status_code == 404
+    assert trends.rejected(CH) == []   # 올린 작업을 지운 건 접은 게 아니다
+    half = done_job(topic="정전기는 왜 겨울에 더 생길까?")
+    half.update(status="waiting")   # 조사·대본까지 보고 접은 작업
+    assert client.post(f"/api/jobs/{half.id}/delete").json() == {"ok": True}
+    assert trends.rejected(CH) == ["정전기는 왜 겨울에 더 생길까?"]
     busy = done_job()
     busy.update(status="running")
     assert client.post(f"/api/jobs/{busy.id}/delete").status_code == 409 and busy.dir.exists()
@@ -661,6 +674,7 @@ def test_credits_shows_claude_balance_from_cost_report(monkeypatch):
     from shorts_printer.adapters import claude
     from shorts_printer.adapters.elevenlabs import ElevenLabs
     from shorts_printer.adapters.flow_auto import FlowAuto
+    _api_llm(monkeypatch)
     monkeypatch.setattr(web, "_left_cache", {})
     monkeypatch.setattr(FlowAuto, "ready", lambda self: True)
     monkeypatch.setattr(ElevenLabs, "credits", lambda self: 654_000_000)

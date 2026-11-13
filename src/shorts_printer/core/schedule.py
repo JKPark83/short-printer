@@ -319,7 +319,8 @@ def after_trend(trend: Trend, q: Queue, notify: Notify) -> None:
     made = {j.data["topic"] for j in Job.all() if j.data.get("channel") == d["channel"]}
     i = next((i for i, p in enumerate(picks) if p["topic"] not in made), 0)
     p = picks[i]
-    job = Job.create(d["channel"], p["topic"], s.data["voice"], brief=trends.brief(trend, p),
+    voice = channel.load(d["channel"]).tts.lead(s.data["voice"], p.get("female_lead", False))
+    job = Job.create(d["channel"], p["topic"], voice, brief=trends.brief(trend, p),
                      source={"trend": trend.id, "pick": i, "schedule": s.id}, review=True)
     with q.lock:
         # 실패한 주제 찾기를 다시 돌려 끝난 것이면 회차를 다시 진행 중으로(겹침 막기·배지)

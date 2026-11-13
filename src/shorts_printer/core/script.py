@@ -45,6 +45,8 @@ class Script(BaseModel):
         description="진단·치료·약·식품 효능·투자·법률 조언이 들어가거나 정치 주제면 그 분야 이름(건강·의료, 법률, 금융·투자, 정치). "
         "몸의 원리 설명만이면 빈 문자열"
     )
+    female_lead: bool = Field(False, description="주인공(이야기가 따라가는 사람·몸)이 여자면 true. "
+                              "남녀 비교나 사람 일반이면 false")
 
     def flat(self) -> dict:
         """script.json 형식: 장면을 같은 개수의 배열들로 푼다(다른 단계는 sentences를 읽는다).

@@ -6,7 +6,7 @@ from functools import cache, lru_cache
 from . import config
 from .adapters.antigravity import Antigravity, AntigravityResearch
 from .adapters.claude import Claude
-from .adapters.claude_code import ClaudeCode
+from .adapters.claude_code import ClaudeCode, ClaudeCodeResearch
 from .adapters.claude_research import ClaudeResearch
 from .adapters.discord import Discord
 from .adapters.elevenlabs import ElevenLabs
@@ -39,7 +39,10 @@ from .ports.tts import TTS
 from .ports.video import VideoProvider
 
 LLMS: dict[str, LLM] = {"claude": Claude(), "claude-code": ClaudeCode(), "antigravity": Antigravity()}
-RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch(), "antigravity": AntigravityResearch()}
+# 주제 찾기는 생각 깊이를 낮춘 Claude Code로(.env CLAUDE_CODE_TRENDS_EFFORT, 기본 medium)
+TREND_LLMS: dict[str, LLM] = LLMS | {"claude-code": ClaudeCode(config.CLAUDE_CODE_TRENDS_EFFORT)}
+RESEARCHERS: dict[str, Researcher] = {"claude": ClaudeResearch(), "claude-code": ClaudeCodeResearch(),
+                                      "antigravity": AntigravityResearch()}
 TTSES: dict[str, TTS] = {"elevenlabs": ElevenLabs(), "typecast": Typecast(), "fish": FishAudio()}
 VIDEOS: dict[str, VideoProvider] = {"flow": Flow(), "flow-auto": FlowAuto(),
                                     "flow-16x9": Flow("16:9", "360p"), "flow-auto-16x9": FlowAuto("16:9", "360p"),
@@ -118,7 +121,7 @@ def services(channel_id: str) -> Services:
                     video=video(ch)[1], publisher=publisher(ch), splitter=splitter(ch.language),
                     research=_pick(RESEARCHERS, ch.research.provider, "조사 공급자"),
                     script_llm=_pick(LLMS, ch.script.llm or ch.llm, "LLM"),
-                    trends_llm=_pick(LLMS, ch.trends.llm or ch.llm, "LLM"),
+                    trends_llm=_pick(TREND_LLMS, ch.trends.llm or ch.llm, "LLM"),
                     also={n: publisher(ch, n) for n in ch.publish.also})
 
 

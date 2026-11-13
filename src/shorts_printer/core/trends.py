@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..infra.store import Record
+from ..infra.store import Record, store
 from ..ports.llm import add_usage
 from . import prompts, research
 from .channel import Channel
@@ -234,6 +234,8 @@ class IdeaOut(BaseModel):
     scores: Scores
     search_terms: list[str] = Field(description="화면에 보일 장면을 나타내는 영어 키워드 3~5개")
     refs: list[int] = Field(default=[], description="참고한 인기 쇼츠 번호. 목록이 없거나 참고하지 않았으면 빈 목록")
+    female_lead: bool = Field(False, description="주인공(이야기가 따라가는 사람·몸)이 여자면 true(엄마·생리 등). "
+                              "남녀 비교나 사람 일반이면 false")
 
 
 class IdeasOut(BaseModel):
@@ -270,19 +272,28 @@ def finish_ideas(out: IdeasOut, weights: dict[str, int], ordered: bool = False) 
     return {"summary": out.summary, "picks": picks[:IDEA_N], "excluded": []}
 
 
-# ponytail: 앞서 나온 주제를 전부 지시문에 넣는다(채널마다 수백 줄). 수천 개가 되면 오래된 것을 줄여 넣는다
 def _made(cid: str) -> list[str]:
     """이 채널에서 이미 만든 작업 주제 전부(겹치지 않게 지시문에 넣는다)."""
     return [d["topic"] for d in (j.data for j in Job.all()) if d.get("channel") == cid]
 
 
 def _shown(t: Trend) -> list[str]:
-    """이 채널에서 한 번이라도 추천했던 주제 전부(새 것 먼저): 이어진 기록(avoid)뿐 아니라 지난 주제 찾기 전부.
-    새로 시작한 주제 찾기도 지난 추천을 되풀이하지 않게."""
+    """이 채널에서 추천했던 주제 전부(새 것 먼저): 이어진 기록(avoid) + 지난 주제 찾기.
+    되풀이를 막는 건 모델이 목록을 보는 것뿐이라(글자 닮음 검사는 말을 바꾸면 못 잡는다) 자르지 않고 다 넣는다.
+    ponytail: 수천 개가 되면 지시문이 길어진다. 느려지면 주제의 핵심 낱말만 뽑아 줄이는 길이 있다."""
     cid = t.data["channel"]
     past = [p["topic"] for o in reversed(Trend.all()) if o.id != t.id and o.data.get("channel") == cid
             for p in (o.doc("picks.json") or {}).get("picks", [])]
     return list(dict.fromkeys((t.data.get("avoid") or []) + past))
+
+
+def rejected(cid: str) -> list[str]:
+    """이 채널에서 보고 나서 안 하기로 한 주제(추천 화면 [안 함], 작업 지우기). 만든 주제처럼 늘 뺀다."""
+    return store().get("rejected", cid, default={}).get("topics", [])
+
+
+def reject(cid: str, topic: str) -> None:
+    store().edit("rejected", cid, lambda r: {"topics": list(dict.fromkeys([*(r or {}).get("topics", []), topic]))})
 
 
 def _key(topic: str) -> str:
@@ -363,9 +374,10 @@ def step_pick(t: Trend, sv: Services) -> str:
     if t.data.get("series"):
         return step_series(t, sv)
     ch = sv.channel
-    made, avoid, web = _made(ch.id), _shown(t), _web(ch)
+    made, no, avoid, web = _made(ch.id), rejected(ch.id), _shown(t), _web(ch)
     head = (f"오늘: {datetime.now():%Y-%m-%d}\n추가 요청: {t.data['keyword'] or '없음'}\n\n"
-            f"점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}")
+            f"점수 기준:\n{_criteria(ch.trends.weights, CRITERIA)}\n\n이미 만든 작업 주제:\n{_bullets(made)}"
+            + (f"\n\n보고 나서 하지 않기로 한 주제:\n{_bullets(no)}" if no else ""))
     if t.data.get("popular"):
         kind = _kind(ch)
         if (videos := t.doc("videos.json")) is None:   # 다시 시도할 때 할당량을 또 쓰지 않는다
@@ -385,8 +397,9 @@ def step_pick(t: Trend, sv: Services) -> str:
             t.log(f"해외 인기 {kind} {len(far)}개(누적 조회수 순): " + ", ".join(v["title"] for v in far[:5]) + " …")
             head += (f"\n\n해외에서 크게 뜬 {kind}(지난 {ABROAD_DAYS}일, 누적 조회수 순):\n"
                      + _popular_text(far, len(home) + 1))
-    t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개 제외)")
-    kept, seen, llm = [], made + avoid, sv.trends_llm or sv.llm
+    t.log(f"{_where(web)} 주제 {IDEA_N}개 고르는 중 (이미 만든 주제 {len(made)}개, 앞서 보여 준 {len(avoid)}개, "
+          f"안 하기로 한 {len(no)}개 제외)")
+    kept, seen, llm = [], made + no + avoid, sv.trends_llm or sv.llm
     for _ in range(2):   # 겹친 걸 빼고 절반도 안 남으면 뺀 것까지 알려 한 번 더 묻는다
         text = head + ("\n\n앞서 추천한 주제:\n" + _bullets(avoid) if avoid else "")
         out, usage = llm.ask(system_idea(ch), text, IdeasOut, what="추천 주제", web=web,

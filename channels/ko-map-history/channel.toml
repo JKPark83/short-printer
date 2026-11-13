@@ -5,7 +5,7 @@ concept = "전선·국경·분계선이 어떻게 그어지고 움직였는지 �
 language = "ko"
 format = "long"
 daily_goal = 1
-llm = "claude"
+llm = "claude-code"   # Claude 구독으로(API 크레딧을 쓰지 않는다)
 
 [script]
 unit = "chars"
